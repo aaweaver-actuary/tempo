@@ -157,11 +157,26 @@ export function verifyMaintainedBrowserReceipt(receipt) {
 
 // A stage exit alone cannot establish that the HTTP split journey ran.
 export function verifyStudyDurabilityScenario(report, scope) {
-  if (report?.acceptance_scope !== scope) throw new Error('Wrong PostgreSQL acceptance scope');
+  if (report?.acceptance_scope !== scope || JSON.stringify(report.unresolved_owner_cases) !== JSON.stringify(unresolvedQueueCases) || report.historical_priority_rollback !== 'not executed') throw new Error('Wrong PostgreSQL acceptance scope or unresolved disposition');
   for (const label of ['prefix_split_http_accept_replay', 'prefix_split_http_restart_replay']) {
     const entries = (report.details ?? []).filter(entry => entry.stage === 'study_durability' && entry.label === label);
     if (entries.length !== 1 || entries[0].category !== 'scenario' || entries[0].completed !== true
         || entries[0].exit_code !== 0 || entries[0].skipped || entries[0].retries)
       throw new Error('Missing or invalid PostgreSQL HTTP split evidence');
   }
+}
+
+// Receipt URLs alone do not bind a returned operation to the requested one.
+export function requireOriginalOperationReceipt(receipt, operationId) {
+  if (!operationId || receipt?.operation_id !== operationId) throw new Error('Operation receipt identity changed');
+  return receipt;
+}
+
+// A split archives the source and can remove its repertoire membership.
+export function originalPrefixSplitRows(snapshot, sourceCardId) {
+  if (!sourceCardId || !Array.isArray(snapshot?.tables?.prefix_splits)) throw new Error('Missing original split snapshot');
+  return snapshot.tables.prefix_splits.filter(row => row.source_card_id === sourceCardId)
+    .map(({source_card_id, source_revision, shortened_card_id, continuation_card_id}) =>
+      ({source_card_id, source_revision, shortened_card_id, continuation_card_id}))
+    .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 }

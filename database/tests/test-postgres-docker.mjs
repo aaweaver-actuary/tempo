@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { createIsolatedTestEnvironment } from "../../scripts/test-environment.mjs";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
-import { assertDisposableVolumes, verifyMaintainedQueueReceipt, verifyMaintainedBrowserReceipt, unresolvedQueueCases, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
+import { requireOriginalOperationReceipt, originalPrefixSplitRows, assertDisposableVolumes, verifyMaintainedQueueReceipt, verifyMaintainedBrowserReceipt, unresolvedQueueCases, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -400,23 +400,24 @@ async function postCommand(path, payload, { method = "POST", operationId, label 
   if (operationId) headers["Idempotency-Key"] = operationId;
   return confirm(await apiRequest(path, {
     method, headers, body: JSON.stringify(payload),
-  }, label));
+  }, label), operationId);
 }
 
 async function confirm(...argumentsList) {
   return measureScenario.detail("operation_receipt", "readiness", () => pollForConfirmation(...argumentsList));
 }
 
-async function pollForConfirmation(response) {
+async function pollForConfirmation(response, expectedOperationId) {
   if (response.status !== 202) {
     if (!response.ok) throw new Error(`command HTTP ${response.status} ${await response.text()}`);
     return response.json();
   }
   const pending = await response.json();
   assert(pending.operation_id, "202 command must return an operation ID");
+  if (expectedOperationId) requireOriginalOperationReceipt(pending, expectedOperationId);
   for (let attempt = 0; attempt < 120; attempt += 1) {
     measureScenario.poll();
-    const receipt = await get(`operations/${encodeURIComponent(pending.operation_id)}`);
+    const receipt = requireOriginalOperationReceipt(await get(`operations/${encodeURIComponent(pending.operation_id)}`), pending.operation_id);
     if (receipt.state === "complete") return receipt.response;
     if (receipt.state === "failed") throw new Error(`PostgreSQL command failed: ${JSON.stringify(receipt.error)}`);
     await measureScenario.wait(250);
@@ -846,7 +847,7 @@ async function verifyForegroundAndStudyDurability() {
   assert(beforeRestartState.reviews.some((row) => row.card_id === reviewCard.id));
   assert(beforeRestartState.queue.some((row) => row.card_id === guidedCard.id
     && (row.attempt_failed === 1 || row.attempt_state === "failed" || row.attempt_state === "guided")));
-  assert(beforeRestartState.prefixSplits.some((row) => row.source_card_id === splitCard.id));
+  assert.equal(originalPrefixSplitRows(studySnapshot, splitCard.id).length, 1);
 
   const savedReviewCount = beforeRestartState.reviews.length;
   run("docker", [...compose, "down"]);
@@ -909,17 +910,16 @@ async function verifyHttpStudyPrefixSplit(card, repertoireId, operationId, initi
   async function deliver() {
     const raw = await apiRequest(path, {method: "POST", headers: {"Content-Type": "application/json", "Idempotency-Key": operationId}, body: JSON.stringify(payload)}, "foreground POST prefix split");
     if (raw.status === 202) assert.equal((await raw.clone().json()).operation_id, operationId);
-    return confirm(raw);
+    return confirm(raw, operationId);
   }
   const response = await deliver();
   assert.equal(response.applied, true);
   assert.equal(response.source_card_id, card.id);
   assert.equal(response.source_revision, card.revision);
-  const receipt = await get(`operations/${encodeURIComponent(operationId)}`);
+  const receipt = requireOriginalOperationReceipt(await get(`operations/${encodeURIComponent(operationId)}`), operationId);
   assert.equal(receipt.state, "complete");
   assert.deepEqual(receipt.response, response);
-  const snapshot = stableStudyState(await readStudySnapshot(), repertoireId);
-  const rows = snapshot.prefixSplits.filter(row => row.source_card_id === card.id);
+  const rows = originalPrefixSplitRows(await readStudySnapshot(), card.id);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].source_revision, card.revision);
   assert.equal(rows[0].shortened_card_id, response.parent.card_id);
@@ -927,7 +927,7 @@ async function verifyHttpStudyPrefixSplit(card, repertoireId, operationId, initi
   const replay = await deliver();
   assert.deepEqual(replay, response);
   assert.deepEqual(await get(`operations/${encodeURIComponent(operationId)}`), receipt);
-  assert.deepEqual(stableStudyState(await readStudySnapshot(), repertoireId).prefixSplits.filter(row => row.source_card_id === card.id), rows);
+  assert.deepEqual(originalPrefixSplitRows(await readStudySnapshot(), card.id), rows);
   return {response, receipt, rows};
 }
 

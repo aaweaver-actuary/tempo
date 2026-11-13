@@ -5,7 +5,7 @@ import { makeFastPlan, selectFastLane, validateFastGate, testIdentity, fastInven
 import { fastCommands } from '../../scripts/ci-fast-commands.mjs';
 import { verifySelection } from '../../scripts/ci-fast-run.mjs';
 import { changedPathsFromNameStatus, planHash } from '../../scripts/ci-verification-plan.mjs';
-import { postgresTestStages, executePostgresTestPlan } from '../../database/tests/postgres-test-plan.mjs';
+import { postgresTestStages, executePostgresTestPlan, unresolvedQueueCases } from '../../database/tests/postgres-test-plan.mjs';
 import { parsePostgresTestOptions } from '../../database/tests/postgres-test-options.mjs';
 import { certificate, readCertificateSources, validateCertificate } from '../../scripts/ci-certified-tests.mjs';
 import { resolvePython } from '../../scripts/resolve-python.mjs';
@@ -25,7 +25,7 @@ function fixture(path = 'app/lib/review-outbox.ts') {
   if (plan.tier === 'STUDY') {
     report.studyStages = postgresTestStages({mode:'study',nativeChecks:plan.nativeChecks});
     report.scenarios = {mode:'study',commit:plan.head,plan_hash:plan.hash,planned_stages:report.studyStages,
-      acceptance_scope:'study', details:['prefix_split_http_accept_replay','prefix_split_http_restart_replay'].map(label => ({stage:'study_durability',label,category:'scenario',completed:true,exit_code:0})), stages:Object.fromEntries(report.studyStages.map(stage => [stage,{exit_code:0}]))};
+      acceptance_scope:'study', unresolved_owner_cases:unresolvedQueueCases, historical_priority_rollback:'not executed', details:['prefix_split_http_accept_replay','prefix_split_http_restart_replay'].map(label => ({stage:'study_durability',label,category:'scenario',completed:true,exit_code:0})), stages:Object.fromEntries(report.studyStages.map(stage => [stage,{exit_code:0}]))};
   }
   if (plan.nativeChecks?.length) report.native = {head:plan.head,planHash:plan.hash,
     runId:execution.id,attempt:execution.attempt,repository:plan.repository,
@@ -646,7 +646,7 @@ test('P07 fast Study gate consumes HTTP scenario evidence', () => {
   plan.hash=planHash(plan);
   const stages=postgresTestStages({mode:'study',nativeChecks:[]});
   const labels=['prefix_split_http_accept_replay','prefix_split_http_restart_replay'];
-  const scenarios={mode:'study',commit:plan.head,plan_hash:plan.hash,planned_stages:stages,acceptance_scope:'study',
+  const scenarios={mode:'study',commit:plan.head,plan_hash:plan.hash,planned_stages:stages,acceptance_scope:'study', unresolved_owner_cases:unresolvedQueueCases, historical_priority_rollback:'not executed',
     stages:Object.fromEntries(stages.map(stage => [stage,{exit_code:0}])),
     details:labels.map(label => ({stage:'study_durability',label,category:'scenario',completed:true,exit_code:0}))};
   const report={completed:true,status:'success',planHash:plan.hash,head:plan.head,repository:plan.repository,
@@ -656,7 +656,8 @@ test('P07 fast Study gate consumes HTTP scenario evidence', () => {
   const needs={selection:{result:'success'},fast:{result:'success'}};
   assert.deepEqual(validateFastGate(plan,report,needs,pr,execution), []);
   for (const modify of [r => {r.scenarios.details.pop();}, r => {r.scenarios.details[1].retries=1;},
-    r => {r.scenarios.acceptance_scope='partial-maintained-study-not-full-E02';}, r => {r.scenarios.stages.cleanup.skipped=true;}]) {
+    r => {r.scenarios.acceptance_scope='partial-maintained-study-not-full-E02';}, r => {r.scenarios.stages.cleanup.skipped=true;}, r => {r.scenarios.unresolved_owner_cases=[];},
+    r => {r.scenarios.historical_priority_rollback='passed';}]) {
     const bad=structuredClone(report); modify(bad);
     assert(validateFastGate(plan,bad,needs,pr,execution).length > 0);
   }
