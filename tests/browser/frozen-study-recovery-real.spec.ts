@@ -58,6 +58,7 @@ test('real frozen Study preserves original parent and child through reload and p
   const fixture = (action: string, ...args: string[]) => JSON.parse(execFileSync('docker', [...compose,'run','--rm','--no-deps','-e','TEMPO_TEST_INSTANCE=disposable','schema','python','-',action,prefix,day,...args], {
     input:readFileSync('tests/fixtures/postgres-frozen-study-browser.py','utf8'), encoding:'utf8', timeout:30_000,
   }));
+  let originalFailure: unknown;
   try {
     let seeded: {ready:boolean; displaced:number[][]; entries:number[]} = {ready:false, displaced:[], entries:[]};
     await expect.poll(() => { seeded = fixture('seed'); return seeded.ready; }, {timeout:60_000}).toBe(true);
@@ -123,11 +124,16 @@ test('real frozen Study preserves original parent and child through reload and p
     await page.getByRole('button',{name:'Add',exact:true}).click();
     await expect(page.getByText('Answer: d2d4')).toBeVisible();
     expect(fixture('snapshot').reviews).toHaveLength(2);
-  } finally {
-    const cleanup = fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
-    expect(cleanup.cleaned).toBe(true);
-    expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
-    expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
+  } catch (error) { originalFailure = error; throw error; } finally {
+    try {
+      const cleanup = fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
+      expect(cleanup.cleaned).toBe(true);
+      expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
+      expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
+    } catch (cleanupError) {
+      if (originalFailure !== undefined) throw new AggregateError([originalFailure, cleanupError], 'Study journey and fixture cleanup failed');
+      throw cleanupError;
+    }
   }
 });
 
@@ -147,6 +153,7 @@ test.describe('real frozen phone recovery', () => {
     const fixture = (action: string, ...args: string[]) => JSON.parse(execFileSync('docker', [...compose,'run','--rm','--no-deps','-e','TEMPO_TEST_INSTANCE=disposable','schema','python','-',action,prefix,day,...args], {
       input:readFileSync('tests/fixtures/postgres-frozen-study-browser.py','utf8'), encoding:'utf8', timeout:30_000,
     }));
+    let originalFailure: unknown;
     try {
       let seeded: {ready:boolean; displaced:number[][]; entries:number[]} = {ready:false,displaced:[],entries:[]};
       await expect.poll(() => {seeded=fixture('seed'); return seeded.ready;}, {timeout:60_000}).toBe(true);
@@ -206,12 +213,17 @@ test.describe('real frozen phone recovery', () => {
       expect(snapshot.reviews[0][1]).toBe(before.cardId);
       expect(snapshot.origins).toContainEqual([before.localEntryId,before.cardId,1,1]);
       await page.reload(); expect(fixture('snapshot')).toEqual(snapshot);
-    } finally {
-      await context.setOffline(false);
-      const cleanup = fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
-    expect(cleanup.cleaned).toBe(true);
-    expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
-    expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
+    } catch (error) { originalFailure = error; throw error; } finally {
+      try {
+        await context.setOffline(false);
+        const cleanup = fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
+        expect(cleanup.cleaned).toBe(true);
+        expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
+        expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
+      } catch (cleanupError) {
+        if (originalFailure !== undefined) throw new AggregateError([originalFailure, cleanupError], 'Study journey and fixture cleanup failed');
+        throw cleanupError;
+      }
     }
   });
 
@@ -236,6 +248,7 @@ test.describe('real frozen phone recovery', () => {
       const result=await new Promise<any>((resolve,reject)=>{reading.onsuccess=()=>resolve(reading.result);reading.onerror=()=>reject(reading.error);});
       db.close(); return result;
     });
+    let originalFailure: unknown;
     try {
       let seeded: {ready:boolean; displaced:number[][]; entries:number[]} = {ready:false,displaced:[],entries:[]};
       await expect.poll(() => {seeded=fixture('seed-requeue'); return seeded.ready;}, {timeout:60_000}).toBe(true);
@@ -287,11 +300,16 @@ test.describe('real frozen phone recovery', () => {
       expect(snapshot.attempts).toContainEqual(expect.arrayContaining([parent.attemptId,`${prefix}-exercise-0`,1,head.id,head.queue_entry_id,0,'review']));
       expect(snapshot.attempts).toContainEqual(expect.arrayContaining([child.attemptId,`${prefix}-exercise-0`,1,head.id,repeat.queue_entry_id,4,'review']));
       await page.reload(); expect(fixture('snapshot')).toEqual(snapshot);
-    } finally {
-      await context.setOffline(false);
-      const cleanup = fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
-      expect(cleanup.cleaned).toBe(true); expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
-      expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
+    } catch (error) { originalFailure = error; throw error; } finally {
+      try {
+        await context.setOffline(false);
+        const cleanup = fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
+        expect(cleanup.cleaned).toBe(true); expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
+        expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
+      } catch (cleanupError) {
+        if (originalFailure !== undefined) throw new AggregateError([originalFailure, cleanupError], 'Study journey and fixture cleanup failed');
+        throw cleanupError;
+      }
     }
   });
 });
