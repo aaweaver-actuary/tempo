@@ -34,7 +34,7 @@ def attempt_by_id(database, entry_id, card_id, lock):
 def first_queued_attempt(database, day, card_id, lock):
     return database.execute("SELECT * FROM daily_queue WHERE queue_date=%s AND card_id=%s AND status='queued' ORDER BY position,id LIMIT 1" + (_ATTEMPT_LOCK if lock else ''), (day, card_id)).fetchone()
 
-def current_revision(database, card_id):
+def current_revision(database: postgres.PostgresConnection, card_id: str) -> postgres.TempoRow | None:
     return database.execute('SELECT revision FROM cards WHERE id=%s', (card_id,)).fetchone()
 
 def latest_review_id(database, card_id, valid_only):
@@ -52,7 +52,7 @@ def restore_receipt_outcome(database: postgres.PostgresConnection, outcome: str,
 def bind_receipt_request(database: postgres.PostgresConnection, request_json: str, attempt_id: str | None) -> None:
     database.execute('UPDATE review_attempt_receipts SET request_json=%s WHERE attempt_id=%s', (request_json, attempt_id))
 
-def queue_date(database, entry_id):
+def queue_date(database: postgres.PostgresConnection, entry_id: int | None) -> postgres.TempoRow | None:
     return database.execute('SELECT queue_date FROM daily_queue WHERE id=%s', (entry_id,)).fetchone()
 
 def complete_identified_attempt(database: postgres.PostgresConnection, state: str, entry_id: int, card_id: str) -> None:
@@ -73,10 +73,10 @@ def retain_completion(database: postgres.PostgresConnection, result_json: str, e
 def last_queue_id(database, day):
     return database.execute('SELECT COALESCE(MAX(id),0) FROM daily_queue WHERE queue_date=%s', (day,)).fetchone()[0]
 
-def evidence_state(database, attempt_id):
+def evidence_state(database: postgres.PostgresConnection, attempt_id: str) -> postgres.TempoRow | None:
     return database.execute_native('SELECT state FROM opening_evidence_attempts WHERE attempt_id=%s', (attempt_id,)).fetchone()
 
-def entry_status(database, entry_id, card_id):
+def entry_status(database: postgres.PostgresConnection, entry_id: int | None, card_id: str) -> postgres.TempoRow | None:
     return database.execute('SELECT status FROM daily_queue WHERE id=%s AND card_id=%s', (entry_id, card_id)).fetchone()
 
 def inherit_evidence_scope(database, entry_id, snapshot_id, repertoire_id, trained_color):
@@ -85,5 +85,5 @@ def inherit_evidence_scope(database, entry_id, snapshot_id, repertoire_id, train
 def continuation_facts(database, entry_id, card_id):
     return database.execute("SELECT q.cycle,q.attempt_failed,c.revision,c.content_type FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.id=%s AND q.card_id=%s AND q.status='queued'", (entry_id, card_id)).fetchone()
 
-def save_continuation(database, result_json, attempt_id):
+def save_continuation(database: postgres.PostgresConnection, result_json: str, attempt_id: str | None) -> None:
     database.execute('UPDATE review_attempt_receipts SET result_json=%s WHERE attempt_id=%s', (result_json, attempt_id))
