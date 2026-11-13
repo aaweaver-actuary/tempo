@@ -165,7 +165,28 @@
               "integrity",
               "opening_graph",
               "pgn_import",
-              "card_deletion"
+              "card_deletion",
+              "canonical_prefix",
+              "repertoire_changes",
+              "card_branch_edits",
+              "repertoire_controls",
+              "tactics",
+              "queue_commands",
+              "queue_order",
+              "queue_application",
+              "queue_refresh",
+              "study_attempt",
+              "study_grading",
+              "repertoire_conflicts",
+              "frozen_order",
+              "queue_attempt_origin",
+              "opening_evidence",
+              "position_first_response",
+              "position_grade_effect",
+              "position_plan",
+              "position_source",
+              "captured_tactic",
+              "chess_helpers"
             ]
           }
         }
