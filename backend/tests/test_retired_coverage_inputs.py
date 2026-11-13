@@ -62,3 +62,59 @@ def test_gap_free_preview_follows_normal_path(monkeypatch, payload):
     monkeypatch.setattr(main, "read_connection", connection)
     monkeypatch.setattr(main, "build_paste_preview", lambda *args: args)
     assert main.preview_analysis_paste(AnalysisPastePreviewRequest.model_validate(payload)) == ("database", "x", None, None)
+
+
+# Real PostgreSQL is started only when this explicit native test is selected.
+from native_study_fixture import owned_postgres
+
+
+@pytest.mark.parametrize("command,payload", [
+    ("repertoire.branch.add", {"repertoire_id": "white", "starting_fen": "original", "moves": [],
+        "trained_color": "white", "source_gap_id": "node:e2e4"}),
+    ("analysis.paste.commit", {"request": {"text": "original", "source_gap_id": {"old": "bytes"},
+        "preview_token": "original", "selections": []}, "prepared_preview": {"original": "bytes"}}),
+])
+def test_native_recovery_keeps_original_receipt_and_rejects_retired_gap(owned_postgres, monkeypatch, command, payload):
+    import json
+    import uuid
+    from contextlib import contextmanager
+    from app import command_gateway
+
+    @contextmanager
+    def writer(background):
+        assert not background
+        with owned_postgres() as database:
+            yield database
+    monkeypatch.setattr(command_gateway, "_writer_connection", writer)
+    operation_id = "b27-legacy-" + uuid.uuid4().hex
+    complete_id = operation_id + "-complete"
+    digest = command_gateway.request_digest(command, payload)
+    # Preserve the exact original stored JSON, including formatting, across recovery.
+    original_bytes = json.dumps(payload, indent=2, sort_keys=True)
+    response_bytes = '{"accepted":"original","count":1}'
+    tables = ("repertoires", "repertoire_lines", "repertoire_line_training_depths",
+              "repertoire_coverage_runs", "repertoire_coverage_nodes", "repertoire_coverage_candidates")
+    def snapshot(database):
+        return {table: database.execute_native(f"SELECT COALESCE(json_agg(t ORDER BY t::text)::text, '[]') FROM {table} t").fetchone()[0]
+                for table in tables}
+    with owned_postgres() as db:
+        before = snapshot(db)
+        db.execute_native("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,background) VALUES(%s,%s,%s,'queued',%s,false)",
+                          (operation_id, command, digest, original_bytes))
+        db.execute_native("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,response_json,background) VALUES(%s,%s,%s,'complete',%s,%s,false)",
+                          (complete_id, command, digest, original_bytes, response_bytes))
+    should_run, retained, token, _ = command_gateway.record_operation_attempt(operation_id, command, payload, background=False)
+    assert should_run and token and retained == payload
+    assert command_gateway.execute_command(operation_id, command, retained, attempt_token=token) is None
+    with owned_postgres() as db:
+        row = db.execute_native("SELECT operation_id,command_name,request_hash,state,payload_json,error_json FROM operation_receipts WHERE operation_id=%s", (operation_id,)).fetchone()
+        assert tuple(row)[:5] == (operation_id, command, digest, "failed", original_bytes)
+        error = json.loads(row[5])
+        assert error["status_code"] == 410 and error["detail"] == "Coverage authoring is retired"
+        assert snapshot(db) == before
+    assert command_gateway.execute_command(complete_id, command, payload) == json.loads(response_bytes)
+    assert command_gateway.record_operation_attempt(operation_id, command, payload, background=False)[0] is False
+    with owned_postgres() as db:
+        assert tuple(db.execute_native("SELECT payload_json,error_json FROM operation_receipts WHERE operation_id=%s", (operation_id,)).fetchone()) == (original_bytes, row[5])
+        assert tuple(db.execute_native("SELECT payload_json,response_json FROM operation_receipts WHERE operation_id=%s", (complete_id,)).fetchone()) == (original_bytes, response_bytes)
+        assert snapshot(db) == before
