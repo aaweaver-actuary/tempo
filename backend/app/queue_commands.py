@@ -130,7 +130,7 @@ def ensure_current_queue(database: PostgresConnection, payload: dict[str, Any]) 
         queue_date = date.fromisoformat(str(payload['queue_date'])).isoformat()
     except (KeyError, TypeError, ValueError) as error:
         raise HTTPException(422, 'A valid queue_date is required') from error
-    active_task = queue_storage.lock_current_queue_task(database)
+    active_task = queue_storage.lock_current_queue_task(database, queue_date)
     projection = queue_storage.current_projection(database, queue_date, active_task)
     if projection and projection['state'] == 'ready' and (not projection['refresh_pending']) and (not projection['has_queued_entries'] or (projection['presentation_membership_hash'] or '').startswith(PRESENTATION_VERSION + ':')):
         return {'queue_date': queue_date, 'refresh_pending': False}

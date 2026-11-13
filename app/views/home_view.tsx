@@ -1370,7 +1370,11 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
                 if (!prefixCard.backendId)
                   throw new Error("The card is missing its local database ID. Refresh the queue.");
                 if (pendingReviews().length) await flushPendingReviews();
-                await acceptPrefixSplitCommand(prefixCard.backendId, prefixCard.revision ?? 1, prefixCard.queueEntryId);
+                const split = await acceptPrefixSplitCommand(prefixCard.backendId, prefixCard.revision ?? 1, prefixCard.queueEntryId);
+                if ("status" in split) {
+                  if (split.status === "held") throw new Error(`The accepted split is held: ${split.reason ?? "check the original attempt"}.`);
+                  return "waiting" as const;
+                }
                 invalidateBranchEvidence();
                 invalidateTrainingQueueCache();
                 setSuggestShorter(false);

@@ -10,7 +10,7 @@ import { API_URL } from "../const";
 import { asFenKey, asIsoDateString, type PositionAnnotation } from "../types";
 import { canonicalFenKey } from "./canonical-line";
 import { usesLocalApi } from "./local";
-import { confirmOperationResponse, PendingOperationError } from "../lib/operation-status";
+import { confirmOriginalOperationResponse, PendingOperationError } from "../lib/operation-status";
 
 const STORAGE_KEY = "tempo-position-annotations";
 type PendingAnnotation = { operationId: string; body: string; repertoireId: string };
@@ -117,7 +117,7 @@ export async function savePositionAnnotation(
         body,
       },
     );
-    response = await confirmOperationResponse(response);
+    response = await confirmOriginalOperationResponse(response, pending.operationId);
     if (!response.ok) throw new Error("Could not save this position note");
     const saved = await readJsonResponse(response, annotationSchema, "saved annotation");
     storeConfirmedAnnotation(saved);
