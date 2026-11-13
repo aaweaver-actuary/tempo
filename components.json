@@ -8500,7 +8500,8 @@
       ],
       "ownershipRole": "Adapt borrowed queue admission storage",
       "dependencyNotes": [
-        "Uses caller connection, bounded pages, frozen-order and capacity fences and existing storage operations; creates no transaction."
+        "Uses caller connection, bounded pages, frozen-order and capacity fences and existing storage operations; creates no transaction.",
+        "Imports private storage _PRIORITY_OPENING_CANDIDATE_BODY; queue_application re-exports this compatibility escape to main. This is not a clean public boundary."
       ],
       "censusScope": "opening_admission"
     }
