@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
+import { createHash } from "node:crypto";
 import { assertBridgePreparedBinding, assertBridgeTargetIdentity, checkLifecycleSource, readSchema62Bridge, schema62BridgeRevision, schema62BridgeTree, readSchema65Baseline, schema65BaselineRevision, schema65BaselineTree, renderInterruptedLifecycle } from "../../scripts/lifecycle-source-preflight.mjs";
 
 test("schema65 baseline requires exact detached source and complete immutable image roles", t => {
@@ -31,6 +32,27 @@ test("schema65 baseline requires exact detached source and complete immutable im
   assert.throws(() => readSchema65Baseline(environment, options), /build metadata is unavailable/);
   assert.throws(() => readSchema65Baseline({ ...environment, DOCKER_HOST: "override" }, { runGit }), /without overrides/);
   assert.throws(() => readSchema65Baseline(environment, { runGit: () => ({ status: 0, stdout: "wrong" }) }), /stale or dirty/);
+});
+
+test("schema65 installed image mode binds every role to the exact deployment receipt", t => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "tempo-schema65-receipt-"))); t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "database/tempo_storage/ddl"), { recursive: true });
+  writeFileSync(join(root, "database/tempo_storage/ddl/schema_version.py"), "POSTGRES_SCHEMA_VERSION = 65\n");
+  const roles = ["api", "foreground-worker", "background-worker", "background-scheduler", "web", "migration"];
+  const images = Object.fromEntries(roles.map((role, index) => [role, `sha256:${String(index).repeat(64)}`]));
+  const receipt = { version: 1, revision: schema65BaselineRevision, schema: 65, evidence: { commit: schema65BaselineRevision }, verified_at: "2026-01-01", images };
+  const bytes = Buffer.from(JSON.stringify(receipt)); writeFileSync(join(root, "deployment-receipt.json"), bytes);
+  const manifest = { version: 1, kind: "installed-receipt", revision: schema65BaselineRevision, tree: schema65BaselineTree, platform: "linux/arm64", images: { ...images, schema: images.api }, provenance: { source_root: root, receipt_sha256: createHash("sha256").update(bytes).digest("hex") } };
+  const file = join(root, "images.json"); writeFileSync(file, JSON.stringify(manifest));
+  const runGit = (_command, args) => ({ status: 0, stdout: args.includes("HEAD^{tree}") ? schema65BaselineTree : args.includes("HEAD") ? schema65BaselineRevision : args.includes("worktree") ? `worktree ${root}\nHEAD ${schema65BaselineRevision}\ndetached\n` : "" });
+  const environment = { TEMPO_LIFECYCLE_SCHEMA65_ROOT: root, TEMPO_LIFECYCLE_SCHEMA65_IMAGES: file };
+  const options = { runGit, installedReceiptSha256: manifest.provenance.receipt_sha256 };
+  assert.equal(readSchema65Baseline(environment, options).manifest.kind, "installed-receipt");
+  assert.throws(() => readSchema65Baseline(environment, { runGit }), /receipt identity differs/);
+  writeFileSync(file, JSON.stringify({ ...manifest, images: { ...manifest.images, web: images.api } }));
+  assert.throws(() => readSchema65Baseline(environment, options), /receipt identity differs/);
+  writeFileSync(file, JSON.stringify(manifest)); writeFileSync(join(root, "deployment-receipt.json"), Buffer.concat([bytes, Buffer.from(" ")]));
+  assert.throws(() => readSchema65Baseline(environment, options), /receipt identity differs/);
 });
 
 test("current65 source refuses wrong schema and historical overrides before reading baseline", t => {

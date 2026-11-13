@@ -71,13 +71,26 @@ export function classifyLifecycleOperation(value, expected) {
   if (["failed", "blocked"].includes(value.state)) throw new Error(`Lifecycle operation ${value.state}: ${value.code ?? "no code"}`);
   throw new Error("Unknown lifecycle operation state");
 }
-export async function pollLifecycleOperation(operationId, read, pause, limit = 120) {
+export async function pollLifecycleOperation(operationId, read, pause, limit = 120, deadline = Infinity, now = Date.now) {
   for (let attempt = 0; attempt < limit; attempt++) {
+    if (now() >= deadline) break;
     await pause();
+    if (now() >= deadline) break;
     const result = await read(operationId);
     if (classifyLifecycleOperation(result, operationId) === "complete") return result.response;
   }
   throw new Error("Operation did not settle within the bounded poll limit");
+}
+export async function readLifecycleQueue(read, pause, deadline, now = Date.now) {
+  while (now() < deadline) {
+    const result = await read(deadline);
+    if (!result.pending) {
+      if (!Array.isArray(result.value?.cards)) throw new Error("Authoritative queue envelope is invalid");
+      return result.value;
+    }
+    if (now() < deadline) await pause();
+  }
+  throw new Error("Authoritative queue did not settle within the bounded deadline");
 }
 
 // The caller supplies the owned target and authentic saved-review receipt.
@@ -354,27 +367,39 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       await old.inspectTarget(); await lifecycle("current65_baseline", { recreate: false }, old);
       const oldDeployment = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));
       assert.equal(oldDeployment.revision, revision); assert.equal(oldDeployment.schema, 65);
-      const request = async (path, options = {}) => {
-        let response = await fetch(`${target.webUrl}/api/${path}`, options);
+      const request = async (path, options = {}, { distinguishPending = false, deadline = Infinity } = {}) => {
+        let response = await fetch(`${target.webUrl}/api/${path}`, Number.isFinite(deadline) ? { ...options, signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())) } : options);
         if (response.status === 202) {
           const pending = await response.json();
           const operationId = assertLifecycleOperationIdentity(pending, options.headers?.["Idempotency-Key"]);
-          return pollLifecycleOperation(operationId, async id => {
-            response = await fetch(`${target.webUrl}/api/operations/${encodeURIComponent(id)}`);
+          const value = await pollLifecycleOperation(operationId, async id => {
+            response = await fetch(`${target.webUrl}/api/operations/${encodeURIComponent(id)}`, Number.isFinite(deadline) ? { signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())) } : undefined);
             if (!response.ok) throw new Error(`Operation polling failed: HTTP ${response.status}`);
             return response.json();
-          }, () => new Promise(resolve => setTimeout(resolve, 250)));
+          }, () => new Promise(resolve => setTimeout(resolve, 250)), 120, deadline);
+          return distinguishPending ? { pending: true, value } : value;
         }
         if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
-        return response.json();
+        const value = await response.json();
+        return distinguishPending ? { pending: false, value } : value;
       };
       const settings = await request("settings");
       await request("settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...settings, new_cards_per_day: 100, study_new_per_day: 100 }) });
+      const tacticBody = { attempt_id: "current65-tactic-attempt", puzzle_id: "current65-tactic-puzzle", deck_id: "current65-tactic-deck", correct: true, clean: true,
+        source_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", moves: ["e2e4", "e7e5"] };
+      const tactic = await request("tactics/attempt", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": "current65-tactic-operation" }, body: JSON.stringify(tacticBody) });
+      assert(tactic.card_id && tactic.mode && tactic.next_due, "Current Tactics owner must commit an authentic attempt");
+      const tacticReceipt = await request("operations/current65-tactic-operation");
+      assertLifecycleOperationIdentity(tacticReceipt, "current65-tactic-operation");
+      assert.equal(tacticReceipt.state, "complete"); assert.deepEqual(tacticReceipt.response, tactic);
       const form = new FormData(); form.set("file", new Blob([studyDurabilityPgn], { type: "application/x-chess-pgn" }), "current65.pgn"); form.set("trained_color", "white"); form.set("initial_depth", "6");
       const imported = await request("imports/pgn", { method: "POST", body: form });
       let card;
+      const queueDeadline = Date.now() + 60_000;
       for (let attempt = 0; attempt < 120; attempt++) {
-        const queue = await request("queue/today"); card = queue.cards.find(item => item.repertoire_id === imported.repertoire_id);
+        if (Date.now() >= queueDeadline) break;
+        const queue = await readLifecycleQueue(deadline => request("queue/today", {}, { distinguishPending: true, deadline }), () => new Promise(resolve => setTimeout(resolve, 250)), queueDeadline);
+        card = queue.cards.find(item => item.repertoire_id === imported.repertoire_id);
         if (card?.queue_entry_id && card.moves?.length) break;
         await new Promise(resolve => setTimeout(resolve, 500));
       }
@@ -403,9 +428,10 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       };
       const readVersions = async () => JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "-c", "import json,os,psycopg\nwith psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL']) as db: print(json.dumps([r[0] for r in db.execute('select version from tempo_schema_migrations order by version')]))"])).stdout);
       const snapshot = async () => {
-        const raw = JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "-c", "import json,os,sys,psycopg\nwith psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL']) as db:\n print(json.dumps({'receipt':db.execute(\"select row_to_json(t) from (select * from operation_receipts where operation_id='current65-original-review') t\").fetchone()[0], 'review':db.execute('select row_to_json(t) from (select id,card_id,rating,reviewed_at,previous_interval,next_interval from reviews where id=%s) t',(int(sys.argv[1]),)).fetchone()[0], 'queue':db.execute('select row_to_json(t) from (select * from daily_queue where id=%s) t',(int(sys.argv[2]),)).fetchone()[0]},default=str))", String(review.review_id), String(card.queue_entry_id)])).stdout);
+        const raw = JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "-c", "import json,os,sys,psycopg\nwith psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL']) as db:\n print(json.dumps({'receipt':db.execute(\"select row_to_json(t) from (select * from operation_receipts where operation_id='current65-original-review') t\").fetchone()[0], 'review':db.execute('select row_to_json(t) from (select id,card_id,rating,reviewed_at,previous_interval,next_interval from reviews where id=%s) t',(int(sys.argv[1]),)).fetchone()[0], 'queue':db.execute('select row_to_json(t) from (select * from daily_queue where id=%s) t',(int(sys.argv[2]),)).fetchone()[0], 'tactic_progress':db.execute(\"select row_to_json(t) from (select * from tactic_progress where puzzle_id='current65-tactic-puzzle') t\").fetchone()[0], 'tactic_attempt':db.execute(\"select row_to_json(t) from (select * from tactic_discovery_attempts where id='current65-tactic-attempt') t\").fetchone()[0], 'tactic_receipt':db.execute(\"select row_to_json(t) from (select * from operation_receipts where operation_id='current65-tactic-operation') t\").fetchone()[0], 'tactic_card':db.execute('select row_to_json(t) from (select * from cards where id=%s) t',(sys.argv[3],)).fetchone()[0]},default=str))", String(review.review_id), String(card.queue_entry_id), tactic.card_id])).stdout);
         const history = JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "-e", "TEMPO_CLI_CURRENT65_SNAPSHOT=1", "migration", "database/tests/check_postgres_cli_lifecycle.py", "--history"])).stdout);
-        return { review: { review_id: review.review_id, queue_entry_id: card.queue_entry_id, row: raw.review }, receipt: raw.receipt, queue: raw.queue, history };
+        return { review: { review_id: review.review_id, queue_entry_id: card.queue_entry_id, row: raw.review }, receipt: raw.receipt, queue: raw.queue, history,
+          tactic: { progress: raw.tactic_progress, attempt: raw.tactic_attempt, receipt: raw.tactic_receipt, card: raw.tactic_card } };
       };
       const guardPath = join(stateDirectory, "migration-guard.json");
       await verifyCurrent65Transition({ makeCandidate, lifecycle, snapshot, readVersions, commandLog,
@@ -415,6 +441,8 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       assert.deepEqual(await request("operations/current65-original-review"), receipt);
       const replay = await measured("current65_original_replay", "scenario", () => post(`cards/${card.id}/review`, reviewBody, "current65-original-review"));
       assert.deepEqual(replay, review, "The exact original review operation must replay its original result");
+      assert.deepEqual(await request("operations/current65-tactic-operation"), tacticReceipt);
+      assert.deepEqual(await request("tactics/attempt", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": "current65-tactic-operation" }, body: JSON.stringify(tacticBody) }), tactic, "The original Tactics attempt must replay");
       console.log("PASS owned schema65-to-66 original review, backup, interruption and retry lifecycle");
     } else {
     if (environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') {

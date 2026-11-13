@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { test } from "node:test";
-import { assertCurrent63Guard, assertLifecycleOperationIdentity, classifyLifecycleOperation, pollLifecycleOperation, validateLifecycleProfile, verifyTempoCliLifecycle, verifyCurrent65Transition } from "../../scripts/check-tempo-cli.mjs";
+import { assertCurrent63Guard, assertLifecycleOperationIdentity, classifyLifecycleOperation, pollLifecycleOperation, readLifecycleQueue, validateLifecycleProfile, verifyTempoCliLifecycle, verifyCurrent65Transition } from "../../scripts/check-tempo-cli.mjs";
 
 test("current65 polling binds acknowledgment and every receipt to the original operation", () => {
   assert.equal(assertLifecycleOperationIdentity({ operation_id: "original" }, "original"), "original");
@@ -19,6 +19,20 @@ test("current65 polling waits for matching unknown but terminates at its bound",
   let reads = 0;
   await assert.rejects(pollLifecycleOperation("original", async () => { reads++; return { operation_id: "original", state: "unknown" }; }, async () => {}, 2), /bounded poll limit/);
   assert.equal(reads, 2);
+});
+test("current65 queue rereads authority after a 202 issue receipt", async () => {
+  let reads = 0;
+  const queue = await readLifecycleQueue(async () => {
+    reads++;
+    if (reads === 1) {
+      const response = await pollLifecycleOperation("issue-original", async () => ({ operation_id: "issue-original", state: "complete", response: { issued: true } }), async () => {}, 1);
+      return { pending: true, value: response };
+    }
+    return { pending: false, value: { cards: [{ id: "playable" }] } };
+  }, async () => {}, 10, () => 0);
+  assert.equal(reads, 2); assert.equal(queue.cards[0].id, "playable");
+  for (const receipt of [{ operation_id: "foreign", state: "complete" }, { operation_id: "issue-original", state: "failed" }])
+    await assert.rejects(readLifecycleQueue(async () => ({ pending: true, value: await pollLifecycleOperation("issue-original", async () => receipt, async () => {}, 1) }), async () => {}, 10, () => 0));
 });
 
 test("current65 lifecycle preserves original guard and review through refusal and retry", async () => {

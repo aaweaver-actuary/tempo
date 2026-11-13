@@ -4,6 +4,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { pathToFileURL } from "node:url";
+import { createHash } from "node:crypto";
 import { buildMaterials } from "./release-candidate-artifacts.mjs";
 
 export function renderInterruptedLifecycle(root) {
@@ -32,8 +33,9 @@ export const schema62BridgeRevision = "0765a54e4a404d187f044dde2f902075b4a5e038"
 export const schema62BridgeTree = "5a48d33a64180be6cfe67e6bdd4996ddeed4bfe0";
 export const schema65BaselineRevision = "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1";
 export const schema65BaselineTree = "3cf62fd976b2f8623f3eb88f576b30639c1d62f4";
+export const schema65InstalledReceiptSha256 = "7adcec1a44377e4a68959fa3cdd6ddb05b0c328e63c28e21cacc35aed0128ff2";
 // This is a disposable-source and immutable-image binding, never a live target.
-export function readSchema65Baseline(environment = process.env, { runGit = spawnSync, verifyBuildMaterials = buildMaterials } = {}) {
+export function readSchema65Baseline(environment = process.env, { runGit = spawnSync, verifyBuildMaterials = buildMaterials, installedReceiptSha256 = schema65InstalledReceiptSha256 } = {}) {
   if (["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"].some(name => environment[name])) throw new Error("Schema-65 baseline requires a named Docker context without overrides.");
   const root = environment.TEMPO_LIFECYCLE_SCHEMA65_ROOT, file = environment.TEMPO_LIFECYCLE_SCHEMA65_IMAGES;
   if (!root || !isAbsolute(root) || resolve(root) !== root || !file || !isAbsolute(file)) throw new Error("Schema-65 baseline requires absolute source and image manifest paths.");
@@ -46,15 +48,22 @@ export function readSchema65Baseline(environment = process.env, { runGit = spawn
   if (!/^POSTGRES_SCHEMA_VERSION\s*=\s*65\s*$/m.test(readFileSync(join(root, "database/tempo_storage/ddl/schema_version.py"), "utf8"))) throw new Error("Schema-65 source version differs.");
   let manifest; try { manifest = JSON.parse(readFileSync(file, "utf8")); } catch { throw new Error("Schema-65 image manifest is unavailable or invalid."); }
   const roles = ["schema", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "migration"];
-  if (manifest?.version !== 1 || manifest?.kind !== "local-seed" || manifest?.revision !== schema65BaselineRevision || manifest?.tree !== schema65BaselineTree || manifest?.platform !== "linux/arm64" || !manifest.images || !isDeepStrictEqual(Object.keys(manifest.images).sort(), roles.sort()) || manifest.images.schema !== manifest.images.api || roles.some(role => !/^sha256:[0-9a-f]{64}$/.test(manifest.images[role] ?? ""))) throw new Error("Schema-65 image manifest revision or roles differ.");
-  if (manifest.provenance?.source_root !== root || !manifest.provenance.metadata) throw new Error("Schema-65 image build provenance is missing.");
-  for (const [name, dockerfile, role] of [["backend", "backend/Dockerfile", "api"], ["web", "Dockerfile.web", "web"], ["migration", "Dockerfile.postgres-maintenance", "migration"]]) {
-    let metadata; try { metadata = JSON.parse(readFileSync(join(dirname(file), `${name}-build.json`), "utf8")); }
-    catch { throw new Error(`Schema-65 ${name} build metadata is unavailable.`); }
-    const observed = verifyBuildMaterials(metadata, { dockerfile: readFileSync(join(root, dockerfile), "utf8"), platform: "linux/arm64", expectedImageId: manifest.images[role] });
-    if (!isDeepStrictEqual(observed, manifest.provenance.metadata[name])) throw new Error(`Schema-65 ${name} build materials differ.`);
+  if (manifest?.version !== 1 || !["local-seed", "installed-receipt"].includes(manifest?.kind) || manifest?.revision !== schema65BaselineRevision || manifest?.tree !== schema65BaselineTree || manifest?.platform !== "linux/arm64" || !manifest.images || !isDeepStrictEqual(Object.keys(manifest.images).sort(), roles.sort()) || manifest.images.schema !== manifest.images.api || roles.some(role => !/^sha256:[0-9a-f]{64}$/.test(manifest.images[role] ?? ""))) throw new Error("Schema-65 image manifest revision or roles differ.");
+  if (manifest.provenance?.source_root !== root) throw new Error("Schema-65 source binding differs.");
+  if (manifest.kind === "local-seed") {
+    if (!manifest.provenance.metadata) throw new Error("Schema-65 image build provenance is missing.");
+    for (const [name, dockerfile, role] of [["backend", "backend/Dockerfile", "api"], ["web", "Dockerfile.web", "web"], ["migration", "Dockerfile.postgres-maintenance", "migration"]]) {
+      let metadata; try { metadata = JSON.parse(readFileSync(join(dirname(file), `${name}-build.json`), "utf8")); }
+      catch { throw new Error(`Schema-65 ${name} build metadata is unavailable.`); }
+      const observed = verifyBuildMaterials(metadata, { dockerfile: readFileSync(join(root, dockerfile), "utf8"), platform: "linux/arm64", expectedImageId: manifest.images[role] });
+      if (!isDeepStrictEqual(observed, manifest.provenance.metadata[name])) throw new Error(`Schema-65 ${name} build materials differ.`);
+    }
+    if (["foreground-worker", "background-worker", "background-scheduler"].some(role => manifest.images[role] !== manifest.images.api)) throw new Error("Schema-65 backend role images differ from the built source artifact.");
+  } else {
+    let bytes, receipt; try { bytes = readFileSync(join(dirname(file), "deployment-receipt.json")); receipt = JSON.parse(bytes); }
+    catch { throw new Error("Schema-65 installed deployment receipt is unavailable."); }
+    if (manifest.provenance.receipt_sha256 !== installedReceiptSha256 || createHash("sha256").update(bytes).digest("hex") !== installedReceiptSha256 || receipt.version !== 1 || receipt.revision !== schema65BaselineRevision || receipt.schema !== 65 || receipt.evidence?.commit !== schema65BaselineRevision || !receipt.verified_at || roles.filter(role => role !== "schema").some(role => receipt.images?.[role] !== manifest.images[role])) throw new Error("Schema-65 installed deployment receipt identity differs.");
   }
-  if (["foreground-worker", "background-worker", "background-scheduler"].some(role => manifest.images[role] !== manifest.images.api)) throw new Error("Schema-65 backend role images differ from the built source artifact.");
   return { root, manifest };
 }
 const schema62Roles = ["schema", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "migration", "game-feedback-worker"];
@@ -114,7 +123,7 @@ export function checkLifecycleSource({ root = process.cwd(), environment = proce
   if (profile === "current65") {
     if (!nativeVersion || Number(nativeVersion[1]) !== 66 || ["TEMPO_LIFECYCLE_P0_59_ONLY", "TEMPO_PG_STALE_DELIVERY_ONLY", "TEMPO_LIFECYCLE_MANAGED_REHEARSAL", "TEMPO_LIFECYCLE_SHIPPING_REHEARSAL", "TEMPO_LIFECYCLE_STUDY_PREFLIGHT_ONLY", "W08_CAPTURE_ONLY", "W08_COPY_ONLY"].some(name => environment[name] === "1") || environment.TEMPO_LIFECYCLE_SCHEMA62_ROOT || environment.TEMPO_LIFECYCLE_SCHEMA62_IMAGES || environment.TEMPO_LIFECYCLE_SCHEMA61_IMAGES || environment.TEMPO_LIFECYCLE_SCHEMA59_IMAGES)
       throw new Error("Current65 lifecycle requires candidate schema 66 without historical or scenario overrides; no resources acquired.");
-    readSchema65Baseline(environment);
+    if (readSchema65Baseline(environment).manifest.kind !== "installed-receipt") throw new Error("Current65 qualification requires the exact installed image receipt; a source reconstruction is separate evidence.");
     const candidate = spawnSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8", timeout: 15_000 });
     const secret = environment.TEMPO_PG_TEST_SECRETS && relative(root, environment.TEMPO_PG_TEST_SECRETS);
     if (secret && (!/^\.tempo-pg-test-secrets-[^/]+$/.test(secret) || !existsSync(environment.TEMPO_PG_TEST_SECRETS))) throw new Error("Current65 task-owned secret path is invalid.");

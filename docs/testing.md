@@ -321,14 +321,19 @@ disposable rehearsal. It requires `TEMPO_LIFECYCLE_SCHEMA65_ROOT` to identify a
 clean detached worktree at d79ae4fcc4b006985114d85b5fb9a5aca8becbf1 and
 `TEMPO_LIFECYCLE_SCHEMA65_IMAGES` to identify an absolute local immutable image
 manifest for that exact source and tree. Candidate source must also be clean.
-The manifest uses `version: 1`, `kind: "local-seed"`, `platform: "linux/arm64"`,
+The manifest uses `version: 1`, `platform: "linux/arm64"`,
 the exact revision and tree, an `images` map for `schema`, `api`,
 `foreground-worker`, `background-worker`, `background-scheduler`, `web` and
-`migration`, and `provenance` containing `source_root` and the verified build
-materials for `backend`, `web` and `migration`. The three corresponding
-`*-build.json` BuildKit metadata files must be beside the manifest. The schema
-and worker roles use the same backend image ID. The runner validates the metadata
-against the pinned Dockerfiles and inspects every immutable image before use.
+`migration`, and `provenance` containing `source_root`. For actual registered
+baseline applicability, `kind: "installed-receipt"` also requires the exact
+pinned deployment receipt SHA-256 and a byte-identical `deployment-receipt.json`
+beside the manifest. Its six application and maintenance image IDs must match
+that receipt; `schema` uses the same backend image as `api`. The runner inspects
+each immutable image. This binds the proof to the recorded deployed IDs and does
+not claim an independent build attestation. A separate `kind: "local-seed"`
+reconstruction requires the verified BuildKit metadata and materials for
+`backend`, `web` and `migration`; it does not establish equivalence to installed
+image IDs and cannot qualify the current profile.
 The preflight rejects historical scenario overrides before acquiring resources.
 The rehearsal initializes an empty owned predecessor database, preserves original
 Study/Tactics rows and an authentic saved-review receipt, and exercises backup,
