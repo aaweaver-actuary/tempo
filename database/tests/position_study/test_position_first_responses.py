@@ -273,6 +273,27 @@ def test_checkpoint_receipt_preserves_original_raw_json_and_rejects_malformed_id
             evidence._checkpoint_receipt(invalid, grade, replayed=True)
 
 
+def test_checkpoint_jsonb_receipt_replays_unchanged_when_source_is_stale():
+    from tempo_evidence_math.position_learning import Hold
+
+    frozen = plan()
+    payload = event(actual_uci='e2e4')
+    original = json.loads(json.dumps(payload))
+    row = {'event_id': payload['event_id'], 'attempt_id': payload['attempt_id'],
+           'payload_json': payload, 'payload_digest': evidence._position_digest(payload),
+           'unknown_original_field': 'preserved'}
+    grade = {'grade': 'good', 'event_id': payload['event_id']}
+    saved = evidence._checkpoint_receipt(row, grade, replayed=True)
+    prep = evidence.PositionCheckpointPreparation(None, frozen, Hold('source_changed'), evidence._POSITION_CHECKPOINT_SEAL)
+    db = object()
+    fence = evidence.PositionCheckpointFence(prep, db, storage, 'authored', evidence._POSITION_CHECKPOINT_SEAL)
+    assert evidence.position_completion_inputs(fence, (saved,)).event_ids == (payload['event_id'],)
+    evidence.fence_position_completion(db, fence, (saved,))
+    assert saved.receipt is row and saved.receipt['payload_json'] is payload
+    assert payload == original and row['unknown_original_field'] == 'preserved'
+    assert saved.grade_receipt is grade
+
+
 def test_issued_manifest_covers_displayed_context_and_repeated_position_ordinals():
     import chess
     from tempo_evidence_math import opening_position_key
