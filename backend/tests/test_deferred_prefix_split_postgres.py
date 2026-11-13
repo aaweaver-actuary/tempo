@@ -189,6 +189,7 @@ def test_waiting_split_does_not_block_unrelated_queue_head(native):
         assert head is not None and head['id'] == other['entry']
         assert fetch_intent(db, blocked)['intent_id'] == accepted['intent_id']
         assert fetch_intent(db, blocked)['state'] == 'waiting_review'
+        db.execute_native("UPDATE study_deferred_prefix_splits SET next_check_at=NOW()+INTERVAL '1 day' WHERE intent_id=%s", (accepted['intent_id'],))
 
 
 def test_lost_child_wake_recovers_same_operation_via_existing_worker(native, monkeypatch):
