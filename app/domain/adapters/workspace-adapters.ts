@@ -1,7 +1,7 @@
 import * as z from "zod";
 import type { AnalysisLine } from "../analysis";
 import { asSanMove } from "../shared";
-import { parseData, validRecords, type ValidationReporter } from "../../lib/data-validation";
+import { parseData, validRecords, type ValidationReporter, type ValidationEffects } from "../validation";
 import {
   settingsResponseSchema,
   repertoireLinesResponseSchema,
@@ -11,17 +11,20 @@ import {
   tacticProgressSchema,
 } from "../schemas";
 
-export function repertoireLinesFromPayload(raw: unknown, reporter?: ValidationReporter): AnalysisLine[] {
+type ValidationInput = ValidationReporter | ValidationEffects;
+function effectsFor(input?: ValidationInput, shouldPublishDiagnostics?: () => boolean): ValidationEffects {
+  return { ...(typeof input === "function" ? { reportError: input } : input),
+    ...(shouldPublishDiagnostics ? { shouldPublishDiagnostics } : {}) };
+}
+
+export function repertoireLinesFromPayload(raw: unknown, input?: ValidationInput): AnalysisLine[] {
   const body = parseData(
     repertoireLinesResponseSchema,
     raw,
     "repertoire lines",
-    undefined,
-    undefined,
-    undefined,
-    reporter,
+    { effects: effectsFor(input) },
   );
-  return validRecords(repertoireLineSchema, body.lines, "repertoire line", undefined, reporter).map(
+  return validRecords(repertoireLineSchema, body.lines, "repertoire line", effectsFor(input)).map(
     (line) => ({
       id: line.id,
       repertoireId: line.repertoire_id,
@@ -35,9 +38,9 @@ export function repertoireLinesFromPayload(raw: unknown, reporter?: ValidationRe
 }
 
 // The cache holds transport values, never unchecked domain values.
-export function validateWorkspacePayload(url: string, raw: unknown, shouldPublishDiagnostics?: () => boolean, reporter?: ValidationReporter): unknown {
+export function validateWorkspacePayload(url: string, raw: unknown, shouldPublishDiagnostics?: () => boolean, input?: ValidationInput): unknown {
   const parseWorkspaceData = <T>(schema: z.ZodType<T>, value: unknown, source: string) =>
-    parseData(schema, value, source, undefined, undefined, shouldPublishDiagnostics, reporter);
+    parseData(schema, value, source, { effects: effectsFor(input, shouldPublishDiagnostics) });
   const path = new URL(url, "http://tempo.local").pathname;
   switch (path) {
     case "/api/settings":
@@ -53,8 +56,7 @@ export function validateWorkspacePayload(url: string, raw: unknown, shouldPublis
           repertoireLineSchema,
           body.lines,
           "repertoire line",
-          shouldPublishDiagnostics,
-          reporter,
+          effectsFor(input, shouldPublishDiagnostics),
         ),
       };
     }
@@ -69,8 +71,7 @@ export function validateWorkspacePayload(url: string, raw: unknown, shouldPublis
           repertoiresResponseSchema.shape.repertoires.element,
           body.repertoires,
           "repertoire",
-          shouldPublishDiagnostics,
-          reporter,
+          effectsFor(input, shouldPublishDiagnostics),
         ),
       };
     }

@@ -3,6 +3,8 @@ import * as z from "zod";
 import { Chess } from "chess.js";
 import { queueCardsFromPayload } from "../../app/domain/adapters/practice-card-adapters";
 import { computeStudyTask } from "../../app/lib/study-computation";
+import { computeEssentialStudyTask } from "../../app/lib/essential-study-computation";
+import type { ValidationIssue } from "../../app/domain/validation";
 import {
   builderSessionSchema,
   discoveryRecommendationSchema,
@@ -24,6 +26,11 @@ import * as browserValidation from "../../app/lib/validated-data";
 import * as pureValidation from "../../app/lib/data-validation";
 import { clearDebugErrors, debugErrors, reportDebugError, resolveValidationIncidentsForEndpoint } from "../../app/lib/debug-reporting";
 import { clearNotificationHistory, notifications } from "../../app/lib/notifications";
+
+const diagnosticEffects = {
+  reportIssue: ({ source, raw, message, recordId }: ValidationIssue) =>
+    browserValidation.reportDataDiagnostic(source, raw, message, recordId),
+};
 
 beforeEach(clearDataDiagnostics);
 
@@ -173,10 +180,10 @@ it.each(["available", "unavailable", undefined])("optional_encounter_evidence_st
 });
 
 it("optional_encounter_status_keeps_unknown_values_and_fields_quarantined", () => {
-  expect(computeStudyTask({ kind: "queue", payload: { cards: [
+  expect(computeEssentialStudyTask({ kind: "queue", payload: { cards: [
     { ...rawCard, encounter_evidence_status: "unknown" },
     { ...rawCard, encounter_evidence_status: "available", unexpected: true },
-  ], count: 2 } })).toEqual([]);
+  ], count: 2 } }, diagnosticEffects)).toEqual([]);
   expect(dataDiagnostics()).toHaveLength(2);
 });
 
@@ -240,7 +247,7 @@ it("malformed FEN, null UCI and illegal queue lines are quarantined without disc
       { ...rawCard, id: "null", moves: ["0000"] },
       { ...rawCard, id: "illegal", moves: ["e2e5"] },
     ],
-  });
+  }, diagnosticEffects);
   expect(cards).toHaveLength(1);
   expect(cards[0].queueEntryId).toBe(42);
   expect(dataDiagnostics()).toHaveLength(3);
@@ -279,7 +286,7 @@ it("controlled queue payload structural drift produces a named diagnostic instea
         { ...rawCard, queue_entry_id: "42" },
         { ...rawCard, unrecognized: "value" },
       ],
-    }),
+    }, diagnosticEffects),
   ).toEqual([]);
   expect(dataDiagnostics()).toHaveLength(2);
 });
