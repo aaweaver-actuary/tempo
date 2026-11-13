@@ -646,13 +646,13 @@ revive an optional producer or establish runtime behavior. Previous gaps remain 
 A fiftieth selection maps supplied-input frozen opening math and bounded capacity
 frontier proposals, their current composition edge and unmapped admission/main
 consumers. This source map does not decide the disputed capacity behavior or
-qualify runtime; previous fixture gaps remain open. The existing lazy cycle
-between position queue admission and next-card preparation remains unresolved.
+qualify runtime; previous fixture gaps remain open. At that selection, the lazy cycle between position queue admission and next-card
+preparation remained unresolved.
 
 A fifty-first selection maps existing opening admission planning and borrowed
 storage/capacity adapters, including current frozen and Study-only fences. This
 source map does not decide the disputed capacity behavior or qualify runtime;
-previous fixture gaps and the position-admission lazy cycle remain open.
+previous fixture gaps and the position-admission lazy cycle were open at that selection.
 
 Three existing namespace initializers are assigned to their sole mapped local
 review bridge, prefix mutation and Study capture-interface owners. The interfaces
@@ -663,11 +663,17 @@ A fifty-second selection records API, worker and Celery composition. Python
 imports remain dependency edges; Celery task loading is a separate typed lifecycle
 relationship and is not asserted acyclic. Witnesses check beat target names, not
 their intervals, and exact task queue mappings. Static witnesses do not prove startup,
-recovery or delivery. Existing fixture gaps and the position admission cycle remain
-open.
+recovery or delivery. Existing fixture gaps remained open and the position admission cycle remained
+open at that selection.
 
-At this base revision, 20 of 289 tracked Python files in those trees remain
-outside the combined 269-file selections. The registry alone assigns owners;
+A fifty-third selection maps the released carrier policy and position admission
+composition. Next-card preparation and admission both import the extracted carrier;
+admission still uses the next-card source cache. The former two-way import is
+removed in source; native and assembled behavior remain unqualified. This integration
+does not close existing fixture gaps.
+
+At this base revision, 19 of 290 tracked Python files in those trees remain
+outside the combined 271-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

@@ -2332,7 +2332,8 @@
         "study-queue-position-lock",
         "tactics-daily-admission",
         "durable-task-application",
-        "tactics-puzzle-helpers"
+        "tactics-puzzle-helpers",
+        "position-admission-application"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -7070,7 +7071,17 @@
       ],
       "dependencies": [
         "study-next-storage",
-        "study-position-issuance"
+        "study-position-issuance",
+        "position-carrier-policy",
+        "evidence-math",
+        "position-source-preparation",
+        "http-queue-projection",
+        "database-connection-composition",
+        "study-position-due-storage",
+        "position-issued-plan-contract",
+        "position-issuance-preparation",
+        "position-route-planner",
+        "background-runtime-application"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -8694,6 +8705,86 @@
       "lifecycleEdges": [
         "backend/app/celery_app.py#celery-loader#worker-startup-composition#app.tasks"
       ]
+    },
+    {
+      "id": "position-carrier-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/position_learning",
+      "publicExports": [
+        "backend/app/study/position_learning/position_carrier.py#select_carrier"
+      ],
+      "dependencies": [
+        "evidence-math"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/position_learning/position_carrier.py"
+      ],
+      "ownershipRole": "Select exact authored position carrier",
+      "dependencyNotes": [
+        "Selects an eligible deterministic physical carrier for the exact decision; no issuance or schedule mutation."
+      ],
+      "censusScope": "position_admission"
+    },
+    {
+      "id": "position-admission-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/position_queue_admission.py#prepare_due",
+        "backend/app/services/position_queue_admission.py#admit_due",
+        "backend/app/services/position_queue_admission.py#prepare_opening_introduction",
+        "backend/app/services/position_queue_admission.py#fence_opening_introduction",
+        "backend/app/services/position_queue_admission.py#apply_opening_introduction",
+        "backend/app/services/position_queue_admission.py#redundant_opening_introduction",
+        "backend/app/services/position_queue_admission.py#prepare_targeted_position_introduction",
+        "backend/app/services/position_queue_admission.py#fence_targeted_position_introduction",
+        "backend/app/services/position_queue_admission.py#admit_targeted_position_introduction"
+      ],
+      "dependencies": [
+        "evidence-math",
+        "position-carrier-policy",
+        "position-source-preparation",
+        "position-source-storage",
+        "position-owner-epoch-storage",
+        "study-position-due-storage",
+        "study-queue-position-lock",
+        "queue-refresh-admission-storage",
+        "study-position-introduction-storage",
+        "scheduling",
+        "study-queue-preparation"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/position_queue_admission.py"
+      ],
+      "ownershipRole": "Prepare and fence position admissions",
+      "dependencyNotes": [
+        "Uses current source/epoch and due-state fences, cached source preparation, existing queue locks, introduction admission and scheduling capabilities. The original select_carrier import remains a compatibility re-export."
+      ],
+      "censusScope": "position_admission"
     }
   ],
   "suites": [

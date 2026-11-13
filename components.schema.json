@@ -205,7 +205,8 @@
               "lifecycle_projection",
               "opening_kernels",
               "opening_admission",
-              "startup_composition"
+              "startup_composition",
+              "position_admission"
             ]
           }
         }
