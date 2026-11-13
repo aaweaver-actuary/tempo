@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Chess } from 'chess.js';
 import type { APIRequestContext, APIResponse, Page } from '@playwright/test';
 import { test, expect } from './observability';
@@ -85,6 +86,11 @@ test('real broker wakes committed original split child before periodic grace and
   test.setTimeout(180_000);
   const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
   const compose = postgresFixtureComposeArguments(project);
+  const evidenceDirectory = join('test-results', 'native');
+  mkdirSync(evidenceDirectory, {recursive:true});
+  const evidencePath = join(evidenceDirectory, `split-broker-wake-${project}-${randomUUID()}.json`);
+  let evidence: unknown;
+  try {
   await withOwnedPrefix(page, request, async ({card, entry, wakeSnapshot, track}) => {
     const preview = await request.get(`${api}/cards/${card}/prefix-split`);
     expect(preview.ok()).toBe(true);
@@ -143,7 +149,20 @@ test('real broker wakes committed original split child before periodic grace and
       '-e','TEMPO_REDIS_URL=redis://redis:6379/0','schema','python','-',card,accepted.intent_id,child],
       {input:duplicate,encoding:'utf8',timeout:15_000});
     await expect.poll(completedCount, {timeout:30_000}).toBeGreaterThan(existingCount);
-    expect(JSON.stringify(wakeSnapshot(acceptanceId, reviewId, accepted.intent_id))).toBe(before);
-    await testInfo.attach('split-broker-wake-receipt', {body:JSON.stringify({child, elapsed_ms:elapsed, proof}),contentType:'application/json'});
+    const after = wakeSnapshot(acceptanceId, reviewId, accepted.intent_id);
+    expect(JSON.stringify(after)).toBe(before);
+    const taskLines = workerLogs().split('\n').filter(line => line.includes(`app.tasks.execute_foreground_command[${child}]`)).slice(-12).map(line => line.slice(0,2048));
+    evidence = {child, elapsed_ms:elapsed, proof, duplicate:{completed_before:existingCount,completed_after:completedCount(),unchanged:true}, worker_task_lines:taskLines};
+    await testInfo.attach('split-broker-wake-receipt', {body:JSON.stringify(evidence),contentType:'application/json'});
   });
+  writeFileSync(evidencePath, JSON.stringify({project, outcome:'passed', cleanup:'completed', evidence}, null, 2), {flag:'wx', mode:0o600});
+  } catch (error) {
+    try {
+      writeFileSync(evidencePath, JSON.stringify({project, outcome:'failed', cleanup:'unknown_or_failed',
+        error:error instanceof Error ? (error.stack ?? error.message).slice(0,16000) : String(error).slice(0,16000), evidence}, null, 2), {flag:'wx', mode:0o600});
+    } catch (writeError) {
+      throw new Error(`Original witness failure: ${error instanceof Error ? error.stack : String(error)}\n\nReceipt write failure: ${writeError instanceof Error ? writeError.stack : String(writeError)}`);
+    }
+    throw error;
+  }
 });
