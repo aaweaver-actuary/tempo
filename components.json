@@ -2563,6 +2563,132 @@
       "dependencyNotes": [
         "Does not own the enclosing transaction."
       ]
+    },
+    {
+      "id": "durable-task-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/durable_tasks.py#enqueue_task",
+        "backend/app/services/durable_tasks.py#claim_task",
+        "backend/app/services/durable_tasks.py#hold_unknown_queue_day_in_transaction",
+        "backend/app/services/durable_tasks.py#advance_task_slice_in_transaction"
+      ],
+      "dependencies": [
+        "durable-task-storage",
+        "queue-refresh-wakeup"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/durable_tasks.py"
+      ],
+      "ownershipRole": "Coordinate durable task identity, claims, leases, checkpoints and holds",
+      "dependencyNotes": [
+        "Some paths own connections and transactions; others borrow caller transactions. Imports private SQL constants from durable task storage. Workers and task-specific effects remain outside this selection."
+      ]
+    },
+    {
+      "id": "queue-refresh-wakeup",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/queue_refresh_wakeup.py#capture_queue_refresh_request",
+        "backend/app/services/queue_refresh_wakeup.py#wake_queue_refresh"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/queue_refresh_wakeup.py"
+      ],
+      "ownershipRole": "Capture refresh requests and publish advisory bounded queue wakes",
+      "dependencyNotes": [
+        "Celery is imported lazily for a broker publish; failure is logged and durable work relies on periodic recovery outside this selection."
+      ]
+    },
+    {
+      "id": "durable-task-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/durable_tasks",
+      "publicExports": [
+        "database/tempo_storage/durable_tasks/storage.py#prepare_task_claim",
+        "database/tempo_storage/durable_tasks/storage.py#claim_lease",
+        "database/tempo_storage/durable_tasks/storage.py#hold_unknown_queue_day",
+        "database/tempo_storage/durable_tasks/storage.py#advance_slice"
+      ],
+      "dependencies": [
+        "background-claim-sql"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/durable_tasks/__init__.py",
+        "database/tempo_storage/durable_tasks/storage.py"
+      ],
+      "ownershipRole": "Persist and query durable tasks, leases, checkpoints and hold state using supplied connections",
+      "dependencyNotes": [
+        "SQL preparation also exposes private constants currently imported by the application. Transaction and worker execution belong to callers."
+      ]
+    },
+    {
+      "id": "background-claim-sql",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/controls",
+      "publicExports": [
+        "database/tempo_storage/controls/claim_sql.py#claimable",
+        "database/tempo_storage/controls/claim_sql.py#control_order"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/controls/claim_sql.py"
+      ],
+      "ownershipRole": "Build shared background claim ordering and eligibility SQL fragments",
+      "dependencyNotes": [
+        "Also consumed by background activity and authored PGN preparation outside this selection; these helpers do not claim tasks."
+      ]
     }
   ],
   "suites": [

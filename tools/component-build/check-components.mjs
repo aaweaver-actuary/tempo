@@ -211,6 +211,20 @@ export function validateReviewCommandOwnership(manifest, paths) {
   if (new Set(declared).size !== declared.length || declared.length !== paths.length || declared.some(path => !paths.includes(path))) throw new Error("Review seam inventory contains duplicate or untracked source");
 }
 
+// A selected task/claim seam, not a complete worker or backend inventory.
+export const durableTaskOwnerIds = ["durable-task-application", "queue-refresh-wakeup", "durable-task-storage", "background-claim-sql"];
+export const durableTaskFiles = ["backend/app/services/durable_tasks.py", "backend/app/services/queue_refresh_wakeup.py", "database/tempo_storage/durable_tasks/__init__.py", "database/tempo_storage/durable_tasks/storage.py", "database/tempo_storage/controls/claim_sql.py"];
+export function durableTaskPaths(root = repository) {
+  const result = spawnSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" });
+  if (result.error || result.status !== 0) throw new Error("Cannot enumerate tracked durable task seams");
+  return result.stdout.split("\0").filter(path => durableTaskFiles.includes(path));
+}
+export function validateDurableTaskOwnership(manifest, paths) {
+  validateOwnedPaths(manifest, paths, [...retainedBackendOwnerIds, ...reviewCommandOwnerIds, ...durableTaskOwnerIds]);
+  const declared = manifest.components.filter(component => durableTaskOwnerIds.includes(component.id)).flatMap(component => component.ownedFiles ?? []);
+  if (new Set(declared).size !== declared.length || declared.length !== paths.length || declared.some(path => !paths.includes(path))) throw new Error("Durable task seam inventory contains duplicate or untracked source");
+}
+
 export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", options = {}) {
   const manifest = readManifest(root);
   const selected = selectComponents(manifest, options.componentIds);
@@ -220,6 +234,8 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
     validateRetainedBackendInterfaces(manifest, root, python);
     validateReviewCommandOwnership(manifest, reviewCommandPaths(root));
     validateRetainedBackendInterfaces(manifest, root, python, reviewCommandOwnerIds);
+    validateDurableTaskOwnership(manifest, durableTaskPaths(root));
+    validateRetainedBackendInterfaces(manifest, root, python, durableTaskOwnerIds);
   }
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
   const results = [];

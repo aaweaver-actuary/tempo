@@ -315,9 +315,20 @@ storage and scheduling, and review storage depends on queue-refresh presentation
 and admission. The existing legacy review adapter remains present. These are
 source facts, not claims of import purity or a complete dependency closure.
 
-This is not a whole-backend or storage ownership proof: at the base revision,
-242 of 291 tracked Python files in those trees remain outside the combined
-49-file selections. The T02 delivery owner should select and inspect the next
+A third selection maps five durable-task and shared-claim files: the task
+application, storage package, advisory queue wake, and claim SQL builders. The
+application has both owned and borrowed transaction paths and imports private
+storage SQL constants. The wake uses Celery lazily; worker execution and periodic
+recovery remain outside this selection. Claim builders are also used by background
+activity and PGN preparation. Direct production consumers of the task service
+include `activity_commands.py`, `queue_commands.py`, `tasks.py`, queue application
+and refresh, review adapter, integrity, and opening graph services. The wake is
+also consumed by command gateway, activity commands, and tasks. `main.py` reads
+task storage and the task service directly. These are observed source edges, not
+a complete runtime dependency or isolation proof.
+
+At this base revision, 237 of 291 tracked Python files in those trees remain
+outside the combined 54-file selections. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
 new siblings automatically.
 Known existing edges remain visible rather than being called pure isolation:

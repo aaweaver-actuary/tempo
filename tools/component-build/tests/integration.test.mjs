@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, retainedBackendPaths, validateRetainedBackendOwnership, validateRetainedBackendInterfaces, reviewCommandOwnerIds, reviewCommandPaths, validateReviewCommandOwnership } from "../check-components.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, retainedBackendPaths, validateRetainedBackendOwnership, validateRetainedBackendInterfaces, reviewCommandOwnerIds, reviewCommandPaths, validateReviewCommandOwnership, durableTaskOwnerIds, durableTaskPaths, validateDurableTaskOwnership } from "../check-components.mjs";
 import { validateOwnedPaths, selectComponents } from "../selection.mjs";
 
 const python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3.12";
@@ -113,6 +113,26 @@ test("T02 review command scope rejects unowned, overlapping, stale and false int
   const wrong = structuredClone(original);
   wrong.components.find(item => item.id === "study-review-command").publicExports.push("backend/app/review_commands.py#missing");
   assert.throws(() => validateRetainedBackendInterfaces(wrong, repository, python, reviewCommandOwnerIds), /Missing retained interface/);
+});
+test("T02 durable task seams have exact owners and named interfaces", () => {
+  const paths = durableTaskPaths(repository);
+  assert.equal(paths.length, 5);
+  validateDurableTaskOwnership(original, paths);
+  validateRetainedBackendInterfaces(original, repository, python, durableTaskOwnerIds);
+  for (const id of durableTaskOwnerIds) assert.throws(() => selectComponents(original, [id]), /mapped, not implemented/);
+});
+test("T02 durable task seam rejects missing, overlap, stale and false entrypoint", () => {
+  const paths = durableTaskPaths(repository);
+  assert.throws(() => validateDurableTaskOwnership(original, [...paths, "backend/app/unowned-task.py"]), /found 0/);
+  const overlap = structuredClone(original);
+  overlap.components.find(item => item.id === "study-review-command").ownedFiles.push(paths[0]);
+  assert.throws(() => validateDurableTaskOwnership(overlap, paths), /found 2/);
+  const stale = structuredClone(original);
+  stale.components.find(item => item.id === "durable-task-application").ownedFiles.push("backend/app/untracked-task.py");
+  assert.throws(() => validateDurableTaskOwnership(stale, paths), /untracked source/);
+  const wrong = structuredClone(original);
+  wrong.components.find(item => item.id === "durable-task-application").publicExports.push("backend/app/services/durable_tasks.py#missing");
+  assert.throws(() => validateRetainedBackendInterfaces(wrong, repository, python, durableTaskOwnerIds), /Missing retained interface/);
 });
 test("Learning review registers its actual application, tooling and native suites", () => {
   const componentIds = ["learning-review-application"];
