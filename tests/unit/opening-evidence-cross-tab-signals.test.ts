@@ -126,3 +126,27 @@ it("storage completion wakeups remain subscribed when BroadcastChannel construct
   window.dispatchEvent(event); expect(listener).toHaveBeenCalledOnce();
   stop(); window.dispatchEvent(event); expect(listener).toHaveBeenCalledOnce();
 });
+
+it.each(['reject', 'acknowledge'] as const)('FE25 stale %s aborts original evidence transaction without deletion', async action => {
+  vi.resetModules(); const { IDBFactory } = await import('fake-indexeddb'); vi.stubGlobal('indexedDB', new IDBFactory());
+  const { offlineTrainingDatabase } = await import('../../database/browser/offline-training-storage');
+  const storage = await import('../../database/browser/opening-evidence-journal-storage');
+  let calls = 0; const binding = { locator: `fe25-evidence-${action}`, requireCurrent: () => { if (++calls >= 4) throw new Error('authority changed'); } };
+  const database = await offlineTrainingDatabase(binding); calls = 0;
+  await new Promise<void>((resolve, reject) => { const tx = database.transaction(['opening_attempts', 'opening_events'], 'readwrite');
+    tx.objectStore('opening_attempts').put({ attempt_id: 'original', delivery_state: 'pending' });
+    tx.objectStore('opening_events').put({ attempt_id: 'original', sequence: 1, payload: 'original' });
+    tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error);
+  });
+  // Switch immediately before the owner callback's write, after the transaction starts.
+  calls = 2;
+  const operation = action === 'reject' ? storage.rejectOpeningAttempt(database, 'original', 'rejected', binding)
+    : storage.removeAcknowledgedOpeningAttempt(database, 'original', () => {}, binding);
+  await expect(operation).rejects.toThrow('authority changed');
+  const records = await new Promise<{ attempt: unknown; event: unknown }>((resolve, reject) => { const tx = database.transaction(['opening_attempts', 'opening_events']);
+    const a = tx.objectStore('opening_attempts').get('original'), e = tx.objectStore('opening_events').get(['original', 1]);
+    tx.oncomplete = () => resolve({ attempt: a.result, event: e.result }); tx.onabort = () => reject(tx.error);
+  });
+  expect(records).toEqual({ attempt: { attempt_id: 'original', delivery_state: 'pending' }, event: { attempt_id: 'original', sequence: 1, payload: 'original' } });
+  database.close();
+});

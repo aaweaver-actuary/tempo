@@ -107,3 +107,18 @@ it.each(["committed", "discarded", "conflicted"] as const)("holds unknown and re
     expect(deliver).not.toHaveBeenCalled(); runtime.invalidate();
   } finally { owned.close(); }
 });
+
+it('FE25 retained-kind preflight carries original authority through delayed recovery', async () => {
+  const owned = await store('fe25-session-guard'); const deliver = vi.fn(async () => ({ state: 'committed' as const }));
+  const runtime = createStudyRuntime({ store: async () => owned, isCurrent: value => value === owned, adapters: entries(deliver) });
+  try {
+    const record = envelope('review'); await owned.put(record); const session = await runtime.session();
+    let current = true, release!: () => void, entered!: () => void;
+    const gate = new Promise<void>(done => { release = done; }), waiting = new Promise<void>(done => { entered = done; });
+    const original = owned.get.bind(owned); let first = true;
+    const spy = vi.spyOn(owned, 'get').mockImplementation(async key => { if (first) { first = false; entered(); await gate; } return original(key); });
+    const pending = session.checkSave(record.key, () => { if (!current) throw new Error('authority changed'); });
+    await waiting; current = false; release(); await expect(pending).rejects.toThrow('authority changed');
+    spy.mockRestore(); expect(await owned.get(record.key)).toMatchObject({ ...record, state: 'pending' }); expect(deliver).not.toHaveBeenCalled();
+  } finally { runtime.invalidate(); owned.close(); }
+});

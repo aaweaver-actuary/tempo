@@ -43,12 +43,13 @@ type Hooks = {
   operations: Pick<typeof import("./operation-status"), "confirmOriginalOperationResponse" | "readOperationResponse" | "FailedOperationError" | "PendingOperationError">;
   saveEvidenceAwareReview: typeof import("./opening-evidence-review").saveEvidenceAwareReview;
   rejectOpeningEvidence: typeof import("./opening-evidence-journal").rejectOpeningEvidence;
+  getBinding: (attemptId: string) => { requireCurrent: () => void; offline: import("../../database/browser/offline-training-storage").OfflineDatabaseBinding } | undefined;
 };
 
 export function createReviewDelivery(hooks: Hooks) {
   const { client, getStore, isStoreCurrent, savedReviews, readStoredReviews, writeRejectedOpeningReviews, replaceReview,
     settleExistingReviewDelivery, logicalAttemptId, reviewOperationId, validConflict, publishNotification, evidenceStorageErrors,
-    ReviewReplayError, operations, saveEvidenceAwareReview, rejectOpeningEvidence } = hooks;
+    ReviewReplayError, operations, saveEvidenceAwareReview, rejectOpeningEvidence, getBinding } = hooks;
   const { confirmOriginalOperationResponse, readOperationResponse, FailedOperationError } = operations;
   const reviewRequestTimeoutMs = 15_000;
   type ReviewReplayError = ReplayError;
@@ -90,7 +91,7 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
   let failureMarkerSent = false;
   let confirmedOperationId: string | undefined;
   const response = await withReviewSaveDeadline(endpoint, review, signal => saveEvidenceAwareReview({
-    endpoint, signal, client: transport.client, requireCurrent, rejectEvidence: rejectOpeningEvidence, request: async (url, options) => {
+    endpoint, signal, client: transport.client, requireCurrent, rejectEvidence: (id, message) => { const binding = getBinding(attemptId); return binding ? rejectOpeningEvidence(id, message, binding.offline) : rejectOpeningEvidence(id, message); }, request: async (url, options) => {
       requireCurrent();
       // Receipt-first recovery reaches this callback only when replay is necessary.
       if (!review.positionStudy && review.guided && !reconciling && !failureMarkerSent) {
@@ -125,7 +126,7 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
       requireCurrent();
       await store.put({ key: deliveryKey, kind: "review-delivery", attemptId, requestId: operationId,
         endpoint: url, revision: review.expectedRevision, createdAt: existing?.createdAt ?? review.completedAt ?? "legacy-time-unavailable",
-        payload: { parentKey: `review:${attemptId}`, headers: options.headers, body: JSON.parse(String(options.body)) } });
+        payload: { parentKey: `review:${attemptId}`, headers: options.headers, body: JSON.parse(String(options.body)) } }, undefined, { requireCurrent });
       requireCurrent();
       const response = await transport.client.learningFetch(url, options);
       requireCurrent();
@@ -209,6 +210,7 @@ async function deliverLegacyReview(record: IntentRecord, signal: AbortSignal) {
   const store = await getStore();
   const requireCurrent = () => {
     transport.requireCurrent();
+    getBinding(logicalAttemptId((record.data ?? record.payload) as PendingReview))?.requireCurrent();
     if (!isStoreCurrent(store)) throw new ReviewAuthorityChangedError();
   };
   requireCurrent();
@@ -258,6 +260,7 @@ async function checkLegacyReviewReceipt(record: IntentRecord, signal: AbortSigna
   const store = await getStore();
   const requireCurrent = () => {
     transport.requireCurrent();
+    getBinding(logicalAttemptId((record.data ?? record.payload) as PendingReview))?.requireCurrent();
     if (!isStoreCurrent(store)) throw new ReviewAuthorityChangedError();
   };
   requireCurrent();

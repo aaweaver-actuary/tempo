@@ -1,4 +1,4 @@
-import { ReviewReplayError, logicalAttemptId, settleExistingReviewDelivery, savedReviews, replaceReview, evidenceStorageErrors, type ReviewFlushResult } from "./study-runtime-composition";
+import { ReviewReplayError, logicalAttemptId, settleExistingReviewDelivery, bindReviewAuthority, savedReviews, replaceReview, evidenceStorageErrors, type ReviewFlushResult, type ReviewAuthorityBinding } from "./study-runtime-composition";
 export { ReviewReplayError, logicalAttemptId } from "./study-runtime-composition";
 export type { ReviewFlushResult } from "./study-runtime-composition";
 import { type PendingReview, type LegacyReviewReceipt } from "./review-delivery";
@@ -140,7 +140,8 @@ export function conflictedReviews(): PendingReview[] {
   return savedReviews().filter((review) => review.state === "conflicted");
 }
 
-export async function enqueuePendingReview(review: PendingReview): Promise<string> {
+export async function enqueuePendingReview(review: PendingReview, binding?: ReviewAuthorityBinding): Promise<string> {
+  binding?.requireCurrent();
   if (review.positionStudy && (!review.attemptId || !review.openingEvidenceCompletion ||
       review.openingEvidenceCompletion.attempt_id !== review.attemptId ||
       review.openingEvidenceCompletion.terminal?.state !== "complete" ||
@@ -148,8 +149,10 @@ export async function enqueuePendingReview(review: PendingReview): Promise<strin
       review.openingEvidenceCompletion.manifest.card_id !== review.backendId ||
       review.openingEvidenceCompletion.manifest.card_revision !== review.expectedRevision))
     throw new Error("The issued position attempt and its completed evidence are required to save this review.");
-  const store = await studyIntentStore();
+  const store = binding?.store ?? await studyIntentStore();
+  binding?.requireCurrent();
   const retained = review.attemptId ? await store.get(`review:${review.attemptId}`) : undefined;
+  binding?.requireCurrent();
   const previous = retained ? (retained.data ?? retained.payload) as PendingReview : savedReviews().find(item => review.attemptId
     ? logicalAttemptId(item) === review.attemptId
     : item.queueEntryId === review.queueEntryId && item.backendId === review.backendId);
@@ -161,23 +164,30 @@ export async function enqueuePendingReview(review: PendingReview): Promise<strin
   }
   const normalizedReview = { ...review, attemptId: review.attemptId ?? crypto.randomUUID(), completedAt: review.completedAt ?? new Date().toISOString() };
   const retain = async (payload: PendingReview) => {
+    binding?.requireCurrent();
     const coordinator = await reviewStudySession();
+    binding?.requireCurrent();
     await coordinator.submit({ key: `review:${normalizedReview.attemptId}`, kind: "review", attemptId: normalizedReview.attemptId,
     requestId: `review-attempt:${normalizedReview.attemptId}`, endpoint: `/api/cards/${encodeURIComponent(review.backendId)}/review`,
-    revision: review.expectedRevision, createdAt: normalizedReview.completedAt, payload: immutableReviewPayload(payload) }, payload, { deliver: false });
+    revision: review.expectedRevision, createdAt: normalizedReview.completedAt, payload: immutableReviewPayload(payload) }, payload, { deliver: false, requireCurrent: binding?.requireCurrent });
+    binding?.requireCurrent();
     await refreshStudyIntents();
+    binding?.requireCurrent();
   };
   try { await retain(normalizedReview); }
   catch (error) {
+    binding?.requireCurrent();
     const cause = error instanceof IntentStorageError ? error.cause : error;
     if (normalizedReview.positionStudy || !(cause instanceof DOMException) || !["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"].includes(cause.name) || !normalizedReview.openingEvidenceCompletion) throw error;
     const { openingEvidenceCompletion, ...aggregate } = normalizedReview;
     await retain({ ...aggregate, evidenceFallbackReason: "local_storage_quota" });
-    void retainOpeningEvidenceForStorageFallback(openingEvidenceCompletion).catch(() => {
+    binding?.requireCurrent();
+    void (binding ? retainOpeningEvidenceForStorageFallback(openingEvidenceCompletion, binding.offline) : retainOpeningEvidenceForStorageFallback(openingEvidenceCompletion)).catch(() => {
       publishNotification({ severity: "warning", source: "opening evidence", key: `opening-evidence-retention:${normalizedReview.attemptId}`,
         message: "The aggregate review is saved locally. Its opening evidence could not be retained; restore browser storage before further capture." });
     });
   }
+  binding?.requireCurrent();
   return normalizedReview.attemptId;
 }
 
@@ -211,11 +221,14 @@ export function updateReviewConflictNotice(): void {
 export async function reviewStudySession(): Promise<StudySession> { return studySession(); }
 
 async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst = false, explicitRetryAttemptId?: string,
-  deferredAttemptIds?: ReadonlySet<string>, stopAfterAttemptId?: string): Promise<ReviewFlushResult> {
-  await studyIntentStore();
+  deferredAttemptIds?: ReadonlySet<string>, stopAfterAttemptId?: string, binding?: ReviewAuthorityBinding): Promise<ReviewFlushResult> {
+  binding?.requireCurrent();
+  const ownerStore = binding?.store ?? await studyIntentStore();
+  binding?.requireCurrent();
   const result: ReviewFlushResult = { persistedAttemptIds: [], conflictedAttemptIds: [] };
   if (stopAfterAttemptId) {
-    const retained = await (await studyIntentStore()).get(`review:${stopAfterAttemptId}`);
+    const retained = await ownerStore.get(`review:${stopAfterAttemptId}`);
+    binding?.requireCurrent();
     if (retained?.state === "committed" && (retained.receipt as LegacyReviewReceipt | undefined)?.persisted === true) {
       result.persistedAttemptIds.push(stopAfterAttemptId);
       const review = retained.payload as PendingReview;
@@ -239,15 +252,25 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst 
   updateReviewConflictNotice();
   while (reviewsForSubmission().length && result.persistedAttemptIds.length + result.conflictedAttemptIds.length < maximumReviews &&
       !(stopAfterAttemptId && attemptSettled(result, stopAfterAttemptId))) {
+    binding?.requireCurrent();
     const review = reviewsForSubmission()[0];
     const attemptId = logicalAttemptId(review);
     try {
-      if (verifyReceiptFirst && !review.deliveryStarted) await replaceReview(review, { ...review, deliveryStarted: true });
-      const settlement = await (await reviewStudySession()).checkSave(`review:${attemptId}`);
+      if (verifyReceiptFirst && !review.deliveryStarted) await replaceReview(review, { ...review, deliveryStarted: true }, binding?.store, binding?.requireCurrent);
+      binding?.requireCurrent();
+      const coordinator = await reviewStudySession();
+      binding?.requireCurrent();
+      const releaseBinding = binding ? bindReviewAuthority(attemptId, binding) : undefined;
+      let settlement;
+      try { settlement = await coordinator.checkSave(`review:${attemptId}`, binding?.requireCurrent); }
+      finally { releaseBinding?.(); }
+      binding?.requireCurrent();
       await refreshStudyIntents();
+      binding?.requireCurrent();
       if (settlement.state === "pending") break;
       if (settlement.state === "conflicted") {
-        await clearTrainingFailureAfterReview(review.queueEntryId, review.backendId, review.expectedRevision);
+        await clearTrainingFailureAfterReview(review.queueEntryId, review.backendId, review.expectedRevision, binding);
+        binding?.requireCurrent();
         result.conflictedAttemptIds.push(attemptId); updateReviewConflictNotice(); publishFlushProgress(result); continue;
       }
       if (settlement.state === "discarded") continue;
@@ -256,8 +279,9 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst 
         throw new Error("The service did not confirm a persisted review. Retry its original receipt.");
       confirmReviewSaveNotice(review);
       if (review.openingEvidenceCompletion)
-        void acknowledgeOpeningReview(attemptId).catch(() => undefined);
-      await clearTrainingFailureAfterReview(review.queueEntryId, review.backendId, review.expectedRevision);
+        void (binding ? acknowledgeOpeningReview(attemptId, binding.offline) : acknowledgeOpeningReview(attemptId)).catch(() => undefined);
+      await clearTrainingFailureAfterReview(review.queueEntryId, review.backendId, review.expectedRevision, binding);
+      binding?.requireCurrent();
       result.persistedAttemptIds.push(attemptId);
       performance.mark("tempo.review.confirmed", { detail: { attemptId } });
       if (persisted.prepared_continuation && typeof persisted.prepared_continuation === "object" && review.preparedNext &&
@@ -271,6 +295,7 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst 
           outcome: review.outcome, completedAt: review.completedAt ?? "unknown" } });
       publishFlushProgress(result);
     } catch (error) {
+      binding?.requireCurrent();
       if (error instanceof ReviewReplayError) {
         if (error.cause instanceof ReviewAuthorityChangedError) throw error;
         error.flushResult = result;
@@ -279,7 +304,7 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst 
         if (saved && (suppression || (attemptId === explicitRetryAttemptId && saved.automaticRecoverySuppressed && ["pending", "transient"].includes(error.classification)))) {
           // Preserve the latest envelope (including evidence fallback) and original identity.
           // An explicit retry that becomes transient returns to ordinary bounded recovery.
-          try { await replaceReview(saved, { ...saved, automaticRecoverySuppressed: suppression }); }
+          try { await replaceReview(saved, { ...saved, automaticRecoverySuppressed: suppression }, binding?.store, binding?.requireCurrent); }
           catch (storageError) {
             const replayError = new ReviewReplayError(String(storageError), error.endpoint, saved,
               undefined, undefined, false, { cause: storageError });
@@ -298,6 +323,7 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst 
       throw replayError;
     }
   }
+  binding?.requireCurrent();
   return result;
 }
 
@@ -323,8 +349,10 @@ function includeEarlierFlushSettlement(earlier: ReviewFlushResult, later: Promis
 // Only the Retry save action supplies an explicit attempt identity. Incidental
 // queue refreshes and saving another card must never release terminal suppression.
 export function flushPendingReviews(maximumReviews = Infinity, verifyReceiptFirst = false,
-  explicitRetryAttemptId?: string, deferredAttemptIds?: ReadonlySet<string>, stopAfterAttemptId?: string): Promise<ReviewFlushResult> {
+  explicitRetryAttemptId?: string, deferredAttemptIds?: ReadonlySet<string>, stopAfterAttemptId?: string, binding?: ReviewAuthorityBinding): Promise<ReviewFlushResult> {
+  binding?.requireCurrent();
   if (activeFlush && stopAfterAttemptId) return waitForSubmittedAttempt(activeFlush, stopAfterAttemptId).catch(error => {
+    binding?.requireCurrent();
     const retained = savedReviews();
     const targetIndex = retained.findIndex(review => logicalAttemptId(review) === stopAfterAttemptId);
     const target = retained[targetIndex];
@@ -332,17 +360,19 @@ export function flushPendingReviews(maximumReviews = Infinity, verifyReceiptFirs
     if (!explicitRetryAttemptId && !blockedByConflict) throw error;
     return error instanceof ReviewReplayError && error.flushResult ? error.flushResult : { persistedAttemptIds: [], conflictedAttemptIds: [] } as ReviewFlushResult;
   }).then(result => {
+    binding?.requireCurrent();
     if (attemptSettled(result, stopAfterAttemptId)) return result;
     return includeEarlierFlushSettlement(result,
-      flushPendingReviews(maximumReviews, verifyReceiptFirst, explicitRetryAttemptId, deferredAttemptIds, stopAfterAttemptId));
+      flushPendingReviews(maximumReviews, verifyReceiptFirst, explicitRetryAttemptId, deferredAttemptIds, stopAfterAttemptId, binding));
   });
   if (activeFlush && explicitRetryAttemptId) {
-    return activeFlush.catch(() => undefined).then(() => flushPendingReviews(maximumReviews, true, explicitRetryAttemptId, deferredAttemptIds));
+    return activeFlush.catch(() => undefined).then(() => flushPendingReviews(maximumReviews, true, explicitRetryAttemptId, deferredAttemptIds, undefined, binding));
   }
   if (activeFlush && activeFlushMaximumReviews !== Infinity && maximumReviews === Infinity) return activeFlush.then(result => {
+    binding?.requireCurrent();
     if (!recoverableReviews(undefined, deferredAttemptIds).length) return result;
     return includeEarlierFlushSettlement(result,
-      flushPendingReviews(maximumReviews, verifyReceiptFirst, undefined, deferredAttemptIds));
+      flushPendingReviews(maximumReviews, verifyReceiptFirst, undefined, deferredAttemptIds, undefined, binding));
   });
   if (!activeFlush) {
     currentFlushProgress = undefined;
@@ -358,9 +388,9 @@ export function flushPendingReviews(maximumReviews = Infinity, verifyReceiptFirs
     // must not create a second unhandled rejection when that flush fails.
     void flushReservation.catch(() => undefined);
     activeFlush = flushReservation;
-    activeFlush = savePendingReviews(maximumReviews, verifyReceiptFirst || !!explicitRetryAttemptId, explicitRetryAttemptId, deferredAttemptIds, stopAfterAttemptId)
+    activeFlush = savePendingReviews(maximumReviews, verifyReceiptFirst || !!explicitRetryAttemptId, explicitRetryAttemptId, deferredAttemptIds, stopAfterAttemptId, binding)
       .finally(() => { activeFlush = undefined; });
     resolveFlushReservation(activeFlush);
   }
-  return activeFlush;
+  return binding ? activeFlush.then(result => { binding.requireCurrent(); return result; }) : activeFlush;
 }

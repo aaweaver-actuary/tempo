@@ -123,3 +123,13 @@ test('pr285_teaching_cross_tab_notification_is_keyed_and_reads_committed_fact', 
     assert.equal(await second.teachingFact('missing'), undefined);
   } finally { unsubscribe(); }
 }));
+
+test('FE25 transient authority guard aborts every partial put without consuming sequence', async () => {
+  for (const failureAt of [1, 2, 3, 4, 5, 6]) await stores(async first => {
+    let calls = 0;
+    await assert.rejects(first.put(envelope('guarded'), undefined, { requireCurrent() { if (++calls === failureAt) throw new Error('authority changed'); } }), /authority changed/);
+    assert.equal(await first.get('guarded'), undefined);
+    const next = await first.put(envelope('next'));
+    assert.equal(next.sequence, 1);
+  });
+});

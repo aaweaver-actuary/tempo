@@ -20,21 +20,30 @@ export function createBrowserReviewServices(): ReviewServices {
     if (error instanceof PendingOperationError) return { kind: 'pending', message: error.message, blocked: error.blocked, operationId: error.operationId };
     return { kind: 'other', message: error instanceof Error ? error.message : String(error), blocked: false };
   };
+  const bindings = new WeakMap<ReviewAuthority, { store: Awaited<ReturnType<typeof studyIntentStore>>; requireCurrent: () => void; offline: { locator: string; requireCurrent: () => void } }>();
   const ensure = (authority: ReviewAuthority) => {
-    if (!authority.isCurrent()) throw new Error('Study authority changed. Recover the original review with its original service.');
+    if (!bindings.has(authority) || !authority.isCurrent()) throw new Error('Study authority changed. Recover the original review with its original service.');
+  };
+  const bindingFor = (authority: ReviewAuthority) => {
+    const binding = bindings.get(authority);
+    if (!binding) throw new Error('Study authority binding is unavailable.');
+    binding.requireCurrent(); return binding;
   };
   return {
-    reviews: { retain: enqueuePendingReview, pending: pendingReviews, recoverable: recoverableReviews,
+    reviews: { retain: (intent, authority) => enqueuePendingReview(intent, bindingFor(authority)), pending: pendingReviews, recoverable: recoverableReviews,
       conflicted: conflictedReviews, logicalAttemptId,
-      flush: options => flushPendingReviews(options?.maximum, options?.verifyReceiptFirst, options?.explicitRetryAttemptId, options?.deferredAttemptIds, options?.stopAfterAttemptId),
-      recover: attemptId => flushPendingReviews(Infinity, true, attemptId) },
+      flush: (authority, options) => flushPendingReviews(options?.maximum, options?.verifyReceiptFirst, options?.explicitRetryAttemptId, options?.deferredAttemptIds, options?.stopAfterAttemptId, bindingFor(authority)),
+      recover: (attemptId, authority) => flushPendingReviews(Infinity, true, attemptId, undefined, undefined, bindingFor(authority)) },
     authority: { async capture() {
-      const authority = studyWorkspace(), origin = defaultStudyClient.origin, generation = defaultStudyClient.generation;
+      const authority = studyWorkspace(), origin = defaultStudyClient.origin, generation = defaultStudyClient.generation, locator = defaultStudyClient.studyOfflineDatabaseName();
       const store = await studyIntentStore();
       const isCurrent = () => { try { return studyWorkspace() === authority && defaultStudyClient.origin === origin &&
         defaultStudyClient.generation === generation && isStudyIntentStoreCurrent(store); } catch { return false; } };
       if (!isCurrent()) throw new Error('Study authority changed. Recover the original review with its original service.');
-      return { authority, isCurrent };
+      const lease = Object.freeze({ authority, isCurrent });
+      const requireCurrent = () => { if (!isCurrent()) throw new Error('Study authority changed. Recover the original review with its original service.'); if (defaultStudyClient.studyOfflineDatabaseName() !== locator) throw new Error('Study offline storage locator changed.'); };
+      bindings.set(lease, { store, requireCurrent, offline: { locator, requireCurrent } });
+      return lease;
     } },
     progression: { currentAttempt: () => { const { attemptId, generation } = useTrainingStore.getState().attempt; return { attemptId, generation }; },
       currentCard: () => useTrainingStore.getState().getCard(),

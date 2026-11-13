@@ -15,6 +15,15 @@ import { saveEvidenceAwareReview } from "./opening-evidence-review";
 import { rejectOpeningEvidence } from "./opening-evidence-journal";
 import { publishNotification } from "./notifications";
 
+export type ReviewAuthorityBinding = { store: Awaited<ReturnType<typeof studyIntentStore>>; requireCurrent: () => void; offline: import("../../database/browser/offline-training-storage").OfflineDatabaseBinding };
+const activeReviewBindings = new Map<string, ReviewAuthorityBinding>();
+export function bindReviewAuthority(attemptId: string, binding: ReviewAuthorityBinding): () => void {
+  binding.requireCurrent();
+  if (activeReviewBindings.has(attemptId)) throw new Error("The original review already has an active authority binding.");
+  activeReviewBindings.set(attemptId, binding);
+  return () => { if (activeReviewBindings.get(attemptId) === binding) activeReviewBindings.delete(attemptId); };
+}
+
 export type ReviewFlushResult = { persistedAttemptIds: string[]; conflictedAttemptIds: string[];
   preparedContinuations?: Record<string, PreparedContinuation> };
 
@@ -60,8 +69,8 @@ export async function settleExistingReviewDelivery(store: Awaited<ReturnType<typ
   const existing = await store.get(key);
   requireCurrent();
   if (!existing || existing.kind !== "review-delivery" || existing.requestId !== operationId || existing.attemptId !== attemptId || existing.state !== "pending") return;
-  await store.update(key, current => current.kind === "review-delivery" && current.requestId === operationId &&
-    current.attemptId === attemptId && current.state === "pending" ? { ...current, state, receipt } : current);
+  await store.update(key, current => { requireCurrent(); return current.kind === "review-delivery" && current.requestId === operationId &&
+    current.attemptId === attemptId && current.state === "pending" ? { ...current, state, receipt } : current; });
   requireCurrent();
 }
 
@@ -85,10 +94,10 @@ export function readStoredReviews(): PendingReview[] {
 
 export async function replaceReview(review: PendingReview, replacement?: PendingReview,
   store?: Awaited<ReturnType<typeof studyIntentStore>>, requireCurrent: () => void = () => {}): Promise<void> {
-  const change = (current: IntentRecord) => ({
+  const change = (current: IntentRecord) => { requireCurrent(); return ({
     state: replacement?.state === "conflicted" ? "conflicted" as const : replacement ? "pending" as const : "committed" as const,
     data: replacement ? { ...(current.data as PendingReview), ...replacement } : current.data, receipt: replacement ? current.receipt : { persisted: true },
-  });
+  }); };
   requireCurrent();
   if (store) { await store.update(`review:${logicalAttemptId(review)}`, change); requireCurrent(); await refreshStudyIntents(); requireCurrent(); }
   else await updateStudyIntent(`review:${logicalAttemptId(review)}`, change);
@@ -102,7 +111,7 @@ export function defaultStudyRuntime() {
   const review = createReviewDelivery({ client: defaultStudyClient, getStore: studyIntentStore, isStoreCurrent: isStudyIntentStoreCurrent,
     savedReviews, readStoredReviews, writeRejectedOpeningReviews: (...args) => writeRejectedOpeningReviews(...args), replaceReview, settleExistingReviewDelivery,
     logicalAttemptId, reviewOperationId, validConflict, publishNotification: (...args) => publishNotification(...args), evidenceStorageErrors,
-    ReviewReplayError, operations, saveEvidenceAwareReview, rejectOpeningEvidence });
+    ReviewReplayError, operations, saveEvidenceAwareReview, rejectOpeningEvidence, getBinding: attemptId => activeReviewBindings.get(attemptId) });
   const teaching = createTeachingDelivery(defaultStudyClient, studyIntentStore, operations, isStudyIntentStoreCurrent);
   const command = createStudyCommandDelivery(defaultStudyClient, studyIntentStore, operations, isStudyIntentStoreCurrent);
   runtime = createStudyRuntime({ store: studyIntentStore, isCurrent: isStudyIntentStoreCurrent, adapters: [

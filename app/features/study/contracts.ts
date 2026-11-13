@@ -29,13 +29,13 @@ export type ReviewNoticeUpdate = Partial<ReviewNotice>;
 
 export interface ReviewServices {
   reviews: {
-    retain(intent: ReviewIntent): Promise<string>;
+    retain(intent: ReviewIntent, authority: ReviewAuthority): Promise<string>;
     pending(): ReviewIntent[];
     recoverable(explicitAttemptId?: string): ReviewIntent[];
     conflicted(): ReviewIntent[];
     logicalAttemptId(identity: ReviewIdentity): string;
-    flush(options?: { maximum?: number; verifyReceiptFirst?: boolean; explicitRetryAttemptId?: string; deferredAttemptIds?: ReadonlySet<string>; stopAfterAttemptId?: string }): Promise<ReviewConfirmation>;
-    recover(attemptId: string): Promise<ReviewConfirmation>;
+    flush(authority: ReviewAuthority, options?: { maximum?: number; verifyReceiptFirst?: boolean; explicitRetryAttemptId?: string; deferredAttemptIds?: ReadonlySet<string>; stopAfterAttemptId?: string }): Promise<ReviewConfirmation>;
+    recover(attemptId: string, authority: ReviewAuthority): Promise<ReviewConfirmation>;
   };
   authority: { capture(): Promise<ReviewAuthority> };
   progression: {

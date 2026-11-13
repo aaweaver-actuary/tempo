@@ -29,6 +29,8 @@ export function createStudyRuntime(options: StudyRuntimeOptions) {
     const ensure = () => {
       if (generation !== epoch || !options.isCurrent(store)) throw new Error("Study authority changed. Recover the original request with its original service.");
     };
+    const recoveryGuards = new Map<string, () => void>();
+    const ensureKey = (key: string) => { ensure(); recoveryGuards.get(key)?.(); };
     // The session package owns claims and settlement. Guard its borrowed store,
     // including the update callback, so a rotated authority cannot settle there.
     const guarded = new Proxy(store, { get(target, property, receiver) {
@@ -36,7 +38,7 @@ export function createStudyRuntime(options: StudyRuntimeOptions) {
       if (typeof member !== "function") return member;
       if (property === "release") return (...args: Parameters<IntentStore["release"]>) => target.release(...args);
       if (property === "update") return (key: string, change: Parameters<IntentStore["update"]>[1]) => {
-        ensure(); return target.update(key, record => { ensure(); return change(record); });
+        ensureKey(key); return target.update(key, record => { ensureKey(key); return change(record); });
       };
       return (...args: unknown[]) => { ensure(); return Reflect.apply(member, target, args); };
     } }) as IntentStore;
@@ -52,24 +54,28 @@ export function createStudyRuntime(options: StudyRuntimeOptions) {
       if (record) entryFor(record);
     }
     const learning: LearningClient = {
-      async deliver(record, signal) { ensure(); const result = await entryFor(record).deliver(record, signal); ensure(); return result; },
-      async checkReceipt(record, signal) { ensure(); const result = await entryFor(record).checkReceipt?.(record, signal); ensure(); return result; },
+      async deliver(record, signal) { ensureKey(record.key); const result = await entryFor(record).deliver(record, signal); ensureKey(record.key); return result; },
+      async checkReceipt(record, signal) { ensureKey(record.key); const result = await entryFor(record).checkReceipt?.(record, signal); ensureKey(record.key); return result; },
     };
     const inner = createStudySession({ store: guarded, learning });
     // Reserve before the asynchronous retained-kind check, so overlapping callers
     // join the same original recovery even when that check yields.
     const recovery = new Map<string, ReturnType<StudySession["checkSave"]>>();
-    function recover(key: string, retry: boolean) {
-      ensure();
+    function recover(key: string, retry: boolean, requireCurrent?: () => void) {
+      ensure(); requireCurrent?.();
       const existing = recovery.get(key);
-      if (existing) return existing;
+      if (existing) {
+        if (requireCurrent && !recoveryGuards.has(key)) recoveryGuards.set(key, requireCurrent);
+        return existing.then(result => { requireCurrent?.(); return result; });
+      }
+      if (requireCurrent) recoveryGuards.set(key, requireCurrent);
       const pending = (async () => {
         await requireDeliverableExisting(key);
-        ensure();
-        return retry ? inner.retrySave(key) : inner.checkSave(key);
+        ensureKey(key);
+        return retry ? inner.retrySave(key, requireCurrent) : inner.checkSave(key, requireCurrent);
       })();
       recovery.set(key, pending);
-      void pending.finally(() => { if (recovery.get(key) === pending) recovery.delete(key); }).catch(() => undefined);
+      void pending.finally(() => { if (recovery.get(key) === pending) { recovery.delete(key); recoveryGuards.delete(key); } }).catch(() => undefined);
       return pending;
     }
     const facade: StudySession = {
@@ -77,13 +83,15 @@ export function createStudyRuntime(options: StudyRuntimeOptions) {
       subscribe(listener) { ensure(); return inner.subscribe(listener); },
       start(key) { ensure(); inner.start(key); },
       async submit(envelope: IntentEnvelope, data, submission) {
-        ensure();
+        const requireCurrent = submission?.requireCurrent;
+        ensure(); requireCurrent?.();
         if (!adapters.has(envelope.kind as StudyIntentKind)) throw new Error(`Unknown new Study intent kind: ${envelope.kind}`);
         await requireDeliverableExisting(envelope.key);
-        return inner.submit(envelope, data, submission);
+        ensure(); requireCurrent?.();
+        return inner.submit(envelope, data, { ...submission, requireCurrent });
       },
-      checkSave(key) { return recover(key, false); },
-      retrySave(key) { return recover(key, true); },
+      checkSave(key, requireCurrent) { return recover(key, false, requireCurrent); },
+      retrySave(key, requireCurrent) { return recover(key, true, requireCurrent); },
       async retryNext(key, acquire, stillCurrent, retryable) {
         ensure(); await requireDeliverableExisting(key);
         return inner.retryNext(key, acquire, () => options.isCurrent(store) && generation === epoch && stillCurrent(), retryable);

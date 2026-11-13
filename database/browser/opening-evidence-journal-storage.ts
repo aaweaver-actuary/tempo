@@ -1,3 +1,4 @@
+import type { OfflineDatabaseBinding } from "./offline-training-storage";
 /** Complete fixed browser-journal operations; caller owns connection, policy and notifications. */
 import type { OpeningDecisionEvent, OpeningEvidenceCheckpoint } from "../../app/domain/opening-evidence";
 import type { SavedAttempt, SavedEvent, SavedOpeningJournal, OpeningEvidenceReceipt, CompletionSignal, PreparedOpeningAggregate, PendingOpeningReviewAttempt } from "../../app/domain/opening-evidence-journal";
@@ -57,48 +58,54 @@ export function readPositionOpeningJournal(database: IDBDatabase, attemptId: str
   });
 }
 
-export function rejectOpeningAttempt(database: IDBDatabase, attemptId: string, message: string): Promise<void> {
+export function rejectOpeningAttempt(database: IDBDatabase, attemptId: string, message: string, binding?: OfflineDatabaseBinding): Promise<void> {
   return new Promise<void>((resolve, reject) => {
+    binding?.requireCurrent();
     const transaction = database.transaction("opening_attempts", "readwrite");
-    const store = transaction.objectStore("opening_attempts");
+    const store = transaction.objectStore("opening_attempts"); let failure: unknown;
     const read = store.get(attemptId);
-    read.onsuccess = () => { if (read.result && read.result.delivery_state !== "retained") store.put({ ...read.result, delivery_state: "rejected", rejection: message }); };
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error);
+    read.onsuccess = () => { try { binding?.requireCurrent(); if (read.result && read.result.delivery_state !== "retained") store.put({ ...read.result, delivery_state: "rejected", rejection: message }); } catch (error) { failure = error; transaction.abort(); } };
+    transaction.oncomplete = () => { try { binding?.requireCurrent(); resolve(); } catch (error) { reject(error); } };
+    transaction.onerror = () => reject(failure ?? transaction.error);
+    transaction.onabort = () => reject(failure ?? transaction.error);
   });
 }
 
-export function removeAcknowledgedOpeningAttempt(database: IDBDatabase, attemptId: string, onRemoved: () => void): Promise<void> {
+export function removeAcknowledgedOpeningAttempt(database: IDBDatabase, attemptId: string, onRemoved: () => void, binding?: OfflineDatabaseBinding): Promise<void> {
   return new Promise<void>((resolve, reject) => {
+    binding?.requireCurrent();
     const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
-    const attempts = transaction.objectStore("opening_attempts");
+    const attempts = transaction.objectStore("opening_attempts"); let failure: unknown;
+    const abort = (error: unknown) => { failure = error; transaction.abort(); };
     const read = attempts.get(attemptId);
-    read.onsuccess = () => {
+    read.onsuccess = () => { try {
+      binding?.requireCurrent();
       if (!read.result || ["rejected", "retained"].includes(read.result.delivery_state)) return;
       attempts.delete(attemptId);
       onRemoved();
       const cursor = transaction.objectStore("opening_events").index("attempt_id").openCursor(attemptId);
-      cursor.onsuccess = () => { if (cursor.result) { cursor.result.delete(); cursor.result.continue(); } };
-    };
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error);
+      cursor.onsuccess = () => { try { binding?.requireCurrent(); if (cursor.result) { cursor.result.delete(); cursor.result.continue(); } } catch (error) { abort(error); } };
+    } catch (error) { abort(error); } };
+    transaction.oncomplete = () => { try { binding?.requireCurrent(); resolve(); } catch (error) { reject(error); } };
+    transaction.onerror = () => reject(failure ?? transaction.error);
+    transaction.onabort = () => reject(failure ?? transaction.error);
   });
 }
 
-export function retainOpeningAttempt(database: IDBDatabase, snapshot: OpeningEvidenceCheckpoint, events: OpeningDecisionEvent[], header: Omit<OpeningEvidenceCheckpoint, "events">, sessionId: string): Promise<void> {
+export function retainOpeningAttempt(database: IDBDatabase, snapshot: OpeningEvidenceCheckpoint, events: OpeningDecisionEvent[], header: Omit<OpeningEvidenceCheckpoint, "events">, sessionId: string, binding?: OfflineDatabaseBinding): Promise<void> {
   return new Promise<void>((resolve, reject) => {
+    binding?.requireCurrent();
     const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
-    const attempts = transaction.objectStore("opening_attempts");
+    const attempts = transaction.objectStore("opening_attempts"); let failure: unknown;
     const prior = attempts.get(snapshot.attempt_id);
-    prior.onsuccess = () => attempts.put({ ...prior.result, ...header, owner_session_id: prior.result?.owner_session_id ?? sessionId,
-      final_sequence: events.length, delivery_state: "retained", retention_reason: "local_storage_quota" });
+    prior.onsuccess = () => { try { binding?.requireCurrent(); attempts.put({ ...prior.result, ...header, owner_session_id: prior.result?.owner_session_id ?? sessionId,
+      final_sequence: events.length, delivery_state: "retained", retention_reason: "local_storage_quota" }); } catch (error) { failure = error; transaction.abort(); } };
     // Restore the full bounded envelope even if earlier checkpoints were acknowledged.
-    for (const event of events) transaction.objectStore("opening_events").put({ ...event, attempt_id: snapshot.attempt_id });
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error);
+    try { for (const event of events) { binding?.requireCurrent(); transaction.objectStore("opening_events").put({ ...event, attempt_id: snapshot.attempt_id }); } }
+    catch (error) { failure = error; transaction.abort(); }
+    transaction.oncomplete = () => { try { binding?.requireCurrent(); resolve(); } catch (error) { reject(error); } };
+    transaction.onerror = () => reject(failure ?? transaction.error);
+    transaction.onabort = () => reject(failure ?? transaction.error);
   });
 }
 

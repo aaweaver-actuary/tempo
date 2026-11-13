@@ -5,7 +5,7 @@ import { LEARNING_URL as API_URL } from "./study-connection";
 import type { PracticeCard } from "../domain/cards";
 import type { AssistanceKind, OpeningDecisionEvent, OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { openingEvidenceCheckpointSchema, openingDecisionEventSchema } from "../domain/opening-evidence";
-import { offlineTrainingDatabase } from "../../database/browser/offline-training-storage";
+import { offlineTrainingDatabase, captureOfflineDatabaseBinding, type OfflineDatabaseBinding } from "../../database/browser/offline-training-storage";
 import { confirmOriginalOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
 import { notifications, publishNotification, resolveNotification } from "./notifications";
 import { markOpeningEvidenceTimeout, openingEvidenceFetch, OpeningEvidenceHttpError, openingEvidenceRecoveryPolicy, openingEvidenceRetryDelays } from "./opening-evidence-recovery-policy";
@@ -380,10 +380,14 @@ async function savedJournal(attemptId?: string): Promise<SavedOpeningJournal | u
   return journalStorage.readSavedOpeningJournal(database, attemptId, attemptId => blockedRecoveryAttempts.has(attemptId));
 }
 
-export async function rejectOpeningEvidence(attemptId: string, message: string): Promise<void> {
+export async function rejectOpeningEvidence(attemptId: string, message: string, binding?: OfflineDatabaseBinding): Promise<void> {
+  if (typeof indexedDB !== "undefined") binding ??= captureOfflineDatabaseBinding();
+  binding?.requireCurrent();
   if (typeof indexedDB !== "undefined") {
-    const database = await offlineTrainingDatabase();
-    await journalStorage.rejectOpeningAttempt(database, attemptId, message);
+    const database = await offlineTrainingDatabase(binding);
+    binding?.requireCurrent();
+    await journalStorage.rejectOpeningAttempt(database, attemptId, message, binding);
+    binding?.requireCurrent();
   }
   retryingRecoveryAttempts.delete(attemptId);
   blockedRecoveryAttempts.delete(attemptId);
@@ -391,12 +395,17 @@ export async function rejectOpeningEvidence(attemptId: string, message: string):
     message: `Opening evidence was rejected and retained for diagnosis. The aggregate review can still save. ${message}` });
 }
 
-export async function acknowledgeOpeningReview(attemptId: string): Promise<void> {
+export async function acknowledgeOpeningReview(attemptId: string, binding?: OfflineDatabaseBinding): Promise<void> {
+  if (typeof indexedDB !== "undefined") binding ??= captureOfflineDatabaseBinding();
+  binding?.requireCurrent();
   if (typeof indexedDB === "undefined") return;
   await writeTail.catch(() => undefined);
-  const database = await offlineTrainingDatabase();
+  binding?.requireCurrent();
+  const database = await offlineTrainingDatabase(binding);
+  binding?.requireCurrent();
   let attemptRemoved = false;
-  await journalStorage.removeAcknowledgedOpeningAttempt(database, attemptId, () => { attemptRemoved = true; });
+  await journalStorage.removeAcknowledgedOpeningAttempt(database, attemptId, () => { attemptRemoved = true; }, binding);
+  binding?.requireCurrent();
   captures.delete(attemptId);
   retryingRecoveryAttempts.delete(attemptId);
   blockedRecoveryAttempts.delete(attemptId);
@@ -405,13 +414,17 @@ export async function acknowledgeOpeningReview(attemptId: string): Promise<void>
 }
 
 /** Local capacity fallback is diagnostic retention, not a server rejection. */
-export function retainOpeningEvidenceForStorageFallback(completion: OpeningEvidenceCheckpoint): Promise<void> {
+export function retainOpeningEvidenceForStorageFallback(completion: OpeningEvidenceCheckpoint, binding?: OfflineDatabaseBinding): Promise<void> {
+  if (typeof indexedDB !== "undefined") binding ??= captureOfflineDatabaseBinding();
   const snapshot = structuredClone(completion);
   const retaining = writeTail.catch(() => undefined).then(async () => {
     if (typeof indexedDB === "undefined") throw new Error("IndexedDB is unavailable");
-    const database = await offlineTrainingDatabase();
+    binding?.requireCurrent();
+    const database = await offlineTrainingDatabase(binding);
+    binding?.requireCurrent();
     const { events, ...header } = snapshot;
-    await journalStorage.retainOpeningAttempt(database, snapshot, events, header, sessionId);
+    await journalStorage.retainOpeningAttempt(database, snapshot, events, header, sessionId, binding);
+    binding?.requireCurrent();
     publishNotification({ severity: "warning", source: "opening evidence", key: `opening-evidence:${snapshot.attempt_id}`,
       message: "Opening evidence could not fit in review storage and is retained separately for diagnosis. The aggregate review can still save." });
   });
