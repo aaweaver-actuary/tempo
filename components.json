@@ -4232,6 +4232,7 @@
         "app/domain/study-exercises.ts",
         "app/domain/training-session.ts",
         "app/domain/transport.ts",
+        "app/domain/validation.ts",
         "app/features/game-review/GameReviewView.tsx",
         "app/features/game-review/contracts.ts",
         "app/features/study/controller.ts",

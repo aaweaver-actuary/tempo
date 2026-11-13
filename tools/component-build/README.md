@@ -550,7 +550,7 @@ evidence, Tactics, Study and authoring consumers remain visible. This source map
 is not a standalone package or runtime qualification. Nineteen previously reported
 fixture failures remain unresolved.
 
-At this base revision, 92 of 291 tracked Python files in those trees remain
+At this base revision, 90 of 289 tracked Python files in those trees remain
 outside the combined 199-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
