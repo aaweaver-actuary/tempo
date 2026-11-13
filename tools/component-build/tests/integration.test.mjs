@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources, validateReductionTools, validateContractTooling, validateDatabaseCliTools, validateBackupVerificationSources, validateManagedCutSources, validatePostgresQualificationSources } from "../check-components.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources, validateReductionTools, validateContractTooling, validateDatabaseCliTools, validateBackupVerificationSources, validateManagedCutSources, validatePostgresQualificationSources, validateStudyCensusResource } from "../check-components.mjs";
 import { validateOwnedPaths, selectComponents } from "../selection.mjs";
 import { validateMigrationInventory } from "../../../database/tooling/check-migration-inventory.mjs";
 
@@ -98,6 +98,28 @@ for (const [scope, path] of [["retained", "backend/app/contracts/new_contract.py
     assert.throws(() => validateCensusOwnership(original, scope, paths), /found 0/);
   });
 }
+test("T02 Study census SQL owner rejects missing, duplicate, stale, role and overlap", () => {
+  assert.deepEqual(validateStudyCensusResource(original,repository),{resources:1});
+  const change=(fn)=>{const bad=structuredClone(original),owner=bad.components.find(c=>c.id==="postgres-study-census-resource");fn(bad,owner);return bad;};
+  assert.throws(()=>validateStudyCensusResource(change((_,o)=>o.ownedFiles.pop()),repository),/missing, duplicate or stale/);
+  assert.throws(()=>validateStudyCensusResource(change((_,o)=>o.ownedFiles.push(o.ownedFiles[0])),repository),/missing, duplicate or stale/);
+  assert.throws(()=>validateStudyCensusResource(change((_,o)=>o.ownedFiles[0]="../foreign.sql"),repository),/missing, duplicate or stale/);
+  assert.throws(()=>validateStudyCensusResource(change((_,o)=>o.resourceRoles[0]+="-wrong"),repository),/census role/);
+  assert.throws(()=>validateStudyCensusResource(change((b,o)=>b.components.find(c=>c.id==="integration").ownedFiles.push(o.ownedFiles[0])),repository),/overlapping/);
+});
+test("T02 Study census source discovers new tracked resources without executing SQL", context => {
+  const root=mkdtempSync(join(tmpdir(),"tempo-study-census-source-"));context.after(()=>rmSync(root,{recursive:true,force:true}));
+  assert.equal(spawnSync("git",["-C",root,"init","-q"],{cwd:root}).status,0);
+  const path="database/tooling/study_census.sql";mkdirSync(join(root,path,".."),{recursive:true});cpSync(join(repository,path),join(root,path));
+  assert.equal(spawnSync("git",["-C",root,"add",path],{cwd:root}).status,0);assert.deepEqual(validateStudyCensusResource(original,root),{resources:1});
+  const added="database/tooling/study_census_extra.sql";writeFileSync(join(root,added),"SELECT 1;\n");assert.equal(spawnSync("git",["-C",root,"add",added],{cwd:root}).status,0);
+  assert.throws(()=>validateStudyCensusResource(original,root),/missing, duplicate or stale/);
+  const registered=structuredClone(original),owner=registered.components.find(c=>c.id==="postgres-study-census-resource");owner.ownedFiles.push(added);owner.resourceRoles.push(added+"#inspection-sql");
+  assert.deepEqual(validateStudyCensusResource(registered,root),{resources:2});
+  const jsx="database/tooling/study_census_extra.jsx";writeFileSync(join(root,jsx),"export default null;\n");assert.equal(spawnSync("git",["-C",root,"add",jsx],{cwd:root}).status,0);
+  assert.throws(()=>validateStudyCensusResource(registered,root),/missing, duplicate or stale/);
+  owner.ownedFiles.push(jsx);owner.resourceRoles.push(jsx+"#inspection-sql");assert.throws(()=>validateStudyCensusResource(registered,root),/Invalid or overlapping Study census source/);
+});
 test("T02 PostgreSQL qualification owners reject missing, duplicate, stale, role, export, dependency and overlap", () => {
   assert.deepEqual(validatePostgresQualificationSources(original,repository,python),{sources:2});
   const change=(fn)=>{const bad=structuredClone(original),owner=bad.components.find(c=>c.id==="postgres-read-route-audit");fn(bad,owner);return bad;};

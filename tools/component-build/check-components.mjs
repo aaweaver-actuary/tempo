@@ -572,6 +572,20 @@ for path in json.loads(sys.argv[3]):
   return {sources:tracked.length};
 }
 
+export function validateStudyCensusResource(manifest, root = repository) {
+  const result=spawnSync("git",["ls-files","-z","database/tooling"],{cwd:root,encoding:"utf8"});
+  if(result.error || result.status!==0) throw new Error("Cannot enumerate Study census resources");
+  const tracked=result.stdout.split("\0").filter(p=>/^database\/tooling\/study_census[^/]*\.(?:sql|py|sh|js|jsx|mjs|cjs|ts|tsx)$/.test(p));
+  const owner=manifest.components.find(c=>c.id==="postgres-study-census-resource"),mapped=manifest.components.filter(c=>c.status==="mapped" && c.ownedFiles);
+  if(!owner || owner.status!=="mapped" || !Array.isArray(owner.ownedFiles) || !Array.isArray(owner.resourceRoles)) throw new Error("Missing Study census owner");
+  if(new Set(owner.ownedFiles).size!==owner.ownedFiles.length || owner.ownedFiles.length!==tracked.length || owner.ownedFiles.some(p=>!tracked.includes(p))) throw new Error("Study census inventory missing, duplicate or stale");
+  const roles=new Map();
+  for(const value of owner.resourceRoles){const parts=typeof value==="string" ? value.split("#") : [];if(parts.length!==2 || !owner.ownedFiles.includes(parts[0]) || parts[1]!=="inspection-sql" || roles.has(parts[0])) throw new Error("Invalid Study census role");roles.set(parts[0],parts[1]);}
+  if(roles.size!==tracked.length || !owner.ownedFiles.includes("database/tooling/study_census.sql")) throw new Error("Missing Study census capability");
+  for(const path of tracked) if(!path.endsWith(".sql") || path.split("/").some(x=>!x || x==="." || x==="..") || !existsSync(resolve(root,path)) || !inside(realpathSync(root),realpathSync(resolve(root,path))) || mapped.filter(c=>c.ownedFiles.includes(path)).length!==1) throw new Error("Invalid or overlapping Study census source");
+  return {resources:tracked.length};
+}
+
 export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", options = {}) {
   const manifest = readManifest(root);
   const selected = selectComponents(manifest, options.componentIds);
@@ -590,6 +604,7 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
     validateBackupVerificationSources(manifest, root, python);
     validateManagedCutSources(manifest, root, python);
     validatePostgresQualificationSources(manifest, root, python);
+    validateStudyCensusResource(manifest, root);
     validateContractTooling(manifest, root, python);
   }
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
@@ -634,6 +649,7 @@ if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pat
         validateBackupVerificationSources(manifest, root);
         validateManagedCutSources(manifest, root);
         validatePostgresQualificationSources(manifest, root);
+        validateStudyCensusResource(manifest, root);
         validateContractTooling(manifest, root);
       }
       validateManifest(manifest, root, { componentIds: options.suiteIds ? [] : selected.map(component => component.id), suiteIds: options.suiteIds });
