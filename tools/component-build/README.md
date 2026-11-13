@@ -307,13 +307,24 @@ and selected dependencies; notes identify out-of-scope collaborators. The
 checker tests exact ownership only within this named set and fails unowned,
 overlapping, stale, or nonexistent named entrypoints.
 
-This is not a whole-backend or storage ownership proof: 254 other tracked Python
-files in those trees remain outside the 37-file selection at the base revision.
+A second explicit selection maps 12 review and command files: dispatch, gateway,
+review command, adapter, scheduling and reconciliation, and their receipt,
+review and savepoint storage. The gateway spans multiple domains; dispatch imports
+Celery and the review command registers handlers at import. Review policy imports
+storage and scheduling, and review storage depends on queue-refresh presentation
+and admission. The existing legacy review adapter remains present. These are
+source facts, not claims of import purity or a complete dependency closure.
+
+This is not a whole-backend or storage ownership proof: at the base revision,
+242 of 291 tracked Python files in those trees remain outside the combined
+49-file selections. The T02 delivery owner should select and inspect the next
+coherent owners before expanding the map; exact-file selection does not discover
+new siblings automatically.
 Known existing edges remain visible rather than being called pure isolation:
 `study/queue_placement.py` imports the private service helper
 `queue_ordering._priority_queue_order`, `study/policy/review_reconciliation.py`
 imports storage and scheduling services, and `tempo_storage/commands/queue.py`
-imports the private queue-refresh projection SQL constant. They are not within
+imports the private queue-refresh projection SQL constant. These edges are not resolved by
 this map and this change neither authorizes nor performs their extraction. The
 current next-exercise main branch still has its existing untyped callbacks;
 unmerged B12/B13 are not represented as released. Native, browser, package and

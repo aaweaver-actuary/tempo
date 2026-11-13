@@ -179,9 +179,9 @@ export function validateRetainedBackendOwnership(manifest, paths) {
   const declared = manifest.components.filter(component => retainedBackendOwnerIds.includes(component.id)).flatMap(component => component.ownedFiles ?? []);
   if (new Set(declared).size !== declared.length || declared.length !== paths.length || declared.some(path => !paths.includes(path))) throw new Error("Retained backend seam inventory contains duplicate or untracked source");
 }
-export function validateRetainedBackendInterfaces(manifest, root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3") {
-  const owners = manifest.components.filter(component => retainedBackendOwnerIds.includes(component.id));
-  if (owners.length !== retainedBackendOwnerIds.length || owners.some(owner => !owner.publicExports?.length)) throw new Error("Retained backend owner lacks named interfaces");
+export function validateRetainedBackendInterfaces(manifest, root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", ownerIds = retainedBackendOwnerIds) {
+  const owners = manifest.components.filter(component => ownerIds.includes(component.id));
+  if (owners.length !== ownerIds.length || owners.some(owner => !owner.publicExports?.length)) throw new Error("Retained backend owner lacks named interfaces");
   const references = owners.flatMap(owner => owner.publicExports.map(value => {
     const parts = value.split("#");
     if (parts.length !== 2 || !owner.ownedFiles?.includes(parts[0]) || parts[0].split("/").some(part => !part || part === "." || part === "..") || !inside(resolve(root), resolve(root, parts[0])) || !/^[A-Za-z_][A-Za-z_0-9]*$/.test(parts[1])) throw new Error("Invalid retained interface: " + value);
@@ -197,6 +197,20 @@ for ref in json.loads(sys.argv[2]):
   if (result.error || result.status !== 0) throw new Error(result.error?.message ?? result.stdout + result.stderr);
 }
 
+// Selected review/command seams only; this is not a backend-wide inventory.
+export const reviewCommandOwnerIds = ["backend-command-dispatch", "backend-command-gateway", "operation-receipt-storage", "study-review-command", "study-review-adapter", "study-review-scheduling", "study-review-reconciliation", "study-review-bridge-storage", "study-review-storage", "study-review-reconciliation-storage", "study-review-savepoint-storage"];
+export const reviewCommandFiles = ["backend/app/command_dispatch.py", "backend/app/command_gateway.py", "database/tempo_storage/commands/receipts/storage.py", "backend/app/review_commands.py", "backend/app/services/learning_review_adapter.py", "backend/app/services/review_service.py", "backend/app/services/review_reconciliation.py", "backend/app/study/policy/review_reconciliation.py", "database/tempo_storage/learning_bridge/review.py", "database/tempo_storage/study/review/storage.py", "database/tempo_storage/review_reconciliation.py", "database/tempo_storage/controls/review_reconciliation.py"];
+export function reviewCommandPaths(root = repository) {
+  const result = spawnSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" });
+  if (result.error || result.status !== 0) throw new Error("Cannot enumerate tracked review seams");
+  return result.stdout.split("\0").filter(path => reviewCommandFiles.includes(path));
+}
+export function validateReviewCommandOwnership(manifest, paths) {
+  validateOwnedPaths(manifest, paths, [...retainedBackendOwnerIds, ...reviewCommandOwnerIds]);
+  const declared = manifest.components.filter(component => reviewCommandOwnerIds.includes(component.id)).flatMap(component => component.ownedFiles ?? []);
+  if (new Set(declared).size !== declared.length || declared.length !== paths.length || declared.some(path => !paths.includes(path))) throw new Error("Review seam inventory contains duplicate or untracked source");
+}
+
 export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", options = {}) {
   const manifest = readManifest(root);
   const selected = selectComponents(manifest, options.componentIds);
@@ -204,6 +218,8 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
     validateCompositionOwnership(manifest, compositionPaths(root));
     validateRetainedBackendOwnership(manifest, retainedBackendPaths(root));
     validateRetainedBackendInterfaces(manifest, root, python);
+    validateReviewCommandOwnership(manifest, reviewCommandPaths(root));
+    validateRetainedBackendInterfaces(manifest, root, python, reviewCommandOwnerIds);
   }
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
   const results = [];
