@@ -115,3 +115,27 @@ runpy.run_path(target,run_name='__main__')
     with psycopg.connect(**options) as db:
         assert db.execute('SELECT card_id,position FROM daily_queue WHERE id=%s', (entry,)).fetchone() == ('native-unrelated', 8)
         assert db.execute('SELECT 1 FROM studies WHERE id=%s', (prefix,)).fetchone() is None
+    # A contradictory caller receipt must roll back all cleanup; a concurrent
+    # position change must remain untouched and be reported as reordered.
+    prefix = 'p12-frozen-' + uuid.uuid4().hex
+    with psycopg.connect(**options) as db:
+        db.execute("UPDATE queue_projections SET state='ready',refresh_pending=0 WHERE queue_date=%s", (day,))
+    second = start('seed')
+    second_out, second_err = second.communicate(timeout=30)
+    assert second.returncode == 0, second_err
+    second_receipt = json.loads(second_out)
+    assert second_receipt['displaced'] == [[entry, 8, second_receipt['displaced'][0][2]]]
+    wrong = start('cleanup', json.dumps([[entry, 8, -123]]), '[]')
+    _, wrong_err = wrong.communicate(timeout=30)
+    assert wrong.returncode != 0 and 'Invalid owned displacement receipt' in wrong_err
+    with psycopg.connect(**options) as db:
+        assert db.execute('SELECT 1 FROM studies WHERE id=%s', (prefix,)).fetchone() == (1,)
+        assert db.execute('SELECT position FROM daily_queue WHERE id=%s', (entry,)).fetchone()[0] == second_receipt['displaced'][0][2]
+        db.execute('UPDATE daily_queue SET position=999 WHERE id=%s', (entry,))
+    moved = start('cleanup', '[]', '[]')
+    moved_out, moved_err = moved.communicate(timeout=30)
+    assert moved.returncode == 0, moved_err
+    assert json.loads(moved_out)['reordered'] == 1
+    with psycopg.connect(**options) as db:
+        assert db.execute('SELECT card_id,position FROM daily_queue WHERE id=%s', (entry,)).fetchone() == ('native-unrelated', 999)
+        assert db.execute('SELECT 1 FROM studies WHERE id=%s', (prefix,)).fetchone() is None
