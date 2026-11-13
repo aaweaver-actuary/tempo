@@ -9,7 +9,7 @@ export type IntentRecord = IntentEnvelope & {
   data?: unknown; receipt?: unknown; claim?: { owner: string; token: string; expiresAt: number };
 };
 export type TeachingFact = { key: string; cardId: string; revision: number; ply?: number; kind: "seen" | "first-clean" };
-export type IntentPutOptions = { initialState?: "pending" | "conflicted"; boundary?: { key: string; value: number } };
+export type IntentPutOptions = { initialState?: "pending" | "conflicted"; boundary?: { key: string; value: number }; requireCurrent?: () => void };
 export type IntentChange = { intents?: boolean; metadata?: boolean; teachingKeys?: string[]; invalidated?: boolean };
 export type IntentStore = {
   put(envelope: IntentEnvelope, data?: unknown, options?: IntentPutOptions): Promise<IntentRecord>;
@@ -111,24 +111,33 @@ export async function openIntentStore(options: { workspace: string; databaseName
   return {
     async put(envelope, data, insertion = {}) {
       // Snapshot before the first asynchronous turn; callers cannot mutate an in-flight insertion.
-      envelope = structuredClone(envelope); data = structuredClone(data); insertion = structuredClone(insertion);
+      const requireCurrent = insertion.requireCurrent;
+      const { requireCurrent: _transientGuard, ...serializableInsertion } = insertion;
+      envelope = structuredClone(envelope); data = structuredClone(data); insertion = structuredClone(serializableInsertion);
+      requireCurrent?.();
       if (![envelope.key, envelope.kind, envelope.attemptId, envelope.requestId, envelope.endpoint, envelope.createdAt].every(value => typeof value === "string" && value.length))
         throw new IntentStorageError("The study request has an incomplete identity.");
       if (insertion.initialState !== undefined && !["pending", "conflicted"].includes(insertion.initialState)) throw new IntentStorageError("Invalid initial study state.");
       return transaction(["intents", "metadata"], "readwrite", async tx => {
+        requireCurrent?.();
         const records = tx.objectStore("intents");
         const previous = await request<IntentRecord | undefined>(records.get(key(envelope.key)));
+        requireCurrent?.();
         if (previous) { if (identity(previous) !== identity(envelope)) throw new IntentIdentityConflict(envelope.key); return previous; }
         const metadata = tx.objectStore("metadata");
         if (insertion.boundary) {
           const boundary = await request<{ value: number } | undefined>(metadata.get(key(insertion.boundary.key)));
+          requireCurrent?.();
           if ((boundary?.value ?? 0) !== insertion.boundary.value) throw new IntentStorageError("Practice changed in another tab. Reload this exercise before answering.");
         }
         const counter = await request<{ value: number } | undefined>(metadata.get(key("sequence")));
+        requireCurrent?.();
         const sequence = (counter?.value ?? 0) + 1;
         await request(metadata.put({ workspace: options.workspace, key: "sequence", value: sequence }));
+        requireCurrent?.();
         const record: IntentRecord = { ...envelope, workspace: options.workspace, sequence, state: insertion.initialState ?? "pending", version: 1, data };
         await request(records.add(record));
+        requireCurrent?.();
         return record;
       });
     },

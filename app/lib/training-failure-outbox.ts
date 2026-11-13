@@ -1,5 +1,5 @@
 import { LEARNING_URL as API_URL, learningFetch as fetch } from "./study-connection";
-import { putStudyIntent, studyIntentRecords, studyIntentStore, updateStudyIntent } from "../../database/browser/study-intent-storage";
+import { putStudyIntent, studyIntentRecords, studyIntentStore, updateStudyIntent, refreshStudyIntents } from "../../database/browser/study-intent-storage";
 import { confirmOriginalOperationResponse, readOperationResponse, PendingOperationError, FailedOperationError } from "./operation-status";
 import { pendingReviews } from "./review-outbox";
 
@@ -52,9 +52,17 @@ async function removeTrainingFailure(queueEntryId: number, operationId?: string)
   for (const marker of savedTrainingFailures().filter(item => item.queueEntryId === queueEntryId && (!operationId || item.operationId === operationId)))
     await updateStudyIntent(`failure:${marker.operationId}`, current => ({ ...current, state: "committed" }));
 }
-export async function clearTrainingFailureAfterReview(queueEntryId: number, backendId?: string, expectedRevision?: number): Promise<void> {
-  for (const marker of savedTrainingFailures().filter(item => !isLegacyTrainingFailure(item) && item.queueEntryId === queueEntryId && item.backendId === backendId && item.expectedRevision === expectedRevision))
-    await removeTrainingFailure(queueEntryId, marker.operationId);
+export async function clearTrainingFailureAfterReview(queueEntryId: number, backendId?: string, expectedRevision?: number,
+  binding?: { store: Awaited<ReturnType<typeof studyIntentStore>>; requireCurrent: () => void }): Promise<void> {
+  binding?.requireCurrent();
+  for (const marker of savedTrainingFailures().filter(item => !isLegacyTrainingFailure(item) && item.queueEntryId === queueEntryId && item.backendId === backendId && item.expectedRevision === expectedRevision)) {
+    binding?.requireCurrent();
+    if (!binding) await removeTrainingFailure(queueEntryId, marker.operationId);
+    else {
+      await binding.store.update(`failure:${marker.operationId}`, current => { binding.requireCurrent(); return { ...current, state: "committed" }; });
+      binding.requireCurrent(); await refreshStudyIntents(); binding.requireCurrent();
+    }
+  }
 }
 async function rotateTrainingFailureOperation(operationId: string): Promise<void> {
   const marker = savedTrainingFailures().find(item => item.operationId === operationId);

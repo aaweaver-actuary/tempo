@@ -83,3 +83,39 @@ sequenceDiagram
   DB-->>Worker: Commit hold and checkpoint together
   Worker->>Worker: Continue other introductions; recheck on later selection
 ```
+
+For a newly generated ordinary opening attempt, the browser records ephemeral
+fresh-attempt provenance and tries to hold the original attempt's Web Lock.
+After a positively observed first IndexedDB transaction abort and a generation
+change, recovery can restore the original event only while the same authority
+and locator return, the lock remains held, no aggregate or evidence delivery
+has been exposed, and the journal, events and phone aggregate checks permit the
+same transaction. Exposure aborts an in-flight missing-anchor transaction. A
+later ambiguous write invalidates an earlier abort observation. Existing
+matching durable headers use the retained prefix validation path.
+
+Exposed, foreign, legacy, position, lock-unavailable and uncertain missing-anchor
+captures stay held. Old tabs do not participate in the new lifecycle proof;
+ordinary review remains available when Web Locks are unavailable. This source
+map does not establish real-browser, assembled or installed acceptance.
+
+```mermaid
+sequenceDiagram
+  participant Capture as Fresh ordinary capture
+  participant Lock as Original attempt Web Lock
+  participant Journal as Browser journal owner
+  participant DB as Original authority IndexedDB
+  participant Aggregate as Review and phone owners
+  Capture->>Lock: Hold original attempt identity
+  Capture->>Journal: Append original header and events
+  Journal->>DB: Begin original-authority transaction
+  DB-->>Journal: Positively observed abort
+  alt Aggregate exposed, ambiguous outcome, or lock lost
+    Aggregate-->>Journal: Mark exposure before retention or send
+    Journal-->>Capture: Hold original evidence
+  else Original authority returns with exclusive unexposed proof
+    Capture->>Journal: Retry original attempt
+    Journal->>DB: Check absent header, events and phone aggregate; insert atomically
+    DB-->>Journal: Commit original identity and event bytes
+  end
+```
