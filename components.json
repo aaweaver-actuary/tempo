@@ -2,6 +2,100 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "position-first-response-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/position_learning",
+      "publicExports": [
+        "backend/app/study/position_learning/first_response_policy.py#propose_grade"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/position_learning/first_response_policy.py"
+      ],
+      "ownershipRole": "Propose grade from accepted first-response facts",
+      "dependencyNotes": [
+        "Uses existing position contracts; caller supplies durable accepted receipt, issued due/source facts and authoritative Study day. Ledger uniqueness and replay remain with transactional grade owner."
+      ],
+      "censusScope": "position_first_response"
+    },
+    {
+      "id": "position-first-response-codec",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/position_learning",
+      "publicExports": [
+        "backend/app/study/position_learning/first_response_codec.py#position_first_response_envelope",
+        "backend/app/study/position_learning/first_response_codec.py#decode_position_first_response"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/position_learning/first_response_codec.py"
+      ],
+      "ownershipRole": "Encode and verify issued first-response evidence",
+      "dependencyNotes": [
+        "Canonical digest and strict envelope bind original plan, attempt, event and decision; fenced authored-source classifier supplies alternate disposition. Checkpoint, issuance and grade effects consume it."
+      ],
+      "censusScope": "position_first_response"
+    },
+    {
+      "id": "position-first-response-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/study",
+      "publicExports": [
+        "database/tempo_storage/study/position_first_responses.py#issued_record",
+        "database/tempo_storage/study/position_first_responses.py#receipt",
+        "database/tempo_storage/study/position_first_responses.py#insert",
+        "database/tempo_storage/study/position_first_responses.py#lock_original_queue",
+        "database/tempo_storage/study/position_first_responses.py#lock_attempt",
+        "database/tempo_storage/study/position_first_responses.py#acceptance_clock",
+        "database/tempo_storage/study/position_first_responses.py#grade_receipt"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/study/position_first_responses.py"
+      ],
+      "ownershipRole": "Persist first-response receipts on Study transaction",
+      "dependencyNotes": [
+        "Caller fences issuance, card/queue, source and owner. Native SQL locks attempt and original queue or unique retained origin, reads acceptance clock and persists exact event/attempt/decision receipt; it opens no connection."
+      ],
+      "censusScope": "position_first_response"
+    },
+    {
       "id": "opening-evidence-policy",
       "type": "integration",
       "maintainer": "Tempo",

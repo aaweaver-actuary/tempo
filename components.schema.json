@@ -180,7 +180,8 @@
               "repertoire_conflicts",
               "frozen_order",
               "queue_attempt_origin",
-              "opening_evidence"
+              "opening_evidence",
+              "position_first_response"
             ]
           }
         }

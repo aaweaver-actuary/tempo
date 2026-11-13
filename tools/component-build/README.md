@@ -513,8 +513,14 @@ position fences, review receipt and caller transaction edges remain visible. The
 policy also checks current UTC time; this is a source map, not native proof. The
 nineteen previously reported fixture failures remain unresolved.
 
-At this base revision, 117 of 291 tracked Python files in those trees remain
-outside the combined 174-file selections. The registry alone assigns owners;
+A thirtieth selection maps position first-response proposal, envelope codec and
+receipt storage. Original issued plan, attempt/event/decision identities, digest,
+acceptance clock and caller-owned source/queue/owner fences remain visible. Grade
+ledger uniqueness and scheduling remain with their existing owner. This is a source
+map, not native proof; nineteen previously reported fixture failures remain open.
+
+At this base revision, 114 of 291 tracked Python files in those trees remain
+outside the combined 177-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
