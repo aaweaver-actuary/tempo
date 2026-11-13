@@ -15,6 +15,11 @@ flowchart TD
   Compose --> Next[Study next exercise operation]
   Next -->|injected read and issue capabilities| Reads[Borrowed tempo_storage reads]
   Next --> Issue[Issue or replay original position plan]
+  Next --> Carrier[Pure position carrier selection]
+  Refresh[Queue refresh] --> Admission[Position admission preparation]
+  Admission --> Carrier
+  Admission --> SourceCache[Revision-bound source cache]
+  Next --> SourceCache
   Issue --> Manifest[Position checkpoint manifest]
   Manifest --> Queue[Flat queue or truthful hold]
   PGN[Pasted PGN or saved game] --> Replay[Full legal replay]
@@ -22,6 +27,9 @@ flowchart TD
   Facts --> Compare[Typed first departure comparison]
   Compare --> Result[Departure, coverage end, covered or unavailable]
 ```
+
+The carrier selector is shared pure policy. The source cache remains with queue-head
+preparation; it is a bounded hint and does not replace the writer source fence.
 
 The Study owner rechecks the current day and head after issuance. Original
 attempts, first-response checkpoints and human review receipts retain their

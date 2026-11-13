@@ -215,7 +215,8 @@
               "lifecycle_projection",
               "opening_kernels",
               "opening_admission",
-              "startup_composition"
+              "startup_composition",
+              "position_admission"
             ]
           },
           "resourceRoles": {
@@ -229,6 +230,43 @@
     },
     "suites": {
       "type": "array"
+    },
+    "namespaceMarkers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "role",
+          "participants",
+          "maintainer",
+          "note"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "shared-namespace",
+              "namespace-unassigned"
+            ]
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "maintainer": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }
