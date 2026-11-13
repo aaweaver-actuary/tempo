@@ -2,7 +2,7 @@ import { decodeOperationAcceptance, decodeOperationResult } from "../domain/adap
 import { defaultStudyClient, type StudyClient } from "./study-connection";
 import { notifyOperationStatusChange } from "./operation-status-events";
 
-type OperationResponseOptions = { background?: boolean; signal?: AbortSignal; fetch?: typeof fetch; allowMissing?: boolean; baseUrl?: string; client?: StudyClient };
+type OperationResponseOptions = { requireReceiptIdentity?: boolean; background?: boolean; signal?: AbortSignal; fetch?: typeof fetch; allowMissing?: boolean; baseUrl?: string; client?: StudyClient };
 type ClientBinding = { client: StudyClient; generation: number; origin: string };
 function bindClient(client?: StudyClient): ClientBinding | undefined {
   return client ? { client, generation: client.generation, origin: client.origin } : undefined;
@@ -70,7 +70,7 @@ async function readReceipt(operationId: string, options: OperationResponseOption
     throw error;
   }
   requireBinding(binding);
-  const result = decodeOperationResult(wire, operationId, binding?.client.independent ?? defaultStudyClient.independent);
+  const result = decodeOperationResult(wire, operationId, options.requireReceiptIdentity || (binding?.client.independent ?? defaultStudyClient.independent));
   if (result.kind === "malformed" && result.reason === "identity")
     throw new PendingOperationError(operationId, "Learning did not confirm the original operation identity.");
   // A missing receipt can only be replayed by a caller retaining the original command.

@@ -79,3 +79,13 @@ def feedback(study_id: str, exercise_id: str, attempt_id: str):
     if row is None:
         raise HTTPException(404, "Committed attempt not found")
     return {"specification": _decode(row["specification_json"]).model_dump(mode="json")}
+
+
+@router.get(_prefix + "/attempts/{attempt_id}/requeue")
+def requeue_identity(study_id: str, exercise_id: str, attempt_id: str):
+    """Return only the exact completed review's currently queued repeat."""
+    with read_connection() as database:
+        row = storage.completed_review_requeue(database, study_id, exercise_id, attempt_id)
+    if row is None:
+        raise HTTPException(404, "Original review repeat unavailable")
+    return row

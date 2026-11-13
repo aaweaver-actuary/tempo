@@ -254,3 +254,32 @@ def _issued_before_archive_remounts_and_saves_original_attempt(frozen, monkeypat
         client.post(BASE + ('unissued' if suffix == 'unissued' else 'explain') + '/attempts', json=changed, headers={'Idempotency-Key': 'reject-' + suffix})
     with transaction() as db:
         assert db.execute("SELECT count(*) FROM operation_receipts WHERE operation_id IN ('reject-unissued','reject-practice') AND state='failed'").fetchone()[0] == 2
+
+
+def test_native_original_review_requeue_cycle_read_is_bound_and_read_only(frozen):
+    client, transaction = frozen
+    day = date.today().isoformat()
+    with transaction() as db:
+        parent_entry = db.execute("INSERT INTO daily_queue(queue_date,card_id,position,cycle) VALUES(%s,'card-choice',0,0) RETURNING id", (day,)).fetchone()[0]
+        db.execute("INSERT INTO daily_queue(queue_date,card_id,position,cycle,status) VALUES(%s,'card-choice',1,3,'complete')", (day,))
+    body = {'attempt_id': 'requeue-parent', 'revision': 1, 'context': 'review', 'queue_entry_id': parent_entry,
+            'queue_cycle': 0, 'card_id': 'card-choice', 'answer': {'type': 'choice', 'option_ids': ['b']}}
+    result = client.post(BASE + 'choice/attempts', json=body, headers={'Idempotency-Key': 'requeue-parent-op'}).json()
+    assert result['persisted'] is True and result['review']['requeue_entry_id']
+    entry = result['review']['requeue_entry_id']
+    url = BASE + 'choice/attempts/requeue-parent/requeue'
+    expected = {'parent_attempt_id': 'requeue-parent', 'review_id': result['review']['review_id'],
+                'queue_entry_id': entry, 'card_id': 'card-choice', 'cycle': 4, 'revision': 1}
+    assert client.get(url).json() == expected
+    assert client.get(BASE + 'choice/attempts/foreign/requeue').status_code == 404
+    assert client.get('/api/studies/foreign/exercises/choice/attempts/requeue-parent/requeue').status_code == 404
+    with transaction() as db:
+        assert db.execute('SELECT cycle,status FROM daily_queue WHERE id=%s', (entry,)).fetchone()['cycle'] == 4
+        assert db.execute("SELECT count(*) FROM study_attempts WHERE id='requeue-parent'").fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM reviews WHERE source_ref='requeue-parent'").fetchone()[0] == 1
+        db.execute('UPDATE cards SET revision=2 WHERE id=%s', ('card-choice',))
+    assert client.get(url).status_code == 404
+    with transaction() as db:
+        db.execute("UPDATE cards SET revision=1 WHERE id='card-choice'")
+        db.execute("UPDATE daily_queue SET status='complete' WHERE id=%s", (entry,))
+    assert client.get(url).status_code == 404

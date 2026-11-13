@@ -104,3 +104,16 @@ def test_published_presentation_never_bypasses_supplied_issued_identity(client, 
     assert ordinary == []
     assert client.get(BASE + "/present").status_code == 200
     assert len(ordinary) == 1
+
+
+def test_requeue_read_binds_original_parent_and_never_dispatches(client, monkeypatch):
+    calls = []
+    def read(db, study, exercise, attempt):
+        calls.append((study, exercise, attempt))
+        return {'parent_attempt_id': attempt, 'review_id': 41, 'queue_entry_id': 77,
+                'card_id': 'card', 'cycle': 3, 'revision': 2} if (study, exercise, attempt) == ('study', 'exercise', 'parent') else None
+    monkeypatch.setattr(routes.storage, 'completed_review_requeue', read)
+    assert client.get(BASE + '/attempts/parent/requeue').json() == {'parent_attempt_id': 'parent', 'review_id': 41, 'queue_entry_id': 77, 'card_id': 'card', 'cycle': 3, 'revision': 2}
+    assert client.get(BASE + '/attempts/foreign/requeue').status_code == 404
+    assert client.get('/api/studies/foreign/exercises/exercise/attempts/parent/requeue').status_code == 404
+    assert calls == [('study', 'exercise', 'parent'), ('study', 'exercise', 'foreign'), ('foreign', 'exercise', 'parent')]
