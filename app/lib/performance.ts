@@ -149,12 +149,7 @@ export function measureTempoDragPhase(operation: TempoDragPhase) {
   };
 }
 
-function translatedPiecePosition(element: HTMLElement) {
-  const translate = element.style.transform.match(/^translate\(\s*(-?[\d.]+)px,\s*(-?[\d.]+)px\s*\)$/);
-  return translate ? [Number(translate[1]), Number(translate[2])] : null;
-}
-
-export function installTempoDragCapture(surface: HTMLElement, api: import("@lichess-org/chessground/api").Api) {
+export function installTempoDragCapture(surface: HTMLElement, readInputSnapshot: () => import("@tempo/board-ui").BoardInputSnapshot | null) {
   let session: TempoDragSession | undefined;
   let pendingEvents: TempoDragEvent[] = [];
   let frame = 0;
@@ -193,27 +188,26 @@ export function installTempoDragCapture(surface: HTMLElement, api: import("@lich
     const captureStartedAtMs = performance.now();
     frame = 0;
     if (!pending || disposed) return;
-    const drag = api.state.draggable.current;
+    const drag = readInputSnapshot();
     if (!drag) { finish(released ? "drop" : "board-interruption"); return; }
     if (!drag.started) { frame = requestAnimationFrame(observeFrame); return; }
-    const element = typeof drag.element === "function" ? undefined : drag.element;
     if (!session || session.endReason) {
-      const bounds = api.state.dom.bounds();
-      const originalFile = drag.orig?.charCodeAt(0) - 97;
-      const originalRank = Number(drag.orig?.[1]) - 1;
-      const white = api.state.orientation === "white";
-      const translated = element && translatedPiecePosition(element);
+      const bounds = drag.bounds;
+      const originalFile = drag.origin.charCodeAt(0) - 97;
+      const originalRank = Number(drag.origin[1]) - 1;
+      const white = drag.orientation === "white";
+      const translated = drag.piecePosition;
       const centerX = Number.isFinite(originalFile) ? bounds.left + ((white ? originalFile : 7 - originalFile) + 0.5) * bounds.width / 8
         : bounds.left + (translated?.[0] ?? 0) + bounds.width / 16;
       const centerY = Number.isFinite(originalRank) ? bounds.top + ((white ? 7 - originalRank : originalRank) + 0.5) * bounds.height / 8
         : bounds.top + (translated?.[1] ?? 0) + bounds.height / 16;
       session = {
         id: nextDragId++, startedAtMs: performance.now(), endedAtMs: null, endReason: null,
-        orientation: api.state.orientation,
+        orientation: drag.orientation,
         viewport: { width: window.innerWidth, height: window.innerHeight, devicePixelRatio: window.devicePixelRatio },
         boardGeometry: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height },
-        animation: { enabled: api.state.animation.enabled, durationMs: api.state.animation.duration },
-        initialGrabOffsetCssPx: [drag.origPos[0] - centerX, drag.origPos[1] - centerY],
+        animation: { enabled: drag.animation.enabled, durationMs: drag.animation.durationMs },
+        initialGrabOffsetCssPx: [drag.originalPointer[0] - centerX, drag.originalPointer[1] - centerY],
         events: pendingEvents, frames: [], boardEvents: [], longTasks: [], phases: [],
         longTasksSupported: typeof PerformanceObserver !== "undefined" && PerformanceObserver.supportedEntryTypes.includes("longtask"),
         truncated: { events: pendingEventsTruncated, frames: false, boardEvents: false, longTasks: false, phases: false },
@@ -234,7 +228,7 @@ export function installTempoDragCapture(surface: HTMLElement, api: import("@lich
       if (limitTimer !== undefined) clearTimeout(limitTimer);
       limitTimer = setTimeout(() => finish("capture-limit"), dragLimits.durationMs);
     }
-    const position = element && translatedPiecePosition(element);
+    const position = drag.piecePosition;
     const geometry = session.boardGeometry;
     // Chessground centers the piece under the pointer once dragging starts;
     // its initial grab offset must not be misclassified as sustained lag.
@@ -326,7 +320,7 @@ export function installTempoDragCapture(surface: HTMLElement, api: import("@lich
       // A resize/scroll can invalidate cached geometry; end this measurement
       // rather than fabricate displacement from stale bounds.
       if (kind === "redraw") finish("geometry-change");
-      else if (!api.state.draggable.current) finish("board-interruption");
+      else if (!readInputSnapshot()) finish("board-interruption");
     },
   };
 }

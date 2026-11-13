@@ -146,3 +146,34 @@ it("BUI-12 identity replacement cancels a live drawing before installing the rep
   expect(api.state.dom.redraw).toHaveBeenCalledOnce();
   expect(onDrawingChange).not.toHaveBeenCalled();
 });
+
+it("FE20 diagnostic snapshots are detached and unavailable after disposal", () => {
+  const { controller, api } = setup();
+  const element = document.createElement("piece");
+  element.style.transform = "translate(12px, 24px)";
+  const bounds = { left: 4, top: 5, width: 400, height: 400 };
+  const origin = [31, 42];
+  Object.assign(api.state, { orientation: "black", animation: { enabled: true, duration: 180 },
+    draggable: { current: { orig: "e2", origPos: origin, started: true, element } },
+    dom: { ...api.state.dom, bounds: Object.assign(() => bounds, { clear: vi.fn() }) } });
+  const snapshot = controller.readInputSnapshot()!;
+  expect(snapshot).toEqual({ started: true, origin: "e2", originalPointer: [31, 42], orientation: "black",
+    bounds, animation: { enabled: true, durationMs: 180 }, piecePosition: [12, 24] });
+  (snapshot.originalPointer as number[])[0] = 999;
+  (snapshot.bounds as { left: number }).left = 999;
+  (snapshot.piecePosition as number[])[0] = 999;
+  expect(origin).toEqual([31, 42]); expect(bounds.left).toBe(4);
+  expect(controller.readInputSnapshot()?.piecePosition).toEqual([12, 24]);
+  controller.destroy(); expect(controller.readInputSnapshot()).toBeNull();
+});
+
+it("FE20 diagnostic events use the latest handler and stop on disposal", () => {
+  const previous = vi.fn(), current = vi.fn();
+  const { controller } = setup({ ...base, onDiagnosticEvent: previous });
+  previous.mockClear();
+  controller.update({ ...base, onDiagnosticEvent: current, check: "white" });
+  expect(previous).not.toHaveBeenCalled();
+  expect(current).toHaveBeenCalledWith(expect.objectContaining({ kind: "set", changed: ["check"], positionIdentity: "card-one" }));
+  controller.destroy(); controller.update({ ...base, check: "black", onDiagnosticEvent: current });
+  expect(current).toHaveBeenCalledOnce();
+});

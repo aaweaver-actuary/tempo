@@ -31,6 +31,21 @@ export interface SelectEvent extends PositionIdentity { readonly square: Square 
 export interface DrawingEvent extends PositionIdentity { readonly shapes: readonly BoardShape[] }
 export interface InteractionEvent extends PositionIdentity { readonly type: "focus" | "blur" }
 
+/** Detached, read-only diagnostics. No renderer or DOM nodes cross this seam. */
+export interface BoardInputSnapshot {
+  readonly started: boolean;
+  readonly origin: Square;
+  readonly originalPointer: readonly [number, number];
+  readonly orientation: BoardColor;
+  readonly bounds: { readonly left: number; readonly top: number; readonly width: number; readonly height: number };
+  readonly animation: { readonly enabled: boolean; readonly durationMs: number };
+  readonly piecePosition: readonly [number, number] | null;
+}
+export interface BoardDiagnosticEvent extends PositionIdentity {
+  readonly kind: "cancel-move" | "set" | "annotations" | "redraw";
+  readonly changed: readonly string[];
+}
+
 export interface BoardProps extends PositionIdentity {
   readonly fen: string;
   readonly orientation: BoardColor;
@@ -63,10 +78,14 @@ export interface BoardProps extends PositionIdentity {
   readonly onSelect?: (event: SelectEvent) => void;
   readonly onDrawingChange?: (event: DrawingEvent) => void;
   readonly onInteraction?: (event: InteractionEvent) => void;
+  /** Opt-in caller diagnostics; package rendering installs no telemetry. */
+  readonly onDiagnosticEvent?: (event: BoardDiagnosticEvent) => void;
 }
 
 export interface BoardHandle {
   focus(): void;
+  /** Current held input as detached values, or null when idle/disposed. */
+  readInputSnapshot(): BoardInputSnapshot | null;
   /** Cancel pending input, fence deferred events, and restore the supplied FEN. */
   clearInput(): void;
   /** Refresh hit testing without replacing pieces or interrupting a drag. */

@@ -96,3 +96,13 @@ it("BUI-11 heading translation and input capture clear bounds without reconstruc
   document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
   expect(api.state.dom.bounds.clear).toHaveBeenCalledTimes(3);
 });
+
+it("FE20 the public diagnostic handle is inert after unmount", () => {
+  const ref = createRef<BoardHandle>();
+  mount(<Board {...props} ref={ref} />);
+  const handle = ref.current!;
+  Object.assign(factory.instances[0].state, { draggable: { current: undefined } });
+  expect(handle.readInputSnapshot()).toBeNull();
+  act(() => root!.unmount()); root = undefined;
+  expect(handle.readInputSnapshot()).toBeNull();
+});

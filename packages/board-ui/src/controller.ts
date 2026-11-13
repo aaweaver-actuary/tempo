@@ -2,7 +2,7 @@ import type { Api } from "@lichess-org/chessground/api";
 import type { Config } from "@lichess-org/chessground/config";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import { cancel as cancelDrawing } from "@lichess-org/chessground/draw";
-import type { BoardProps, BoardShape, Square } from "./types.js";
+import type { BoardDiagnosticEvent, BoardInputSnapshot, BoardProps, BoardShape, Square } from "./types.js";
 import { copyDestinations, copyShapes, drawingShapes, rendererShapes, sameDestinations, sameShapes } from "./position.js";
 
 const brushes = {
@@ -74,6 +74,7 @@ export class BoardController {
     if (invalidated) {
       this.generation += 1;
       this.api.cancelMove();
+      this.diagnostic("cancel-move");
       // cancelMove only cancels piece input in Chessground 10.1.1. A held drawing
       // otherwise finishes through the replacement onChange handler.
       cancelDrawing(this.api.state);
@@ -96,16 +97,18 @@ export class BoardController {
         config.movable = { showDests: next.showDestinations !== false };
     }
     if (modeChanged) this.clearInputBounds();
-    if (Object.keys(config).length) this.api.set(config);
+    if (Object.keys(config).length) { this.api.set(config); this.diagnostic("set", Object.keys(config)); }
     const autoShapes = next.shapes ?? [];
     const drawnShapes = next.drawnShapes ?? [];
     if (invalidated || !sameShapes(this.autoShapes, autoShapes)) {
       this.autoShapes = copyShapes(autoShapes);
       this.api.setAutoShapes(rendererShapes(autoShapes) as DrawShape[]);
+      this.diagnostic("annotations");
     }
     if (invalidated || !sameShapes(this.drawnShapes, drawnShapes)) {
       this.drawnShapes = copyShapes(drawnShapes);
       this.api.setShapes(rendererShapes(drawnShapes) as DrawShape[]);
+      this.diagnostic("annotations");
     }
   }
 
@@ -118,6 +121,24 @@ export class BoardController {
     };
   }
 
+  readInputSnapshot(): BoardInputSnapshot | null {
+    if (!this.active || !this.api) return null;
+    const state = this.api.state, drag = state.draggable.current;
+    if (!drag || !isSquare(drag.orig)) return null;
+    const bounds = state.dom.bounds();
+    const element = typeof drag.element === "function" ? undefined : drag.element;
+    const match = element?.style.transform.match(/^translate\(\s*(-?[\d.]+)px,\s*(-?[\d.]+)px\s*\)$/);
+    return { started: drag.started, origin: drag.orig, originalPointer: [drag.origPos[0], drag.origPos[1]],
+      orientation: state.orientation, bounds: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height },
+      animation: { enabled: state.animation.enabled, durationMs: state.animation.duration },
+      piecePosition: match ? [Number(match[1]), Number(match[2])] : null };
+  }
+  private diagnostic(kind: BoardDiagnosticEvent["kind"], changed: readonly string[] = []): void {
+    if (!this.active || !this.props) return;
+    this.props.onDiagnosticEvent?.({ kind, changed: [...changed], positionIdentity: this.props.positionIdentity,
+      positionRevision: this.props.positionRevision });
+  }
+  geometryChanged(): void { this.diagnostic("redraw"); }
   clearInput(): void { if (this.props) this.update(this.props, true); }
   clearInputBounds(): void { this.api?.state.dom.bounds.clear(); }
   selectSquare(square: Square | null): void { if (this.canInteract()) this.api?.selectSquare(square); }

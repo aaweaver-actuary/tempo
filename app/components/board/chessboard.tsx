@@ -16,7 +16,7 @@ import { recordBoardEvent } from "../../lib/board-diagnostics";
 import { installTempoDragCapture, measureTempoOperation, measureTempoDragPhase } from "../../lib/performance";
 import { playChessMoveSound, playMoveSound } from "../../lib/move-sound";
 
-import type { BoardTheme, PieceSet } from "@tempo/board-ui";
+import type { BoardInputSnapshot, BoardTheme, PieceSet } from "@tempo/board-ui";
 export type { BoardTheme, PieceSet } from "@tempo/board-ui";
 export type PromotionPiece = "q" | "r" | "b" | "n";
 const EMPTY_SHAPES: DrawShape[] = [];
@@ -27,6 +27,29 @@ const DRAW_BRUSHES = {
   yellow: { key: "y", color: "#d0a83f", opacity: 0.92, lineWidth: 11 },
   maia: { key: "m", color: "#8a62a5", opacity: 0.9, lineWidth: 10 },
 };
+
+// FE21 mapping, checked against ChessboardProps and the public Board contract:
+// fen -> fen; owner + positionKey -> stable positionIdentity; positionRevision
+// and keyboardResetRevision -> positionRevision/clearInput. orientation + flip
+// -> orientation; editMode/selectOnly -> free/select (otherwise legal); caller
+// chess rules -> turn, check and destinations; locked -> locked; lastMove,
+// theme, pieceSet, shapes, drawnShapes and layoutAnchor map directly.
+// onMove/onFreeMove/onSquareSelect/onDrawnShapesChange map to typed Board events.
+// keyboard -> onKeyDown/selectSquare/focus in the application-owned container.
+// promotion, expectedSan, showHint/onHintExposure, sounds, showShortcutButton,
+// onFlip, preference state and help remain application policy, not renderer state.
+function legacyInputSnapshot(api: Api | null): BoardInputSnapshot | null {
+  if (!api) return null;
+  const state = api.state, drag = state.draggable.current;
+  if (!drag || !/^[a-h][1-8]$/.test(drag.orig)) return null;
+  const bounds = state.dom.bounds();
+  const element = typeof drag.element === "function" ? undefined : drag.element;
+  const match = element?.style.transform.match(/^translate\(\s*(-?[\d.]+)px,\s*(-?[\d.]+)px\s*\)$/);
+  return { started: drag.started, origin: drag.orig as import("@tempo/board-ui").Square, originalPointer: [drag.origPos[0], drag.origPos[1]],
+    orientation: state.orientation, bounds: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height },
+    animation: { enabled: state.animation.enabled, durationMs: state.animation.duration },
+    piecePosition: match ? [Number(match[1]), Number(match[2])] : null };
+}
 
 type ChessboardProps = {
   showShortcutButton?: boolean;
@@ -272,7 +295,7 @@ export function Chessboard({
     const refreshInputBounds = () => apiRef.current?.state?.dom.bounds.clear();
     surface.addEventListener("mousedown", refreshInputBounds, true);
     surface.addEventListener("touchstart", refreshInputBounds, { capture: true, passive: true });
-    captureRef.current = installTempoDragCapture(surfaceRef.current, apiRef.current);
+    captureRef.current = installTempoDragCapture(surfaceRef.current, () => legacyInputSnapshot(apiRef.current));
     const frame = requestAnimationFrame(finishReady);
     return () => {
       surface.removeEventListener("mousedown", refreshInputBounds, true);
