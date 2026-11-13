@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, NotRequired, TypedDict
+from typing import Literal, Mapping, NotRequired, TypedDict
 
 from .command_identity import request_digest
 
@@ -19,7 +19,7 @@ IMMUTABLE_CONFLICTS = frozenset(
 )
 
 
-def issuance_operation_id(payload: dict, generation: int = 0) -> str:
+def issuance_operation_id(payload: dict[str, object], generation: int = 0) -> str:
     if type(generation) is not int or not 0 <= generation <= MAX_GENERATION:
         raise ValueError("Queue issuance retry generation is exhausted or invalid")
     if set(payload) != {"queue_date", "entry_id", "card_id", "expected_revision"}:
@@ -27,7 +27,7 @@ def issuance_operation_id(payload: dict, generation: int = 0) -> str:
     return f"queue.issue_head:v1:{request_digest('queue.issue_head', payload)}:{generation:012d}"
 
 
-def issuance_generation(operation_id: str, payload: dict) -> int:
+def issuance_generation(operation_id: str, payload: dict[str, object]) -> int:
     first = issuance_operation_id(payload)
     prefix = first[:-GENERATION_WIDTH]
     suffix = operation_id[len(prefix) :]
@@ -41,19 +41,19 @@ def issuance_generation(operation_id: str, payload: dict) -> int:
     return int(suffix)
 
 
-def immutable_issuance_conflict(response: dict) -> str | None:
+def immutable_issuance_conflict(response: Mapping[str, object]) -> str | None:
     reason = response.get("position_study_hold")
-    return reason if reason in IMMUTABLE_CONFLICTS else None
+    return reason if isinstance(reason, str) and reason in IMMUTABLE_CONFLICTS else None
 # Internal Study application outcomes, not new HTTP response bodies. The queue
 # envelope remains opaque here; only the serving owner can establish currentness.
 class NextExerciseReady(TypedDict):
     kind: Literal["ready"]
-    queue: dict[str, Any]
+    queue: dict[str, object]
 
 
 class NextExerciseEmpty(TypedDict):
     kind: Literal["empty"]
-    queue: dict[str, Any]
+    queue: dict[str, object]
 
 
 class NextExercisePending(TypedDict):
@@ -65,14 +65,14 @@ class NextExerciseHeld(TypedDict):
     kind: Literal["held"]
     reason: str
     operation_id: NotRequired[str]
-    queue: NotRequired[dict[str, Any]]
+    queue: NotRequired[dict[str, object]]
 
 
 class NextExerciseUnavailable(TypedDict):
     kind: Literal["unavailable"]
     reason: str
     retryable: bool | None
-    queue: NotRequired[dict[str, Any]]
+    queue: NotRequired[dict[str, object]]
 
 
 NextExerciseOutcome = (

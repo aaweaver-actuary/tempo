@@ -1,6 +1,13 @@
 """Prepare and fence an ordinary position-owned queue head before its writer."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from app.study.position_learning.issued_plan_contracts import IssuedPlan
+    from app.study.position_learning.issued_plan_service import PreparedPositionIssuance
 from collections import OrderedDict
 from threading import Lock
 from time import monotonic
@@ -43,10 +50,21 @@ def _cached_position_source(database, repertoire_id, epoch, digest):
 
 @dataclass(frozen=True)
 class PreparedQueueHead:
-    payload: dict
-    mode: str
-    proposal: object = None
+    payload: dict[str, object]
+    mode: Literal["legacy", "replay", "position", "hold"]
+    proposal: IssuedPlan | PreparedPositionIssuance | None = None
     reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.mode not in ("legacy", "replay", "position", "hold"):
+            raise ValueError("Unknown prepared queue head mode")
+        if (self.mode in ("replay", "position")) != (self.proposal is not None):
+            raise ValueError("Prepared queue head proposal does not match its mode")
+        if self.mode == "hold":
+            if not self.reason:
+                raise ValueError("Held queue head needs its original reason")
+        elif self.reason is not None:
+            raise ValueError("Only a held queue head has a reason")
 
 
 def prepare_queue_head(payload):
