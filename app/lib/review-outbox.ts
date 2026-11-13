@@ -106,14 +106,14 @@ function reviewOperationId(review: PendingReview): string {
 }
 
 async function settleExistingReviewDelivery(store: Awaited<ReturnType<typeof studyIntentStore>>, operationId: string,
-  attemptId: string, receipt: LegacyReviewReceipt, requireCurrent: () => void): Promise<void> {
+  attemptId: string, receipt: unknown, requireCurrent: () => void, state: "committed" | "discarded" = "committed"): Promise<void> {
   const key = `review-delivery:${operationId}`;
   requireCurrent();
   const existing = await store.get(key);
   requireCurrent();
   if (!existing || existing.kind !== "review-delivery" || existing.requestId !== operationId || existing.attemptId !== attemptId || existing.state !== "pending") return;
   await store.update(key, current => current.kind === "review-delivery" && current.requestId === operationId &&
-    current.attemptId === attemptId && current.state === "pending" ? { ...current, state: "committed", receipt } : current);
+    current.attemptId === attemptId && current.state === "pending" ? { ...current, state, receipt } : current);
   requireCurrent();
 }
 
@@ -311,6 +311,7 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
     completion: review.openingEvidenceCompletion, evidenceRejected: review.evidenceRejected, positionStudy: review.positionStudy,
     verifyReceiptFirst,
     onConfirmedOperation: operationId => { confirmedOperationId = operationId; },
+    onRejectedOperation: (operationId, evidence) => settleExistingReviewDelivery(store, operationId, attemptId, evidence, requireCurrent, "discarded"),
     aggregateOnly: review.evidenceFallbackReason === "local_storage_quota",
     onEvidenceRejected: async (message) => {
       requireCurrent();

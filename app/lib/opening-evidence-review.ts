@@ -17,6 +17,7 @@ type ReviewEvidenceOptions = {
   verifyReceiptFirst?: boolean;
   /** The exact command whose terminal response was returned, including fallback suffix. */
   onConfirmedOperation?: (operationId: string) => void;
+  onRejectedOperation?: (operationId: string, evidence: unknown) => Promise<void>;
   onEvidenceRejected: (message: string) => void | Promise<void>;
   request?: (url: string, options: RequestInit) => Promise<Response>;
 } & (
@@ -30,6 +31,19 @@ export async function saveEvidenceAwareReview(options: ReviewEvidenceOptions): P
   const rejectEvidence = options.rejectEvidence ?? rejectOpeningEvidence;
   const requireCurrent = () => { binding?.requireCurrent(); options.requireCurrent?.(); };
   let rejection = options.evidenceRejected;
+  // Older retained fallback state carries a message, not an authoritative
+  // base receipt. Re-read the original operation before disposing its journal.
+  if (rejection && options.completion && !options.positionStudy && !options.aggregateOnly && options.onRejectedOperation) {
+    try {
+      await readOperationResponse(options.operationKey, { signal: options.signal, allowMissing: true, ...(options.client ? { client: options.client } : {}) });
+    } catch (error) {
+      requireCurrent();
+      if (options.signal?.aborted) throw error;
+      if (error instanceof FailedOperationError && error.status === 409 && error.retryable !== true && definitiveEvidenceFailure(error))
+        await options.onRejectedOperation(options.operationKey, { state: "failed", error: { message: error.message, status_code: error.status, code: error.code, retryable: error.retryable, detail: error.detail } });
+    }
+    requireCurrent();
+  }
   const send = async (): Promise<Response> => {
     requireCurrent();
     const sentOperationId = `${options.operationKey}${rejection || options.aggregateOnly ? ":aggregate-only" : ""}`;
@@ -64,6 +78,9 @@ export async function saveEvidenceAwareReview(options: ReviewEvidenceOptions): P
     rejection = evidenceFailure;
     await options.onEvidenceRejected(rejection);
     requireCurrent();
+    if (error instanceof FailedOperationError && error.status === 409 && error.retryable !== true)
+      await options.onRejectedOperation?.(options.operationKey, { state: "failed", error: { message: error.message, status_code: error.status, code: error.code, retryable: error.retryable, detail: error.detail } });
+    requireCurrent();
     await rejectEvidence(options.completion!.attempt_id, rejection).catch(() => undefined);
     requireCurrent();
     return send();
@@ -77,6 +94,8 @@ export async function saveEvidenceAwareReview(options: ReviewEvidenceOptions): P
       rejection = result.detail.message ?? "The opening evidence was rejected.";
       // Persist fallback identity before submitting it; a reload cannot switch delivery keys.
       await options.onEvidenceRejected(rejection);
+      requireCurrent();
+      await options.onRejectedOperation?.(options.operationKey, { status: response.status, body: result });
       requireCurrent();
       await rejectEvidence(options.completion.attempt_id, rejection).catch(() => undefined);
       requireCurrent();

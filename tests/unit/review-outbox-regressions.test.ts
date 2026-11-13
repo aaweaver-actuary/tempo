@@ -1506,7 +1506,51 @@ it.each(["immediate", "deferred"])("%s evidence rejection settles the fallback r
       { operation_id: base, state: "failed", error: { status_code: 409, message: "opening_evidence_conflict", retryable: false } });
   }));
   expect((await flushPendingReviews()).persistedAttemptIds).toEqual([original.attemptId]);
-  expect(await store.get(`review-delivery:${base}`)).toMatchObject({ state: "pending" });
+  expect(await store.get(`review-delivery:${base}`)).toMatchObject({ state: "discarded", requestId: base, receipt: timing === "immediate" ? { status: 409, body: { detail: { code: "opening_evidence_conflict", aggregate_review_allowed: true } } } : { state: "failed", error: { status_code: 409, message: "opening_evidence_conflict" } } });
   expect(await store.get(key)).toMatchObject({ state: "committed", requestId: aggregate, receipt: { persisted: true, review_id: 55 } });
   expect(calls.filter(call => call.startsWith("POST "))).toHaveLength(1);
+});
+
+it.each(["failed", "retryable", "unknown", "unavailable"])("retained fallback recovers base disposition only from authoritative %s receipt", async status => {
+  const { studyIntentStore, refreshStudyIntents } = await import("../../database/browser/study-intent-storage");
+  const original = await enqueueOpeningEvidenceReview(`orphan-${status}`);
+  const store = await studyIntentStore();
+  await store.update(`review:${original.attemptId}`, current => ({ ...current, data: { ...current.data as object, deliveryStarted: true, evidenceRejected: "prior rejection" } }));
+  await refreshStudyIntents();
+  const base = `review-attempt:${original.attemptId}`, aggregate = `${base}:aggregate-only`;
+  const envelope = { key: `review-delivery:${base}`, kind: "review-delivery", attemptId: original.attemptId,
+    requestId: base, endpoint: "/original", createdAt: "original", payload: { body: "exact retained bytes" } };
+  await store.put(envelope);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = decodeURIComponent(String(input));
+    if (url.endsWith(`/api/operations/${base}`)) {
+      if (status === "unavailable") throw new Error("network unavailable");
+      return Response.json(["failed", "retryable"].includes(status) ? { operation_id: base, state: "failed", error: {
+        status_code: 409, code: "opening_evidence_conflict", message: "opening_evidence_conflict", retryable: status === "retryable" } }
+        : { operation_id: base, state: "unknown" });
+    }
+    expect(url.endsWith(`/api/operations/${aggregate}`)).toBe(true);
+    return Response.json({ operation_id: aggregate, state: "complete", response: { persisted: true, review_id: 90 } });
+  }));
+  expect((await flushPendingReviews()).persistedAttemptIds).toEqual([original.attemptId]);
+  const saved = await store.get(envelope.key);
+  expect(saved).toMatchObject({ ...envelope, state: status === "failed" ? "discarded" : "pending" });
+  if (status === "failed") expect(saved?.receipt).toMatchObject({ state: "failed", error: { status_code: 409, code: "opening_evidence_conflict" } });
+  await closeStudyIntentStorage();
+  const reloaded = await (await studyIntentStore()).get(envelope.key);
+  expect(reloaded).toMatchObject({ ...envelope, state: status === "failed" ? "discarded" : "pending" });
+  const { inspectRetainedStudyAuthority } = await import("../../database/browser/study-connection-storage");
+  const inspected = await inspectRetainedStudyAuthority(() => []);
+  const exported = inspected.retained.databases["tempo-study-intents"].intents as Array<{ key: string; state: string; workspace: string }>;
+  const preserved = exported.find(item => item.key === envelope.key)!;
+  expect(preserved.state).toBe(status === "failed" ? "discarded" : "pending");
+  const fact = { authority: preserved.workspace, disposition: status === "failed" ? "terminal" as const : "unresolved" as const };
+  expect(inspected.facts).toContainEqual(fact);
+  const storage = await import("../../database/browser/study-connection-storage");
+  const { createStudyClient } = await import("../../app/lib/study-client");
+  const client = createStudyClient({ independent: true, baseUrl: "", storage: { ...storage,
+    inspectRetainedStudyAuthority: async () => ({ facts: [fact], retained: inspected.retained }) }, transport: vi.fn() });
+  const cutover = client.assertStudyAuthority("https://foreign.example", "other");
+  if (status === "failed") await expect(cutover).resolves.toEqual(inspected.retained);
+  else await expect(cutover).rejects.toMatchObject({ kind: "authority" });
 });
