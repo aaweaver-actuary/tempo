@@ -2,6 +2,8 @@
 
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
+from datetime import date
+from types import SimpleNamespace
 import copy
 import json
 
@@ -52,14 +54,7 @@ def runtime(monkeypatch):
         settings.storage, "store_settings", lambda *_: effects.append("settings")
     )
     monkeypatch.setattr(
-        settings.storage,
-        "store_provider_account",
-        lambda _db, provider, name: effects.append((provider, name)),
-    )
-    monkeypatch.setattr(
-        settings.storage,
-        "remove_provider_account",
-        lambda _db, provider: effects.append(("remove", provider)),
+        settings, "capture_study_calendar", lambda _: SimpleNamespace(day=date(2026, 11, 11))
     )
 
     def request_queue(*_):
@@ -76,10 +71,8 @@ def runtime(monkeypatch):
 
 def payload():
     return {
-        "settings": Settings(
-            new_cards_per_day=12, lichess_username=" user "
-        ).model_dump(),
-        "supplied_fields": ["new_cards_per_day", "lichess_username"],
+        "settings": Settings(new_cards_per_day=12).model_dump(),
+        "supplied_fields": ["new_cards_per_day"],
     }
 
 
@@ -95,8 +88,6 @@ def test_settings_descriptor_replay_preserves_original_identity_and_effects(
     assert first["new_cards_per_day"] == 12
     assert effects == [
         "settings",
-        ("lichess", "user"),
-        ("remove", "chess.com"),
         "queue",
     ]
     assert wakes == ["wake"]
