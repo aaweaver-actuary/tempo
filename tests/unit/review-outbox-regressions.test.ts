@@ -1791,3 +1791,14 @@ it.each(['aggregate', 'reconcile-aggregate', 'no-completion'])('C11 orphan %s re
   expect(await recoverCommittedReviewDelivery(key, new AbortController().signal)).toBe('hold');
   expect(await store.get(key)).toEqual(before);
 });
+
+it('FE23 review delivery imports and constructs without opening storage or registering a session', async () => {
+  vi.resetModules(); const touch = vi.fn(() => { throw new Error('composition must remain inert'); });
+  vi.doMock('../../database/browser/study-intent-storage', touch); vi.doMock('../../app/lib/study-session-runtime', touch);
+  try {
+    const { createReviewDelivery } = await import('../../app/lib/review-delivery');
+    const factory = createReviewDelivery({ operations: {}, getStore: touch } as unknown as Parameters<typeof createReviewDelivery>[0]);
+    expect(typeof factory.deliverLegacyReview).toBe('function'); expect(typeof factory.checkLegacyReviewReceipt).toBe('function');
+    expect(touch).not.toHaveBeenCalled();
+  } finally { vi.doUnmock('../../database/browser/study-intent-storage'); vi.doUnmock('../../app/lib/study-session-runtime'); vi.resetModules(); }
+});
