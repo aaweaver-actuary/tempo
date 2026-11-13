@@ -1,11 +1,12 @@
 import copy
+from types import SimpleNamespace
 
 import pytest
 
 from app.study.next_exercise import QueueReadSnapshot, next_exercise
 
 
-CARD = {"queue_entry_id": 1, "id": 2, "revision": 3}
+CARD = {"queue_entry_id": 1, "id": "card", "revision": 3}
 
 
 def run(cards=None, **overrides):
@@ -24,7 +25,7 @@ def run(cards=None, **overrides):
             item["opening_decision_manifest"] = {"scope": "original"}
     def replay(attempt):
         calls.append(("replay", attempt))
-        return "original plan"
+        return SimpleNamespace(attempt_id="original")
     args = dict(read_snapshot=lambda: snapshot, issue=issue, current_head=current,
         finalize=lambda cards: calls.append("finalize"),
         manifests=manifest, replay=replay, is_hold=lambda plan: plan == "hold",
@@ -63,7 +64,7 @@ def test_position_replays_original_attempt_and_head_manifest():
     result, calls = run([CARD, {**CARD, "id": 5}], issue=position_issue)
     head = result["queue"]["cards"][0]
     assert calls == ["current", "finalize", ("manifest", 1), ("replay", "original")]
-    assert head["opening_decision_manifest"]["plan"] == "original plan"
+    assert head["opening_decision_manifest"]["plan"].attempt_id == "original"
     assert head["opening_evidence_study_timezone"] == "Europe/Rome"
 
 
@@ -153,3 +154,40 @@ def test_position_hold_preserves_exact_flat_wire(manifest_missing):
     expected = {"local_date": "day", "cards": [expected_card], "count": 1, "diagnostics": [], "projection": projection}
     assert result == {"kind": "held", "reason": reason, "queue": expected}
     assert _render_outcome(result) == expected
+
+
+@pytest.mark.parametrize("field,value", [("queue_entry_id", None), ("id", None), ("revision", None), ("revision", 0), ("queue_entry_id", True)])
+def test_invalid_original_identity_never_issues(field, value):
+    card = {**CARD, field: value}
+    result, calls = run([card])
+    assert result == {"kind": "unavailable", "reason": "head_changed", "retryable": True}
+    assert calls == []
+
+
+def test_unknown_projection_never_reports_ready():
+    snapshot = QueueReadSnapshot("day", None, {"state": "unknown"}, [], [CARD.copy()], 1)
+    result, _ = run(read_snapshot=lambda: snapshot)
+    assert result["kind"] == "unavailable"
+    assert result["reason"] == "queue_projection_failed"
+
+
+def test_replay_source_type_error_is_not_silenced():
+    def failed(_attempt):
+        raise TypeError("source malfunction")
+    with pytest.raises(TypeError, match="source malfunction"):
+        run(issue=position_issue, replay=failed)
+
+
+@pytest.mark.parametrize("issuance", [None, {}, {"issued": False}, {"issued": True, "position_study_mode": "invalid"},
+    {"issued": False, "position_study_mode": "position", "position_study_hold": None}])
+def test_malformed_issuance_never_reports_ready(issuance):
+    result, calls = run(issue=lambda day, card: (None, issuance))
+    assert result == {"kind": "unavailable", "reason": "queue_changed", "retryable": True}
+    assert calls == []
+
+
+@pytest.mark.parametrize("presentation", [None, {}, {"attempt_id": ""}])
+def test_issued_position_without_original_attempt_is_held(presentation):
+    result, calls = run(issue=lambda day, card: (None, {"issued": True, "position_study_mode": "position", "position_presentation": presentation}))
+    assert result == {"kind": "held", "reason": "issued_plan_unavailable"}
+    assert calls == []

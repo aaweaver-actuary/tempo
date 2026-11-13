@@ -57,3 +57,36 @@ def test_success_without_original_plan_is_held():
     )
     assert outcome == {"kind": "held", "reason": "issued_plan_unavailable"}
     assert result is None
+
+
+def test_replay_without_a_plan_never_reports_issued():
+    outcome, result = issue_returned_head(PAYLOAD, already_issued=lambda p: True,
+        replay=lambda p: ("replay", None, None), dispatch=lambda p: (None, {"issued": True}))
+    assert outcome is None
+    assert result == {"issued": False, "position_study_mode": "position",
+                      "position_presentation": None, "position_study_hold": "position_plan_missing"}
+
+
+def test_prepared_head_rejects_unknown_mode():
+    import pytest
+    from app.services.queue_next_card import PreparedQueueHead
+    with pytest.raises(ValueError, match="Unknown prepared queue head mode"):
+        PreparedQueueHead(PAYLOAD, "invented")
+
+
+def test_unknown_issued_mode_is_not_accepted_as_legacy():
+    outcome, result = issue_returned_head(PAYLOAD, already_issued=lambda p: False,
+        replay=lambda p: ("legacy", None, None),
+        dispatch=lambda p: (None, {"issued": True, "position_study_mode": "unknown"}))
+    assert outcome == {"kind": "unavailable", "reason": "queue_changed", "retryable": True}
+    assert result is None
+
+
+def test_prepared_head_rejects_impossible_mode_proposal_pairs():
+    import pytest
+    from app.services.queue_next_card import PreparedQueueHead
+    for mode, proposal, reason in [("position", None, None), ("replay", None, None),
+                                   ("legacy", object(), None), ("hold", None, None),
+                                   ("legacy", None, "wrong")]:
+        with pytest.raises(ValueError):
+            PreparedQueueHead(PAYLOAD, mode, proposal, reason)
