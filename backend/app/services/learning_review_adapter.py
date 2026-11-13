@@ -12,6 +12,7 @@ from tempo_learning_review.models import (
 )
 from tempo_storage.learning_bridge import review as storage
 from tempo_storage.connections import read_connection
+from tempo_storage.postgres import PostgresConnection
 from app.contracts.transport.study import ReviewRequest
 from app.contracts.review_conflicts import ReviewConflict
 from tempo_storage.queue_position_lock import (
@@ -28,7 +29,7 @@ from .review_reconciliation import (
 from .background_runtime import training_timing_stage
 
 
-def _lock_review_cards(database, card_id, candidate):
+def _lock_review_cards(database: PostgresConnection, card_id: str, candidate: learning.PreparedNext | None) -> bool:
     """Never wait for an optional continuation's edit lock; preserve card-before-queue order."""
     continuation_locked = candidate is not None
     for locked_card_id in sorted(
@@ -42,7 +43,7 @@ def _lock_review_cards(database, card_id, candidate):
     return continuation_locked
 
 
-def command_from_request(card_id, request):
+def command_from_request(card_id: str, request: ReviewRequest) -> ReviewCommand:
     completion = request.opening_evidence_completion
     return learning.ReviewCommand(
         str(card_id),
@@ -70,7 +71,7 @@ def command_from_request(card_id, request):
     )
 
 
-def translate_failure(error):
+def translate_failure(error: learning.ReviewFailure) -> Exception:
     if isinstance(error, learning.ReviewConflict):
         return ReviewConflict(error.code, error.message, retryable=error.retryable)
     if error.code == "opening_evidence_conflict":
@@ -108,7 +109,7 @@ class LearningReviewAdapter:
         self._review_attempt = None
         self.deferred_effects = []
 
-    def _capture_command_day(self):
+    def _capture_command_day(self) -> None:
         if self._command_time is None:
             self._command_time = self.observed_at or datetime.now(timezone.utc)
             self._command_policy = self.policy()
@@ -117,7 +118,7 @@ class LearningReviewAdapter:
                 self._command_time, self._command_timezone
             )
 
-    def context(self, command):
+    def context(self, command: ReviewCommand) -> ReviewContext:
         self._capture_command_day()
         return learning.review_context(
             command,
@@ -126,7 +127,7 @@ class LearningReviewAdapter:
             timezone_name=self._command_timezone,
         )
 
-    def policy(self):
+    def policy(self) -> ReviewPolicy:
         if self._command_policy is not None:
             return self._command_policy
         if self.policy_provider:
@@ -138,12 +139,12 @@ class LearningReviewAdapter:
             row = storage.policy_settings(database)
         return learning.ReviewPolicy(row["timezone"], row["light_first_interval_days"])
 
-    def is_deleted(self, card_id):
+    def is_deleted(self, card_id: str) -> bool:
         from ..card_deletion import is_card_deleted
 
         return is_card_deleted(self.database, card_id)
 
-    def receipt(self, attempt_id):
+    def receipt(self, attempt_id: str) -> learning.AttemptReceipt | None:
         row = storage.receipt(self.database, attempt_id)
         return (
             learning.AttemptReceipt(
@@ -159,7 +160,7 @@ class LearningReviewAdapter:
             else None
         )
 
-    def card(self, card_id):
+    def card(self, card_id: str) -> learning.CardFacts | None:
         row = storage.card(self.database, card_id)
         if row is None:
             return None
@@ -192,7 +193,7 @@ class LearningReviewAdapter:
             values.get("_recovered", False),
         )
 
-    def find_attempt(self, command, context):
+    def find_attempt(self, command: ReviewCommand, context: ReviewContext) -> QueueAttempt | None:
         if command.queue_entry_id:
             row = storage.attempt_by_id(
                 self.database, command.queue_entry_id, command.card_id, True
@@ -221,17 +222,17 @@ class LearningReviewAdapter:
         )
         return self._review_attempt
 
-    def current_revision(self, card_id):
+    def current_revision(self, card_id: str) -> int | None:
         row = storage.current_revision(self.database, card_id)
         return row["revision"] if row else None
 
-    def latest_review_id(self, card_id, *, valid_only):
+    def latest_review_id(self, card_id: str, *, valid_only: bool) -> int:
         return storage.latest_review_id(self.database, card_id, valid_only)
 
-    def retain_introduction(self, card_id, queue_day):
+    def retain_introduction(self, card_id: str, queue_day: str) -> None:
         storage.retain_introduction(self.database, queue_day, card_id)
 
-    def has_later_review(self, card_id, context):
+    def has_later_review(self, card_id: str, context: ReviewContext) -> bool:
         return storage.has_later_review(
             self.database, card_id, context.reviewed_at.isoformat()
         )
@@ -256,7 +257,7 @@ class LearningReviewAdapter:
         )
         return ReconciledReview.from_dict(result)
 
-    def bind_receipt(self, command, request_json, *, restore_original=False):
+    def bind_receipt(self, command: ReviewCommand, request_json: str, *, restore_original: bool = False) -> None:
         if restore_original:
             storage.restore_receipt_outcome(
                 self.database, command.outcome, int(command.guided), command.attempt_id
@@ -327,7 +328,7 @@ class LearningReviewAdapter:
             "idempotent": False,
         })
 
-    def complete_attempt(self, command, context, *, guided):
+    def complete_attempt(self, command: ReviewCommand, context: ReviewContext, *, guided: bool) -> None:
         queue_day = storage.queue_date(self.database, command.queue_entry_id)
         day = queue_day[0] if queue_day else context.local_day.isoformat()
         previous_order = capture_daily_queue_order(self.database, day)
@@ -344,12 +345,12 @@ class LearningReviewAdapter:
             )
         preserve_daily_queue_order(self.database, day, previous=previous_order)
 
-    def mark_clean_tactic(self, card_id, context):
+    def mark_clean_tactic(self, card_id: str, context: ReviewContext) -> None:
         storage.mark_clean_tactic(
             self.database, context.reviewed_at.isoformat(), card_id
         )
 
-    def requeue(self, attempt, card_id, after, state):
+    def requeue(self, attempt: QueueAttempt, card_id: str, after: int | None, state: str) -> int | None:
         return queue_application.requeue(
             self.database, attempt.queue_date, card_id, after, state
         )
@@ -409,7 +410,7 @@ class LearningReviewAdapter:
             ),
         )
 
-    def retain_completion(self, command, attempt, result_json, *, origin_only=False):
+    def retain_completion(self, command: ReviewCommand, attempt: QueueAttempt, result_json: str, *, origin_only: bool = False) -> None:
         if not origin_only:
             storage.retain_completion(
                 self.database, result_json, attempt.id, command.card_id
@@ -438,11 +439,11 @@ class LearningReviewAdapter:
                 self.database, day, preserve_through_entry_id=preserved
             )
 
-    def refresh_priority(self, repertoire_id, *, transactional_only=False):
+    def refresh_priority(self, repertoire_id: str, *, transactional_only: bool = False) -> None:
         # Retired legacy advisory effect, including late original-review replay.
         return None
 
-    def refresh_maturity(self, context):
+    def refresh_maturity(self, context: ReviewContext) -> None:
         from .durable_tasks import enqueue_task_in_transaction
 
         day = context.local_day.isoformat()
@@ -450,14 +451,14 @@ class LearningReviewAdapter:
             self.database, "daily_queue", "current", {"queue_date": day}, priority=10
         )
 
-    def finish_compatibility_effects(self):
+    def finish_compatibility_effects(self) -> None:
         for effect in self.deferred_effects:
             effect()
 
-    def lock_review_cards(self, command):
+    def lock_review_cards(self, command: ReviewCommand) -> bool:
         return _lock_review_cards(self.database, command.card_id, command.prepared_next)
 
-    def begin_position_review(self, command):
+    def begin_position_review(self, command: ReviewCommand) -> bool:
         # A saved canonical receipt owns replay across owner activation changes.
         if command.attempt_id and self.receipt(command.attempt_id):
             return False
@@ -510,13 +511,13 @@ class LearningReviewAdapter:
                 )
         return False
 
-    def lock_queue_date(self):
+    def lock_queue_date(self) -> None:
         self._capture_command_day()
         if self._position_fence is not None:
             return  # lock_original_queue takes the original issued day below
         lock_queue_date_for_position(self.database, self._command_day.isoformat())
 
-    def lock_position_attempt(self, command):
+    def lock_position_attempt(self, command: ReviewCommand) -> None:
         from tempo_storage.study import (
             position_first_responses as positions,
         )
@@ -531,11 +532,11 @@ class LearningReviewAdapter:
                 code="opening_evidence_conflict",
             )
 
-    def completed_evidence_exists(self, attempt_id):
+    def completed_evidence_exists(self, attempt_id: str) -> bool:
         row = storage.evidence_state(self.database, attempt_id)
         return bool(row and row[0] == "complete")
 
-    def evidence_revision_allowed(self, command):
+    def evidence_revision_allowed(self, command: ReviewCommand) -> bool:
         revision = storage.current_revision(self.database, command.card_id)
         entry = storage.entry_status(
             self.database, command.queue_entry_id, command.card_id
@@ -553,7 +554,7 @@ class LearningReviewAdapter:
             )
         )
 
-    def persist_evidence(self, command):
+    def persist_evidence(self, command: ReviewCommand) -> None:
         from app.study.position_checkpoint import persist_checkpoint
 
         with training_timing_stage("completion_evidence"):

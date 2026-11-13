@@ -3,7 +3,62 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 import json
-from typing import Literal
+from typing import Literal, NotRequired, TypedDict
+
+
+class ReviewWire(TypedDict):
+    persisted: bool
+    queue_entry_id: int
+    review_id: int | None
+    requeue_entry_id: NotRequired[int | None]
+    idempotent: NotRequired[bool | None]
+    reconciliation: NotRequired[str | None]
+
+
+class ScheduledWire(TypedDict):
+    card_id: str
+    next_due: str
+    interval_days: int
+    state: str
+    requeue_today: bool
+    requeue_after_cards: int | None
+    stability: float
+    scheduling_mode: str
+    hard_correct_streak: int
+    suggest_shorter_prefix: bool
+    idempotent: bool
+
+
+class SnapshotWire(TypedDict):
+    due_date: str
+    interval_days: int
+    fsrs_card_json: str | None
+    first_correct_at: str | None
+    reinforcement_pending: int | bool
+    stability: float
+    guided_review: int | bool
+    state: str
+    scheduling_mode: str
+    hard_correct_streak: int
+    recent_attempts_json: str | None
+
+
+class ReconciledWire(TypedDict):
+    persisted: bool
+    review_id: int | None
+    queue_entry_id: int
+    requeue_entry_id: int | None
+    reconciliation: str
+    warning: NotRequired[str | None]
+    competing_review: NotRequired[dict[str, str | None] | None]
+
+
+def _json_object(payload: str) -> dict[str, object]:
+    value: object = json.loads(payload)
+    if not isinstance(value, dict):
+        raise ValueError("Expected a JSON object")
+    # JSON object member names are strings; copying retains insertion order.
+    return {key: item for key, item in value.items() if isinstance(key, str)}
 
 
 @dataclass(frozen=True)
@@ -14,8 +69,9 @@ class PreparedNext:
     cycle: int
     local_date: str
 
-    def as_dict(self):
-        return {name: getattr(self, name) for name in self.__dataclass_fields__}
+    def as_dict(self) -> dict[str, str | int]:
+        return {"queue_entry_id": self.queue_entry_id, "card_id": self.card_id,
+                "revision": self.revision, "cycle": self.cycle, "local_date": self.local_date}
 
 
 @dataclass(frozen=True)
@@ -105,7 +161,7 @@ class CompetingReview:
     outcome: str | None
     completed_at: str | None
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, str | None]:
         return {"outcome": self.outcome, "completed_at": self.completed_at}
 
 
@@ -114,7 +170,7 @@ class PreparedContinuation:
     candidate: PreparedNext
     attempt_failed: bool
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, str | int | bool]:
         return {**self.candidate.as_dict(), "attempt_failed": self.attempt_failed}
 
 
@@ -141,7 +197,7 @@ class ReviewResult:
     original: OriginalReviewReceipt | None = field(default=None, compare=False)
 
     @classmethod
-    def from_dict(cls, result: dict) -> ReviewResult:
+    def from_dict(cls, result: ReviewWire) -> ReviewResult:
         for name in ("persisted", "queue_entry_id", "review_id"):
             if name not in result:
                 raise ValueError(f"Missing review result field: {name}")
@@ -161,7 +217,7 @@ class ReviewResult:
     def from_original(cls, payload_json: str) -> ReviewResult:
         return cls(payload_json, original=OriginalReviewReceipt(payload_json))
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> object:
         return json.loads(self.payload_json)
 
 
@@ -180,11 +236,15 @@ class ScheduledReview:
     idempotent: bool
 
     @classmethod
-    def from_dict(cls, value: dict) -> ScheduledReview:
+    def from_dict(cls, value: ScheduledWire) -> ScheduledReview:
         return cls(**value)
 
-    def as_dict(self) -> dict:
-        return {name: getattr(self, name) for name in self.__dataclass_fields__}
+    def as_dict(self) -> ScheduledWire:
+        return {"card_id": self.card_id, "next_due": self.next_due, "interval_days": self.interval_days,
+                "state": self.state, "requeue_today": self.requeue_today,
+                "requeue_after_cards": self.requeue_after_cards, "stability": self.stability,
+                "scheduling_mode": self.scheduling_mode, "hard_correct_streak": self.hard_correct_streak,
+                "suggest_shorter_prefix": self.suggest_shorter_prefix, "idempotent": self.idempotent}
 
 
 @dataclass(frozen=True)
@@ -204,7 +264,7 @@ class ScheduleSnapshot:
     payload_json: str
 
     @classmethod
-    def from_dict(cls, value: dict) -> ScheduleSnapshot:
+    def from_dict(cls, value: SnapshotWire) -> ScheduleSnapshot:
         for field in ("due_date", "interval_days", "fsrs_card_json", "first_correct_at",
                       "reinforcement_pending", "stability", "guided_review", "state",
                       "scheduling_mode", "hard_correct_streak", "recent_attempts_json"):
@@ -217,8 +277,8 @@ class ScheduleSnapshot:
             value["hard_correct_streak"], value["recent_attempts_json"], json.dumps(value),
         )
 
-    def as_dict(self) -> dict:
-        return json.loads(self.payload_json)
+    def as_dict(self) -> dict[str, object]:
+        return _json_object(self.payload_json)
 
 
 @dataclass(frozen=True)
@@ -234,7 +294,7 @@ class ReconciledReview:
     payload_json: str
 
     @classmethod
-    def from_dict(cls, value: dict) -> ReconciledReview:
+    def from_dict(cls, value: ReconciledWire) -> ReconciledReview:
         for field in ("persisted", "review_id", "queue_entry_id", "requeue_entry_id", "reconciliation"):
             if field not in value:
                 raise ValueError(f"Missing reconciliation field: {field}")
@@ -244,5 +304,5 @@ class ReconciledReview:
             value.get("competing_review"), json.dumps(value),
         )
 
-    def as_dict(self) -> dict:
-        return json.loads(self.payload_json)
+    def as_dict(self) -> dict[str, object]:
+        return _json_object(self.payload_json)

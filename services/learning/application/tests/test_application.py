@@ -347,3 +347,10 @@ def test_submit_replay_preserves_original_continuation_without_new_issue():
     assert result.payload_json == raw
     assert result.as_dict()['prepared_continuation'] == {'card_id': 'original', 'unknown': 9}
     assert not any(call[0] in {'issue', 'continuation'} for call in store.calls)
+
+
+def test_opaque_non_object_receipt_decodes_without_rewriting():
+    raw = ' [1, {"unknown": true}] '
+    result = review.ReviewResult.from_original(raw)
+    assert result.payload_json == raw
+    assert result.as_dict() == [1, {"unknown": True}]
