@@ -2,6 +2,246 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "study-queue-refresh-worker",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/postgres_queue_refresh.py#execute_postgres_queue_refresh_slice"
+      ],
+      "dependencies": [
+        "queue-refresh-read-storage",
+        "queue-refresh-epoch-storage",
+        "queue-refresh-admission-storage",
+        "queue-refresh-opening-storage",
+        "study-queue-application",
+        "queue-ordering-facade",
+        "study-queue-position-lock",
+        "tactics-daily-admission",
+        "durable-task-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/postgres_queue_refresh.py"
+      ],
+      "ownershipRole": "Prepare and publish bounded Study queue refresh slices",
+      "dependencyNotes": [
+        "Task composition dispatches the durable queue refresh. Uses bounded readers, task slice/current-day and epoch fences, activity gate, frozen ordering, Tactics assets, graph/source revalidation and caller-owned writer transactions."
+      ],
+      "censusScope": "queue_refresh"
+    },
+    {
+      "id": "queue-refresh-epoch-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/queue_refresh",
+      "publicExports": [
+        "database/tempo_storage/queue_refresh/foreground.py#mark_queue_refreshing",
+        "database/tempo_storage/queue_refresh/foreground.py#signal_queue_refresh_in_transaction",
+        "database/tempo_storage/queue_refresh/foreground.py#lock_refresh_epochs",
+        "database/tempo_storage/queue_refresh/foreground.py#publish_refresh_epoch_if_current"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/queue_refresh/foreground.py",
+        "database/tempo_storage/queue_refresh/__init__.py"
+      ],
+      "ownershipRole": "Persist queue refresh epochs",
+      "dependencyNotes": [
+        "Caller locks task before projection; SQL increments request epoch and conditionally advances covered epoch, while caller atomically publishes readiness and task completion."
+      ],
+      "censusScope": "queue_refresh"
+    },
+    {
+      "id": "queue-refresh-read-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/queue_refresh",
+      "publicExports": [
+        "database/tempo_storage/queue_refresh/reads.py#_bounded_read",
+        "database/tempo_storage/queue_refresh/reads.py#due_candidate",
+        "database/tempo_storage/queue_refresh/reads.py#opening_candidate_ids",
+        "database/tempo_storage/queue_refresh/reads.py#study_candidate",
+        "database/tempo_storage/queue_refresh/reads.py#quarantine_page"
+      ],
+      "dependencies": [
+        "queue-refresh-eligibility-storage",
+        "queue-refresh-opening-storage",
+        "queue-presentation-storage",
+        "tactics-daily-admission"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/queue_refresh/reads.py"
+      ],
+      "ownershipRole": "Read bounded queue refresh candidates",
+      "dependencyNotes": [
+        "Uses bounded read connections and PostgreSQL queries for candidates, allowances, progress and diagnostics; eligibility, opening and presentation predicates remain explicit dependencies."
+      ],
+      "censusScope": "queue_refresh"
+    },
+    {
+      "id": "queue-refresh-eligibility-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/queue_refresh",
+      "publicExports": [
+        "database/tempo_storage/queue_refresh/eligibility.py#position_due_exclusion"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/queue_refresh/eligibility.py"
+      ],
+      "ownershipRole": "Provide queue eligibility predicates",
+      "dependencyNotes": [
+        "Defines existing due, new Study and position exclusion SQL; caller owns selection and transaction."
+      ],
+      "censusScope": "queue_refresh"
+    },
+    {
+      "id": "queue-refresh-opening-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/queue_refresh",
+      "publicExports": [
+        "database/tempo_storage/queue_refresh/openings.py#route_occurrence",
+        "database/tempo_storage/queue_refresh/openings.py#remaining_allowance",
+        "database/tempo_storage/queue_refresh/openings.py#locked_opening_card",
+        "database/tempo_storage/queue_refresh/openings.py#safe_route",
+        "database/tempo_storage/queue_refresh/openings.py#append_opening"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/queue_refresh/openings.py"
+      ],
+      "ownershipRole": "Read and admit opening route facts",
+      "dependencyNotes": [
+        "Caller-transaction SQL checks route, parent review, allowance and locked card, and appends opening entries; application owns source and admission policy."
+      ],
+      "censusScope": "queue_refresh"
+    },
+    {
+      "id": "queue-refresh-admission-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/queue_refresh",
+      "publicExports": [
+        "database/tempo_storage/queue_refresh/admissions.py#lock_tactical_card_edit",
+        "database/tempo_storage/queue_refresh/admissions.py#locked_puzzle_progress",
+        "database/tempo_storage/queue_refresh/admissions.py#locked_unseen_entry",
+        "database/tempo_storage/queue_refresh/admissions.py#due_card_eligibility",
+        "database/tempo_storage/queue_refresh/admissions.py#study_card_eligibility",
+        "database/tempo_storage/queue_refresh/admissions.py#position_carrier_eligible"
+      ],
+      "dependencies": [
+        "queue-refresh-eligibility-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/queue_refresh/admissions.py"
+      ],
+      "ownershipRole": "Persist queue refresh admission effects",
+      "dependencyNotes": [
+        "Caller-transaction SQL rechecks locked tactical, unseen, due, Study and position facts and updates cards, progress and queue entries; task and application own lifecycle and decisions."
+      ],
+      "censusScope": "queue_refresh"
+    },
+    {
+      "id": "queue-refresh-capacity-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/queue_refresh",
+      "publicExports": [
+        "database/tempo_storage/queue_refresh/capacity.py#read_capacity_route_rows",
+        "database/tempo_storage/queue_refresh/capacity.py#queued_capacity_card",
+        "database/tempo_storage/queue_refresh/capacity.py#current_capacity_priority",
+        "database/tempo_storage/queue_refresh/capacity.py#published_capacity_route"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/queue_refresh/capacity.py"
+      ],
+      "ownershipRole": "Read opening capacity route facts",
+      "dependencyNotes": [
+        "SQL reads bounded graph/parent and current queue facts and checks published route identity; callers own preparation and currentness fence."
+      ],
+      "censusScope": "queue_refresh"
+    },
+    {
       "id": "study-queue-application",
       "type": "integration",
       "maintainer": "Tempo",

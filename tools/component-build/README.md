@@ -465,8 +465,17 @@ not native qualification. The eight queue, three PGN, three legacy and one retai
 mutation fixture failures remain unresolved. The queue admission boundary fixture
 also fails on missing `resolve_opportunity`; it is not runtime proof.
 
-At this base revision, 151 of 291 tracked Python files in those trees remain
-outside the combined 140-file selections. The registry alone assigns owners;
+A twenty-third selection maps the bounded queue refresh worker and its epoch,
+reader, eligibility, opening, admission and capacity SQL. Existing task/current-day
+and epoch fences, queue locks, frozen ordering, graph/source checks and caller
+transactions remain visible. This source map does not establish native proof. The
+eight queue command, one queue admission, three PGN, three legacy and one retained
+mutation fixture failures remain unresolved. The queue publication fixture also
+fails because its SQLite adapter rejects PostgreSQL `FOR SHARE`; it is not native
+proof.
+
+At this base revision, 143 of 291 tracked Python files in those trees remain
+outside the combined 148-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
