@@ -1,18 +1,18 @@
 # Component build and discovery tools
 
 These are small validation entry points, not a dependency solver or replacement CI planner.
-`components.json` declares implemented artifacts and planned targets;
-`components.schema.json` describes its fields. Planned roots are not executable.
+`components.json` declares implemented artifacts, mapped composition owners and
+planned targets; `components.schema.json` describes its fields. Mapped and
+planned owners are not executable artifact selections.
 The Game Evidence contract is an implemented artifact; `catalog` references its
 existing contract catalog, which remains the authority for models, wire versions,
 schemas and owners. Registration does not establish production adoption.
 
 For implementation discovery, also inspect current package READMEs, public APIs
 and consumers using the [discovery guide](../../docs/architecture/component-reconstruction.md#discover-before-building).
-For example, `packages/board-ui` is a merged standalone package although its
-shared registry target remains planned; use its package-local instructions until
-registration is reconciled. Do not treat that status as permission to duplicate
-the implementation, or change it merely to make an executable selection pass.
+For example, `packages/board-ui` is an implemented package with a registered
+owner-local qualifier. A mapped composition is an ownership record, not a
+standalone artifact or permission to duplicate its implementation.
 
 ## Setup and commands
 
@@ -274,3 +274,23 @@ proofs do not establish browser acceptance, application assembly, or coverage of
 other runtime owners. Ownership reconciliation in this batch covers only tracked
 source files in these two packages; composition and backend/storage are later
 batches.
+
+## Browser and CLI composition map
+
+`study-web`, `tempo-cli`, and `integration` are **mapped**, not separately
+implemented artifacts. Their exact tracked `ownedFiles` record the browser application runtime, the local lifecycle command, and development/qualification tooling.
+The CLI depends on the integration owner for shared budget and timing helpers;
+that dependency does not transfer their ownership. These mappings expose no new
+package, deployment or public service and cannot be selected as restricted builds.
+
+The default checker compares the declared files with the tracked browser source, static entrypoints and assets, root executable configs, `tempo`
+launchers, direct scripts and component-build executable tooling. An added tracked
+source must be assigned once; duplicate, stale and unowned entries fail. Script test fixtures, backend/storage and remaining package ownership are
+outside this finite batch. Static-file assignment is an ownership map, not a
+data or asset qualification. This map does not by itself qualify browser behavior,
+CLI installation, or complete T02 runtime ownership.
+
+`affected.mjs` remains an independently tested pure planning utility over its
+own supplied snapshot format. It does not currently consume this registry or
+select production checks, and this batch does not adopt it as an authoritative
+planner. Its synthetic ownership rules are test inputs, not a second live map.

@@ -4,8 +4,8 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest } from "../check-components.mjs";
-import { validateOwnedPaths } from "../selection.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership } from "../check-components.mjs";
+import { validateOwnedPaths, selectComponents } from "../selection.mjs";
 
 const python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3.12";
 const original = JSON.parse(readFileSync(join(repository, "components.json")));
@@ -15,6 +15,39 @@ test("T02 pure package tracked sources have exactly one declared owner", () => {
   const paths = result.stdout.trim().split("\n").filter(Boolean);
   assert.ok(paths.length);
   validateOwnedPaths(original, paths, ["board-ui", "evidence-math"]);
+});
+test("T02 mapped browser and CLI sources have exactly one explicit owner", () => {
+  const paths = compositionPaths(repository);
+  assert.ok(["tempo", "tempo-restart.sh", "public/sw.js", "app/page.tsx", "static/src/main.tsx", "vite.static.config.ts", "tools/component-build/check-components.mjs"].every(path => paths.includes(path)));
+  validateCompositionOwnership(original, paths);
+  for (const id of ["study-web", "tempo-cli", "integration"]) {
+    const component = original.components.find(item => item.id === id);
+    assert.equal(component.status, "mapped");
+    assert.equal(component.artifact, null);
+    assert.throws(() => selectComponents(original, [id]), /mapped, not implemented/);
+  }
+  assert.ok(original.components.find(item => item.id === "tempo-cli").dependencies.includes("integration"));
+});
+test("T02 discovers a newly tracked unowned browser source", context => {
+  const root = mkdtempSync(join(tmpdir(), "tempo-composition-map-"));
+  context.after(() => rmSync(root, { recursive: true, force: true }));
+  assert.equal(spawnSync("git", ["init", "-q", root]).status, 0);
+  mkdirSync(join(root, "app"));
+  writeFileSync(join(root, "app", "new-view.tsx"), "export default null;\n");
+  assert.equal(spawnSync("git", ["-C", root, "add", "app/new-view.tsx"]).status, 0);
+  const paths = compositionPaths(root);
+  assert.deepEqual(paths, ["app/new-view.tsx"]);
+  assert.throws(() => validateCompositionOwnership(original, paths), /found 0/);
+});
+test("T02 mapped composition rejects unowned, duplicate and untracked files", () => {
+  const paths = compositionPaths(repository);
+  assert.throws(() => validateCompositionOwnership(original, [...paths, "app/new-tracked-view.tsx"]), /found 0/);
+  const duplicate = structuredClone(original);
+  duplicate.components.find(item => item.id === "integration").ownedFiles.push("app/page.tsx");
+  assert.throws(() => validateCompositionOwnership(duplicate, paths), /found 2/);
+  const stale = structuredClone(original);
+  stale.components.find(item => item.id === "study-web").ownedFiles.push("app/not-tracked.tsx");
+  assert.throws(() => validateCompositionOwnership(stale, paths), /untracked source/);
 });
 test("Learning review registers its actual application, tooling and native suites", () => {
   const componentIds = ["learning-review-application"];
