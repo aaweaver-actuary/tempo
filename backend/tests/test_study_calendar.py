@@ -263,6 +263,7 @@ def test_authoring_split_lock_effect_and_followups_share_one_calendar(monkeypatc
         return calendar
     monkeypatch.setattr(command, "capture_study_calendar", capture)
     monkeypatch.setattr(command, "_lock_prefix_card", lambda *a: None)
+    monkeypatch.setattr(command.split_storage, "source_queue_days", lambda *a: [])
     monkeypatch.setattr(command, "lock_queue_date_for_position", lambda db, day: events.append(("lock", day)))
     def split(db, card, revision, *, calendar):
         assert calendar.observed_at == datetime.fromisoformat(instant)
@@ -340,6 +341,7 @@ def test_prefix_effect_uses_context_day_and_instant_but_keeps_existing_queue_ori
     monkeypatch.setattr(split, "_legal_split", lambda *a: detail)
     monkeypatch.setattr(split, "_response", lambda *a, **kw: kw)
     monkeypatch.setattr(split.storage, "prior_split", lambda *a: None)
+    monkeypatch.setattr(split.storage, "has_active_issued_attempt", lambda *a: False)
     monkeypatch.setattr(split.storage, "card_row", lambda db, key: source if key=="source" else None)
     monkeypatch.setattr(split.storage, "card_present", lambda *a: False)
     monkeypatch.setattr(split.storage, "membership_rows", lambda *a: [])
@@ -352,7 +354,7 @@ def test_prefix_effect_uses_context_day_and_instant_but_keeps_existing_queue_ori
     monkeypatch.setattr(split, "_queue_split_followups", lambda db, a, b, day, **kw: days.append(day))
     monkeypatch.setattr(split.storage, "insert_revision", lambda db, values: stamps.append(values[-1]))
     monkeypatch.setattr(split.storage, "insert_split", lambda db, values: stamps.append(values[-1]))
-    for name in ("reassign_reviews", "reassign_queue_entry", "upsert_membership", "archive_source_card", "delete_source_memberships"):
+    for name in ("reassign_queue_entry", "upsert_membership", "archive_source_card", "delete_source_memberships"):
         monkeypatch.setattr(split.storage, name, lambda *a: None)
     split.apply_prefix_split(object(), "source", 1, calendar=calendar)
     assert days == ["2026-11-11"] * 2

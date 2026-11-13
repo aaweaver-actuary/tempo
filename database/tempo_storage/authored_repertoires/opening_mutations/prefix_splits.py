@@ -17,14 +17,6 @@ def insert_revision(database, values):
     )
 
 
-def reassign_reviews(database, shortened_card_id, source_card_id):
-    database.execute(
-        '''UPDATE reviews SET card_id=%s WHERE card_id=%s
-           AND NOT EXISTS (SELECT 1 FROM review_attempt_receipts r WHERE r.review_id=reviews.id)''',
-        (shortened_card_id, source_card_id),
-    )
-
-
 def archive_source_card(database, shortened_card_id, source_card_id):
     database.execute(
         'UPDATE cards SET archived=1,superseded_by=%s WHERE id=%s',
@@ -77,6 +69,12 @@ def source_queue_entries(database, source_card_id):
            AND NOT EXISTS (SELECT 1 FROM review_attempt_receipts r WHERE r.queue_entry_id=q.id)''',
         (source_card_id,),
     ).fetchall()
+
+
+def source_queue_days(database, source_card_id):
+    return [row[0] for row in database.execute_native(
+        "SELECT DISTINCT queue_date FROM daily_queue WHERE card_id=%s ORDER BY queue_date", (source_card_id,),
+    ).fetchall()]
 
 
 def has_active_issued_attempt(database, source_card_id):

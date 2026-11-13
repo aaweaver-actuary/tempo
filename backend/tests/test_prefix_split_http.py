@@ -25,6 +25,7 @@ def test_prefix_routes_mount_exactly_once():
         ("GET", "/api/cards/{identifier}/prefix-split"),
         ("POST", "/api/cards/{identifier}/prefix-split"),
         ("POST", "/api/cards/{identifier}/prefix-split/reject"),
+        ("GET", "/api/cards/{identifier}/prefix-split/intents/{intent_id}"),
     }
     routes = [(method, route.path) for route in main.app.routes
               for method in getattr(route, "methods", ()) if "prefix-split" in route.path]
@@ -53,6 +54,22 @@ def test_prefix_preview_uses_read_owner_and_rejects_illegal_card(api, monkeypatc
     card["moves_json"] = '["e2e5"]'
     assert api.get("/api/cards/source/prefix-split").status_code == 422
     assert api.get("/api/cards/missing/prefix-split").status_code == 404
+
+
+def test_split_intent_status_is_bound_to_its_original_card(api, monkeypatch):
+    @contextmanager
+    def reader():
+        yield object()
+    monkeypatch.setattr(prefix_split_routes, "read_connection", reader)
+    monkeypatch.setattr(prefix_split_routes.deferred_storage, "intent", lambda db, key: {
+        "intent_id": key, "card_id": "source", "source_revision": 7, "queue_entry_id": 42,
+        "state": "waiting_review", "reason": None, "result_json": None,
+    })
+    assert api.get("/api/cards/other/prefix-split/intents/intent").status_code == 404
+    response = api.get("/api/cards/source/prefix-split/intents/intent")
+    assert response.status_code == 200
+    assert response.json() == {"intent_id": "intent", "card_id": "source", "source_revision": 7,
+                               "queue_entry_id": 42, "status": "waiting_review", "reason": None, "result": None}
 
 
 @pytest.mark.parametrize("suffix,command", [("", "cards.prefix_split.accept"), ("/reject", "cards.prefix_split.reject")])
@@ -113,7 +130,7 @@ def test_prefix_decision_dispatch_preserves_operation_revision_and_receipt(api, 
     assert len(submissions) == before
 
 
-def test_prefix_accept_http_holds_issued_attempt_and_checks_replay_revision(api, monkeypatch):
+def test_prefix_accept_http_waits_for_issued_review_and_checks_replay_revision(api, monkeypatch):
     """Exercise the actual command and split policy, with persistence facts isolated."""
     from datetime import date
     from types import SimpleNamespace
@@ -128,13 +145,18 @@ def test_prefix_accept_http_holds_issued_attempt_and_checks_replay_revision(api,
     monkeypatch.setattr(prefix_split.storage, "card_row", lambda *a: card)
     monkeypatch.setattr(prefix_split.storage, "prior_split", lambda *a: facts["prior"])
     monkeypatch.setattr(prefix_split.storage, "has_active_issued_attempt", lambda *a: facts["active"])
+    monkeypatch.setattr(prefix_split.storage, "source_queue_days", lambda *a: [])
+    monkeypatch.setattr(prefix_split_commands.deferred_storage, "issued_origin", lambda *a: True)
+    monkeypatch.setattr(prefix_split_commands.deferred_storage, "create_intent", lambda *a: {
+        "intent_id": "intent", "state": "waiting_review", "reason": None,
+    })
     writes = []
     monkeypatch.setattr(prefix_split, "capture_daily_queue_order", lambda *a: writes.append("mutation"))
     monkeypatch.setattr(command_dispatch, "dispatch_command", lambda _name, payload, **_kw:
                         prefix_split_commands.accept_prefix_split(object(), payload))
     path = "/api/cards/source/prefix-split"
     held = api.post(path, json={"expected_revision": 7, "queue_entry_id": 42}, headers={"Idempotency-Key": "original"})
-    assert held.status_code == 409 and "issued attempt" in held.json()["detail"]
+    assert held.status_code == 200 and held.json() == {"status": "waiting_review", "intent_id": "intent", "card_id": "source", "source_revision": 7, "queue_entry_id": 42, "reason": None}
     wrong_entry = api.post(path, json={"expected_revision": 7, "queue_entry_id": 43}, headers={"Idempotency-Key": "wrong"})
     assert wrong_entry.status_code == 409 and "queue attempt" in wrong_entry.json()["detail"]
     assert writes == []
@@ -144,3 +166,20 @@ def test_prefix_accept_http_holds_issued_attempt_and_checks_replay_revision(api,
     stale = api.post(path, json={"expected_revision": 8}, headers={"Idempotency-Key": "other"})
     assert stale.status_code == 409 and "changed" in stale.json()["detail"]
     assert writes == []
+
+
+def test_prefix_reject_binds_supplied_queue_identity_before_mutation(api, monkeypatch):
+    monkeypatch.setattr(prefix_split_commands, "_lock_prefix_card", lambda *a: None)
+    monkeypatch.setattr(prefix_split_commands.split_storage, "matches_queue_entry", lambda _db, _card, entry: entry == 42)
+    monkeypatch.setattr(prefix_split_commands, "preview_prefix_split", lambda *_: {"source_revision": 7})
+    monkeypatch.setattr(prefix_split_commands.storage, "latest_failed_study_review_id", lambda *_: 9)
+    writes = []
+    monkeypatch.setattr(prefix_split_commands.storage, "store_split_rejection", lambda *args: writes.append(args))
+    monkeypatch.setattr(command_dispatch, "dispatch_command", lambda _name, payload, **_kw:
+                        prefix_split_commands.reject_prefix_split(object(), payload))
+    path = "/api/cards/source/prefix-split/reject"
+    assert api.post(path, json={"expected_revision": 7, "queue_entry_id": 43}).status_code == 409
+    assert writes == []
+    response = api.post(path, json={"expected_revision": 7, "queue_entry_id": 42})
+    assert response.status_code == 200 and response.json() == {"rejected_after_review_id": 9}
+    assert len(writes) == 1

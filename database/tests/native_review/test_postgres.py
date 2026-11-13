@@ -531,6 +531,7 @@ def test_native_split_then_refresh_retains_verified_after_four_placement(split_c
         database.execute("UPDATE daily_queue SET status='buried' WHERE id=%s",(case['entries'][1],))
         database.execute("UPDATE cards SET revision=3,moves_json='[\"e2e4\",\"e7e5\",\"g1f3\",\"b8c6\",\"f1b5\"]' WHERE id=%s",(source,))
         review_id = database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(%s,'again',%s,0,0,'study') RETURNING id",(source,case['day'])).fetchone()[0]
+        legacy_review_id = database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(%s,'correct',%s,0,1,'study') RETURNING id", (source, case['day'])).fetchone()[0]
         database.execute("INSERT INTO review_attempt_receipts(attempt_id,card_id,queue_entry_id,outcome,guided,review_id,scheduling_status,result_json) VALUES(%s,%s,%s,'again',0,%s,'saved','{}')", (case['identity']+'-receipt', source, case['entries'][0], review_id))
         second = database.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position) VALUES(%s,%s,1,1000) RETURNING id", (case['day'], source)).fetchone()[0]
         database.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=%s", (second,))
@@ -556,6 +557,7 @@ def test_native_split_then_refresh_retains_verified_after_four_placement(split_c
         assert [tuple(row) for row in database.execute("SELECT id,card_id,status FROM daily_queue WHERE id IN (%s,%s) ORDER BY id", (case['entries'][0], second))] == [(row[0], row[1], 'complete') for row in original]
         assert tuple(database.execute("SELECT card_id,queue_entry_id,review_id,result_json FROM review_attempt_receipts WHERE attempt_id=%s", (case['identity']+'-receipt',)).fetchone()) == (source, case['entries'][0], review_id, '{}')
         assert database.execute("SELECT card_id FROM reviews WHERE id=%s", (review_id,)).fetchone()[0] == source
+        assert database.execute("SELECT card_id FROM reviews WHERE id=%s", (legacy_review_id,)).fetchone()[0] == source
         assert apply_prefix_split(database,source,3,calendar=calendar)['idempotent'] is True
         with pytest.raises(RuntimeError, match='changed'):
             apply_prefix_split(database,source,4,calendar=calendar)

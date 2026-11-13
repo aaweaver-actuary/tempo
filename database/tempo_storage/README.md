@@ -48,7 +48,13 @@ polled or consumed as a new task queue. Its `source_record` preserves the exact
 row as it existed during the stopped-writer migration. Any later data disposal
 or resumption needs a separate explicit decision.
 
-The source expects schema 65, as defined in [`ddl/schema_version.py`](ddl/schema_version.py); the actual runtime schema has not been queried here. Applying migrations, validating the native
+The source expects schema 66, as defined in [`ddl/schema_version.py`](ddl/schema_version.py); the actual runtime schema has not been queried here. Applying migrations, validating the native
 database and installing the branch are separate operator actions. Focused
 connection-contract tests use an injected driver and do not establish native
 PostgreSQL query, locking or migration correctness.
+
+The Study deferred-prefix adapter owns the intent row, original queue/review
+matching and status transitions on borrowed transactions. Receipt storage owns
+publication of the exact foreground child operation. The existing essential
+operation recovery path checks at most one due intent per pass; it does not
+start a separate scheduler or depend on a browser remaining open.

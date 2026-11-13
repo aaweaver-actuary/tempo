@@ -231,7 +231,6 @@ def apply_prefix_split(
             now,
         ),
     )
-    storage.reassign_reviews(database, shortened_card_id, source_card_id)
     queued_entries = storage.source_queue_entries(database, source_card_id)
     for queue_entry in queued_entries:
         collision = storage.queue_collision(

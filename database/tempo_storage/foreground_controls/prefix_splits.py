@@ -2,6 +2,9 @@
 
 
 def locked_prefix_card(database, card_id: str):
+    database.execute_native(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{card_id}",),
+    )
     return database.execute_native(
         "SELECT id FROM cards WHERE id=%s FOR UPDATE", (card_id,),
     ).fetchone()

@@ -20,4 +20,10 @@ def base_available_attempt_sql(miss_reason: str) -> str:
 def available_attempt_sql(miss_reason: str) -> str:
     from tempo_storage.http_composition.retained_position_availability import availability_predicate
     return (base_available_attempt_sql(miss_reason) + frozen_order.legacy_queue_predicate()
-            + availability_predicate())
+            + availability_predicate() + """
+            AND (NOT EXISTS (SELECT 1 FROM study_deferred_prefix_splits split
+                  WHERE split.card_id=c.id AND split.source_revision=c.revision
+                    AND split.state IN ('waiting_review','ready'))
+                 OR EXISTS (SELECT 1 FROM queue_attempt_origins issued
+                  WHERE issued.queue_entry_id=q.id AND issued.card_id=c.id
+                    AND issued.revision=c.revision AND issued.issued_as_head=1))""")

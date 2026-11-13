@@ -47,6 +47,25 @@ def insert_queued(writer: ReceiptWriter, operation_id, command_name, request_has
     _receipt_connection(writer).execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,background) VALUES(%s,%s,%s,'queued',%s,%s) ON CONFLICT(operation_id) DO NOTHING", (operation_id, command_name, request_hash, json.dumps(payload, separators=(',', ':')), background))
 
 
+def enqueue_foreground_operation(database, operation_id, command_name, request_hash, payload):
+    """Retain one exact child command; None means its identity lock was busy."""
+    writer = receipt_writer(database)
+    locked = _receipt_connection(writer).execute_native(
+        "SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))", (operation_id,),
+    ).fetchone()[0]
+    if not locked:
+        return None
+    insert_queued(writer, operation_id, command_name, request_hash, payload, False)
+    receipt = locked_publication(writer, operation_id)
+    return receipt is not None and receipt[0] == command_name and receipt[1] == request_hash
+
+
+def foreground_operation_state(database, operation_id):
+    return database.execute_native(
+        "SELECT command_name,state,error_json,last_error_json FROM operation_receipts WHERE operation_id=%s", (operation_id,),
+    ).fetchone()
+
+
 def locked_attempt(writer: ReceiptWriter, operation_id):
     return _receipt_connection(writer).execute('SELECT command_name,request_hash,state,payload_json,next_retry_at,lease_expires_at,attempt_count,cycle_attempt_count,retry_cycle FROM operation_receipts WHERE operation_id=%s FOR UPDATE', (operation_id,)).fetchone()
 
@@ -128,6 +147,14 @@ def rollback_handler(writer: ReceiptWriter):
 
 def fail_operation(writer: ReceiptWriter, error_json, operation_id):
     _receipt_connection(writer).execute("UPDATE operation_receipts SET state='failed',error_json=%s,attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() WHERE operation_id=%s", (error_json, operation_id))
+
+
+def defer_prerequisite(writer: ReceiptWriter, operation_id, message):
+    _receipt_connection(writer).execute(
+        """UPDATE operation_receipts SET state='retrying',next_retry_at=NOW()+INTERVAL '30 seconds',
+           last_error_json=%s,attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() WHERE operation_id=%s""",
+        (json.dumps({"code": "prerequisite_pending", "message": message}), operation_id),
+    )
 
 
 def release_handler(writer: ReceiptWriter):
