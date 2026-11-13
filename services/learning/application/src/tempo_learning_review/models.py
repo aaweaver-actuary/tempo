@@ -110,3 +110,86 @@ class ReviewResult:
 
     def as_dict(self) -> dict:
         return json.loads(self.payload_json)
+
+
+@dataclass(frozen=True)
+class ScheduledReview:
+    card_id: str
+    next_due: str
+    interval_days: int
+    state: str
+    requeue_today: bool
+    requeue_after_cards: int | None
+    stability: float
+    scheduling_mode: str
+    hard_correct_streak: int
+    suggest_shorter_prefix: bool
+    idempotent: bool
+
+    @classmethod
+    def from_dict(cls, value: dict) -> ScheduledReview:
+        return cls(**value)
+
+    def as_dict(self) -> dict:
+        return {name: getattr(self, name) for name in self.__dataclass_fields__}
+
+
+@dataclass(frozen=True)
+class ScheduleSnapshot:
+    """Original snapshot fields in their original insertion order."""
+    due_date: str
+    interval_days: int
+    fsrs_card_json: str | None
+    first_correct_at: str | None
+    reinforcement_pending: int | bool
+    stability: float
+    guided_review: int | bool
+    state: str
+    scheduling_mode: str
+    hard_correct_streak: int
+    recent_attempts_json: str | None
+    payload_json: str
+
+    @classmethod
+    def from_dict(cls, value: dict) -> ScheduleSnapshot:
+        for field in ("due_date", "interval_days", "fsrs_card_json", "first_correct_at",
+                      "reinforcement_pending", "stability", "guided_review", "state",
+                      "scheduling_mode", "hard_correct_streak", "recent_attempts_json"):
+            if field not in value:
+                raise ValueError(f"Missing schedule snapshot field: {field}")
+        return cls(
+            value["due_date"], value["interval_days"], value["fsrs_card_json"],
+            value["first_correct_at"], value["reinforcement_pending"], value["stability"],
+            value["guided_review"], value["state"], value["scheduling_mode"],
+            value["hard_correct_streak"], value["recent_attempts_json"], json.dumps(value),
+        )
+
+    def as_dict(self) -> dict:
+        return json.loads(self.payload_json)
+
+
+@dataclass(frozen=True)
+class ReconciledReview:
+    """Retained result shape, including optional owner-provided metadata."""
+    persisted: bool
+    review_id: int | None
+    queue_entry_id: int
+    requeue_entry_id: int | None
+    reconciliation: str
+    warning: str | None
+    competing_review: dict[str, str | None] | None
+    payload_json: str
+
+    @classmethod
+    def from_dict(cls, value: dict) -> ReconciledReview:
+        for field in ("persisted", "review_id", "queue_entry_id", "requeue_entry_id", "reconciliation"):
+            if field not in value:
+                raise ValueError(f"Missing reconciliation field: {field}")
+        return cls(
+            value["persisted"], value["review_id"], value["queue_entry_id"],
+            value["requeue_entry_id"], value["reconciliation"], value.get("warning"),
+            value.get("competing_review"), json.dumps(value),
+        )
+
+    def as_dict(self) -> dict:
+        return json.loads(self.payload_json)
