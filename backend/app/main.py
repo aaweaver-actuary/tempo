@@ -118,6 +118,8 @@ from .games.review import router as game_review_router
 app.include_router(game_review_router)
 from .prefix_split_routes import router as prefix_split_router
 app.include_router(prefix_split_router)
+from .study_exercise_routes import router as study_exercise_router
+app.include_router(study_exercise_router)
 from .contracts.opening_evidence import OpeningEvidenceCheckpoint
 
 @app.get("/api/opening-evidence/attempts/{attempt_id}")

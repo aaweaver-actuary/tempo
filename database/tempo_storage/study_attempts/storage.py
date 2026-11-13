@@ -178,3 +178,28 @@ def locked_attempt(database, attempt_id, exercise_id):
         'SELECT * FROM study_attempts WHERE id=%s AND exercise_id=%s FOR UPDATE',
         (attempt_id, exercise_id),
     ).fetchone()
+
+
+def frozen_presentation(database, study_id, exercise_id):
+    """Read only a published exercise and its study-owned source position."""
+    return database.execute(
+        """SELECT e.id,e.current_revision,r.specification_json,p.fen
+           FROM study_exercises e JOIN studies s ON s.id=e.study_id
+           JOIN study_positions p ON p.id=e.position_id
+           JOIN study_sources src ON src.id=p.source_id
+           JOIN study_chapters chapter ON chapter.id=src.chapter_id AND chapter.study_id=e.study_id
+           JOIN study_exercise_revisions r ON r.exercise_id=e.id AND r.revision=e.current_revision
+           WHERE e.id=%s AND e.study_id=%s AND e.status='published' AND s.archived=0""",
+        (exercise_id, study_id),
+    ).fetchone()
+
+
+def frozen_attempt_feedback(database, study_id, exercise_id, attempt_id):
+    """Bind feedback to the original attempt and its persisted revision."""
+    return database.execute(
+        """SELECT r.specification_json FROM study_attempts a
+           JOIN study_exercises e ON e.id=a.exercise_id
+           JOIN study_exercise_revisions r ON r.exercise_id=a.exercise_id AND r.revision=a.revision
+           WHERE a.id=%s AND a.exercise_id=%s AND e.study_id=%s""",
+        (attempt_id, exercise_id, study_id),
+    ).fetchone()
