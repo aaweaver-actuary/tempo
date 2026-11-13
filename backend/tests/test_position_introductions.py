@@ -629,3 +629,28 @@ def test_targeted_game_intro_does_not_initialize_on_rejected_admission(monkeypat
         introductions=Rejected(),
     )
     assert result.status == "deferred"
+
+
+def test_introduced_claim_requires_exact_canonical_queue_proof(monkeypatch):
+    from app.services import position_queue_admission as admission
+
+    calls = []
+    class Database:
+        def execute_native(self, sql, params):
+            calls.append((" ".join(sql.split()), params))
+            return Cursor(None)
+    class Introductions:
+        def admit_encounter(self, *args, **kwargs):
+            return NS(status="introduced")
+    proposal = object()
+    target = NS(repertoire_id="r", decision_id="d", presentation_id="card", presentation_revision=7)
+    monkeypatch.setattr(intro, "initialize_introduction", lambda *a, **k: pytest.fail("unproved admission cannot initialize"))
+    with pytest.raises(ValueError, match="position_canonical_introduction_unproved"):
+        admission.admit_targeted_position_introduction(
+            Database(), (proposal, target), NS(prepared=proposal, definitions=(DEF,)),
+            day="2026-11-02", now=datetime.now(timezone.utc), introductions=Introductions(),
+        )
+    sql, params = calls[0]
+    assert "c.id=%s AND c.revision=%s AND c.introduced_at IS NOT NULL" in sql
+    assert "q.queue_date=%s AND q.admission_repertoire_id=%s AND q.status='queued' LIMIT 1" in sql
+    assert params == ("card", 7, "2026-11-02", "r")
