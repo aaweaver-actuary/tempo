@@ -49,6 +49,12 @@ def tactical_deletion_fixture_records(pack_id):
     return records
 
 
+def remove_owned_retained_repertoire(database, *, retained_existed, retained_created):
+    """Remove only a retained repertoire positively created by this fixture."""
+    if retained_existed is False and retained_created is True:
+        database.execute("DELETE FROM repertoires WHERE id=%s", (RETAINED_REPERTOIRE_ID,))
+
+
 def main_check():
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Deletion proof requires runner-owned disposable PostgreSQL")
@@ -63,8 +69,9 @@ def main_check():
     task_ids = []
     operation_ids = []
     queue_snapshot = None
-    main_ids = []
-    retained_existed = False
+    main_ids = None
+    retained_existed = None
+    retained_created = False
 
     def command(name, payload):
         operation_id = str(uuid.uuid4())
@@ -93,25 +100,25 @@ def main_check():
             rotation_before = database.execute("SELECT last_pack_id FROM tactic_rotation WHERE id=1").fetchone()[0]
             reservations_before = count_daily_tactic_introductions(database, today)
             database.execute("UPDATE tactic_pack_activation SET active=0")
-            database.execute("INSERT INTO tactic_pack_activation(pack_id,active) VALUES(?,1)", (pack_id,))
-            database.execute("UPDATE settings SET tactics_new_per_day=? WHERE id=1", (reservations_before + 1,))
+            database.execute("INSERT INTO tactic_pack_activation(pack_id,active) VALUES(%s,1)", (pack_id,))
+            database.execute("UPDATE settings SET tactics_new_per_day=%s WHERE id=1", (reservations_before + 1,))
             purge_card_data(database, [identifiers[0], *unrelated_ids])
-        original_read = postgres_queue_refresh._bounded_read
+        original_read = postgres_queue_refresh.read_storage._bounded_read
         lookup_batches = []
 
-        def candidate_read(statement, parameters=(), *, native=False):
+        def candidate_read(statement, parameters=()):
             if "deleted_cards" in statement:
-                assert "WHERE card_id=ANY(%s::text[])" in statement and native
+                assert "WHERE card_id=ANY(%s::text[])" in statement
                 assert 1 <= len(parameters[0]) <= 16
                 lookup_batches.append(list(parameters[0]))
-            return original_read(statement, parameters, native=native)
+            return original_read(statement, parameters)
 
         try:
-            with patch.object(postgres_queue_refresh, "pack_records", return_value=records), patch.object(postgres_queue_refresh, "_bounded_read", candidate_read):
+            with patch.object(postgres_queue_refresh, "pack_records", return_value=records), patch.object(postgres_queue_refresh.read_storage, "_bounded_read", candidate_read):
                 prepared = postgres_queue_refresh._prepare_tactical_introduction(today)
                 assert prepared["card_id"] == identifiers[1]
                 with postgres.connection() as database:
-                    database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(?,?,'checkpoint',?,?,'new',?,'tactic')", (identifiers[1], other, prepared["training_fen"], prepared["solution_json"], today))
+                    database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(%s,%s,'checkpoint',%s,%s,'new',%s,'tactic')", (identifiers[1], other, prepared["training_fen"], prepared["solution_json"], today))
                 command("cards.delete", {"card_id": identifiers[1], "expected_revision": 1})
                 with postgres.connection() as database:
                     assert postgres_queue_refresh._publish_tactical_introduction(database, today, prepared)
@@ -126,17 +133,17 @@ def main_check():
                 with postgres.connection() as database:
                     assert postgres_queue_refresh._publish_tactical_introduction(database, today, eligible)
                     assert count_daily_tactic_introductions(database, today) == reservations_before + 1
-                    assert database.execute("SELECT card_id FROM tactic_progress WHERE puzzle_id=?", (records[2]["PuzzleId"],)).fetchone()[0] == identifiers[2]
+                    assert database.execute("SELECT card_id FROM tactic_progress WHERE puzzle_id=%s", (records[2]["PuzzleId"],)).fetchone()[0] == identifiers[2]
                 assert postgres_queue_refresh._prepare_tactical_introduction(today) is None
                 assert lookup_batches == [identifiers, identifiers]
         finally:
             with postgres.connection() as database:
                 purge_card_data(database, identifiers)
-                database.execute("DELETE FROM tactic_introductions WHERE pack_id=?", (pack_id,))
-                database.execute("DELETE FROM tactic_pack_activation WHERE pack_id=?", (pack_id,))
+                database.execute("DELETE FROM tactic_introductions WHERE pack_id=%s", (pack_id,))
+                database.execute("DELETE FROM tactic_pack_activation WHERE pack_id=%s", (pack_id,))
                 database.execute_native("UPDATE tactic_pack_activation SET active=CASE WHEN pack_id=ANY(%s) THEN 1 ELSE 0 END", (active_before,))
-                database.execute("UPDATE settings SET tactics_new_per_day=? WHERE id=1", (limit_before,))
-                database.execute("UPDATE tactic_rotation SET last_pack_id=? WHERE id=1", (rotation_before,))
+                database.execute("UPDATE settings SET tactics_new_per_day=%s WHERE id=1", (limit_before,))
+                database.execute("UPDATE tactic_rotation SET last_pack_id=%s WHERE id=1", (rotation_before,))
         print("PASS test_postgres_tactical_deletion_batches_and_publication_race; unrelated exclusions, real deletion after prepare, no spent allowance and next eligible admission")
 
     def prove_shared_admission_history_and_review_fallback():
@@ -153,14 +160,14 @@ def main_check():
                     now = datetime.now(timezone.utc).isoformat()
                     with postgres.connection() as database:
                         for repertoire_id in (removed, survivor, third):
-                            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)", (repertoire_id, repertoire_id, "shared admission proof", today))
-                        database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,'Original scope','white',?,'[\"e2e4\"]',?)", (f"{case_id}-line", removed, chess.STARTING_FEN, now))
-                        database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,state,due_date,introduced_at,interval_days) VALUES(?,?,'prefix',?,'[\"e2e4\"]',?,'mature',?,?,7)", (identifier, removed if deleted_owner else survivor, chess.STARTING_FEN, "white" if explicit_color else None, tomorrow, today))
+                            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)", (repertoire_id, repertoire_id, "shared admission proof", today))
+                        database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,'Original scope','white',%s,'[\"e2e4\"]',%s)", (f"{case_id}-line", removed, chess.STARTING_FEN, now))
+                        database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,state,due_date,introduced_at,interval_days) VALUES(%s,%s,'prefix',%s,'[\"e2e4\"]',%s,'mature',%s,%s,7)", (identifier, removed if deleted_owner else survivor, chess.STARTING_FEN, "white" if explicit_color else None, tomorrow, today))
                         for repertoire_id in (removed, survivor) + (() if deleted_owner else (third,)):
-                            database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", (repertoire_id, identifier))
+                            database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)", (repertoire_id, identifier))
                         # This exclusive unintroduced card must still be purged under either policy.
-                        database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,'[\"d2d4\"]','new',?)", (exclusive, removed, chess.STARTING_FEN, today))
-                        queue_ids = [database.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_repertoire_id) VALUES(?,?,?,?,?) RETURNING id", (today, identifier, cycle, 120000 + len(card_ids) + cycle, removed)).fetchone()[0] for cycle in (0, 1)]
+                        database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(%s,%s,'prefix',%s,'[\"d2d4\"]','new',%s)", (exclusive, removed, chess.STARTING_FEN, today))
+                        queue_ids = [database.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_repertoire_id) VALUES(%s,%s,%s,%s,%s) RETURNING id", (today, identifier, cycle, 120000 + len(card_ids) + cycle, removed)).fetchone()[0] for cycle in (0, 1)]
                     transport = {"id": identifier, "queue_entry_id": queue_ids[1], "content_type": "opening",
                                  "revision": 1, "start_fen": chess.STARTING_FEN, "moves": ["e2e4"],
                                  "trained_color": "white" if explicit_color else None}
@@ -185,25 +192,25 @@ def main_check():
                     def history_snapshot(database):
                         return {name: [dict(row) for row in database.execute(statement, (identifier,))]
                                 for name, statement in (
-                                    ("reviews", "SELECT * FROM reviews WHERE card_id=? ORDER BY id"),
-                                    ("origins", "SELECT * FROM queue_attempt_origins WHERE card_id=? ORDER BY queue_entry_id"),
-                                    ("receipts", "SELECT * FROM review_attempt_receipts WHERE card_id=? ORDER BY attempt_id"),
-                                    ("presentations", "SELECT * FROM opening_evidence_presentations WHERE card_id=? ORDER BY id"),
-                                    ("attempts", "SELECT * FROM opening_evidence_attempts WHERE card_id=? ORDER BY attempt_id"),
-                                    ("events", "SELECT event.* FROM opening_evidence_events event JOIN opening_evidence_attempts attempt ON attempt.attempt_id=event.attempt_id WHERE attempt.card_id=? ORDER BY event.sequence"),
-                                    ("observations", "SELECT observation.* FROM opening_evidence_observations observation JOIN opening_evidence_attempts attempt ON attempt.attempt_id=observation.attempt_id WHERE attempt.card_id=? ORDER BY observation.decision_index"),
-                                    ("summaries", "SELECT summary.* FROM opening_evidence_summaries summary WHERE decision_id IN (SELECT observation.decision_id FROM opening_evidence_observations observation JOIN opening_evidence_attempts attempt ON attempt.attempt_id=observation.attempt_id WHERE attempt.card_id=?) ORDER BY decision_id"),
-                                    ("clean_days", "SELECT clean_day.* FROM opening_evidence_clean_days clean_day WHERE decision_id IN (SELECT observation.decision_id FROM opening_evidence_observations observation JOIN opening_evidence_attempts attempt ON attempt.attempt_id=observation.attempt_id WHERE attempt.card_id=?) ORDER BY decision_id,study_day"),
+                                    ("reviews", "SELECT * FROM reviews WHERE card_id=%s ORDER BY id"),
+                                    ("origins", "SELECT * FROM queue_attempt_origins WHERE card_id=%s ORDER BY queue_entry_id"),
+                                    ("receipts", "SELECT * FROM review_attempt_receipts WHERE card_id=%s ORDER BY attempt_id"),
+                                    ("presentations", "SELECT * FROM opening_evidence_presentations WHERE card_id=%s ORDER BY id"),
+                                    ("attempts", "SELECT * FROM opening_evidence_attempts WHERE card_id=%s ORDER BY attempt_id"),
+                                    ("events", "SELECT event.* FROM opening_evidence_events event JOIN opening_evidence_attempts attempt ON attempt.attempt_id=event.attempt_id WHERE attempt.card_id=%s ORDER BY event.sequence"),
+                                    ("observations", "SELECT observation.* FROM opening_evidence_observations observation JOIN opening_evidence_attempts attempt ON attempt.attempt_id=observation.attempt_id WHERE attempt.card_id=%s ORDER BY observation.decision_index"),
+                                    ("summaries", "SELECT summary.* FROM opening_evidence_summaries summary WHERE decision_id IN (SELECT observation.decision_id FROM opening_evidence_observations observation JOIN opening_evidence_attempts attempt ON attempt.attempt_id=observation.attempt_id WHERE attempt.card_id=%s) ORDER BY decision_id"),
+                                    ("clean_days", "SELECT clean_day.* FROM opening_evidence_clean_days clean_day WHERE decision_id IN (SELECT observation.decision_id FROM opening_evidence_observations observation JOIN opening_evidence_attempts attempt ON attempt.attempt_id=observation.attempt_id WHERE attempt.card_id=%s) ORDER BY decision_id,study_day"),
                                 )}
 
                     with postgres.connection() as database:
-                        card_before = dict(database.execute("SELECT * FROM cards WHERE id=?", (identifier,)).fetchone())
-                        queues_before = [dict(row) for row in database.execute("SELECT * FROM daily_queue WHERE card_id=? ORDER BY id", (identifier,))]
+                        card_before = dict(database.execute("SELECT * FROM cards WHERE id=%s", (identifier,)).fetchone())
+                        queues_before = [dict(row) for row in database.execute("SELECT * FROM daily_queue WHERE card_id=%s ORDER BY id", (identifier,))]
                         history_before = history_snapshot(database)
-                        contexts_before = [dict(row) for row in database.execute("SELECT * FROM opening_evidence_queue_contexts WHERE queue_entry_id IN (?,?) ORDER BY queue_entry_id", queue_ids)]
+                        contexts_before = [dict(row) for row in database.execute("SELECT * FROM opening_evidence_queue_contexts WHERE queue_entry_id IN (%s,%s) ORDER BY queue_entry_id", queue_ids)]
                         assert len(history_before["observations"]) == 1
                         assert len(history_before["attempts"]) == 1 and history_before["attempts"][0]["state"] == "complete"
-                        operation_before = dict(database.execute("SELECT * FROM operation_receipts WHERE operation_id=?", (historical_operation,)).fetchone())
+                        operation_before = dict(database.execute("SELECT * FROM operation_receipts WHERE operation_id=%s", (historical_operation,)).fetchone())
                     deletion_statements = []
                     original_execute = postgres.PostgresConnection.execute_native
                     original_compatible_execute = postgres.PostgresConnection.execute
@@ -226,22 +233,22 @@ def main_check():
                                if "pg_advisory_xact_lock" in statement and parameters[0].startswith("tempo:card-edit:"))
                     postgres.close_pools()
                     with postgres.connection() as database:
-                        assert dict(database.execute("SELECT * FROM cards WHERE id=?", (identifier,)).fetchone()) == {**card_before, "repertoire_id": survivor}
-                        queues_after = [dict(row) for row in database.execute("SELECT * FROM daily_queue WHERE card_id=? ORDER BY id", (identifier,))]
+                        assert dict(database.execute("SELECT * FROM cards WHERE id=%s", (identifier,)).fetchone()) == {**card_before, "repertoire_id": survivor}
+                        queues_after = [dict(row) for row in database.execute("SELECT * FROM daily_queue WHERE card_id=%s ORDER BY id", (identifier,))]
                         expected_queues = [{**row, "admission_repertoire_id": survivor}
                                            if row["status"] == "queued" and row["admission_repertoire_id"] == removed
                                            else row for row in queues_before]
                         assert queues_after == expected_queues, (case_id, queues_after, expected_queues)
                         assert history_snapshot(database) == history_before
-                        assert dict(database.execute("SELECT * FROM operation_receipts WHERE operation_id=?", (historical_operation,)).fetchone()) == operation_before
-                        assert [dict(row) for row in database.execute("SELECT * FROM opening_evidence_queue_contexts WHERE queue_entry_id IN (?,?) AND repertoire_id=? ORDER BY queue_entry_id", (*queue_ids, removed))] == contexts_before
-                        assert database.execute("SELECT 1 FROM repertoire_cards WHERE repertoire_id=? AND card_id=?", (survivor, identifier)).fetchone()
-                        assert not database.execute("SELECT 1 FROM deleted_cards WHERE card_id=?", (identifier,)).fetchone()
-                        assert not database.execute("SELECT 1 FROM cards WHERE id=?", (exclusive,)).fetchone()
-                        assert database.execute("SELECT 1 FROM deleted_cards WHERE card_id=?", (exclusive,)).fetchone()
+                        assert dict(database.execute("SELECT * FROM operation_receipts WHERE operation_id=%s", (historical_operation,)).fetchone()) == operation_before
+                        assert [dict(row) for row in database.execute("SELECT * FROM opening_evidence_queue_contexts WHERE queue_entry_id IN (%s,%s) AND repertoire_id=%s ORDER BY queue_entry_id", (*queue_ids, removed))] == contexts_before
+                        assert database.execute("SELECT 1 FROM repertoire_cards WHERE repertoire_id=%s AND card_id=%s", (survivor, identifier)).fetchone()
+                        assert not database.execute("SELECT 1 FROM deleted_cards WHERE card_id=%s", (identifier,)).fetchone()
+                        assert not database.execute("SELECT 1 FROM cards WHERE id=%s", (exclusive,)).fetchone()
+                        assert database.execute("SELECT 1 FROM deleted_cards WHERE card_id=%s", (exclusive,)).fetchone()
                         try:
                             with database.raw.transaction():
-                                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,'[]','new',?)", (exclusive, survivor, chess.STARTING_FEN, today))
+                                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(%s,%s,'prefix',%s,'[]','new',%s)", (exclusive, survivor, chess.STARTING_FEN, today))
                         except psycopg.errors.CheckViolation as error:
                             assert error.diag.constraint_name == "deleted_card_content"
                         else:
@@ -259,7 +266,7 @@ def main_check():
                         current_history = history_snapshot(database)
                         for evidence_table in ("presentations", "attempts", "events", "observations", "summaries", "clean_days"):
                             assert current_history[evidence_table] == history_before[evidence_table]
-                        task_ids.extend(row[0] for row in database.execute("SELECT id FROM background_tasks WHERE deduplication_key IN (?,?,?,?)", (removed, survivor, third, identifier)))
+                        task_ids.extend(row[0] for row in database.execute("SELECT id FROM background_tasks WHERE deduplication_key IN (%s,%s,%s,%s)", (removed, survivor, third, identifier)))
         print("PASS test_postgres_repertoire_delete_reassigns_both_shared_admission_scopes_without_rewriting_history; keep/delete, reconnect/replay, actual completed evidence and review receipts, valid current manifests and ordinary-review fallback")
 
     def prove_repeated_route_dependencies():
@@ -275,98 +282,100 @@ def main_check():
         with postgres.connection() as database:
             assert not database.execute_native("SELECT 1 FROM cards WHERE id=ANY(%s)", ([step.card_id for step in repeated_steps],)).fetchone(), "Repetition proof identities collide with another fixture"
             card_ids.extend(step.card_id for step in repeated_steps)
-            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)", (repetition_repertoire, repetition_repertoire, "repetition proof", today))
-            database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,'Repeated source','white',?,?,?)", (repetition_line, repetition_repertoire, repetition_fen, repetition_source["moves_json"], today))
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)", (repetition_repertoire, repetition_repertoire, "repetition proof", today))
+            database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,'Repeated source','white',%s,%s,%s)", (repetition_line, repetition_repertoire, repetition_fen, repetition_source["moves_json"], today))
             repeated_task = enqueue_task_in_transaction(database, "opening_graph_rebuild", repetition_repertoire,
                 {"repertoire_id": repetition_repertoire, "local_day": today, "step_offset": 0})
             repeated_task["payload"] = json.loads(repeated_task["payload_json"])
             repeated_task["lease_token"] = "repetition-proof"
             task_ids.append(repeated_task["id"])
-            database.execute("UPDATE background_tasks SET state='leased',lease_token=? WHERE id=?", (repeated_task["lease_token"], repeated_task["id"]))
+            database.execute("UPDATE background_tasks SET state='leased',lease_token=%s WHERE id=%s", (repeated_task["lease_token"], repeated_task["id"]))
             repeated_prepared = PreparedGraphLine(repetition_line, repeated_steps)
             assert stage_graph_line_in_transaction(database, repeated_task, repeated_prepared)
-            database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(?,?,'ready',?)", (repetition_repertoire, repeated_task["generation"], today))
+            database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,%s,'ready',%s)", (repetition_repertoire, repeated_task["generation"], today))
         command("cards.delete", {"card_id": repeated_steps[1].card_id, "expected_revision": 1})
         for restart in (False, True):
             postgres.close_pools()
             with postgres.connection() as database:
                 if restart:
                     repeated_task["lease_token"] = "repetition-restarted"
-                    database.execute("UPDATE background_tasks SET state='leased',phase='stage',lease_token=?,payload_json=? WHERE id=?", (repeated_task["lease_token"], json.dumps(repeated_task["payload"]), repeated_task["id"]))
+                    database.execute("UPDATE background_tasks SET state='leased',phase='stage',lease_token=%s,payload_json=%s WHERE id=%s", (repeated_task["lease_token"], json.dumps(repeated_task["payload"]), repeated_task["id"]))
                     assert stage_graph_line_in_transaction(database, repeated_task, repeated_prepared)
                 for decision_index, expected_parent in ((2, repeated_steps[0].card_id), (4, repeated_steps[2].card_id)):
-                    assert database.execute("SELECT parent_card_id FROM opening_graph_steps WHERE repertoire_id=? AND line_id=? AND decision_index=?", (repetition_repertoire, repetition_line, decision_index)).fetchone()[0] == expected_parent
-                assert database.execute("SELECT moves_json FROM repertoire_lines WHERE id=?", (repetition_line,)).fetchone()[0] == repetition_source["moves_json"]
-                assert database.execute("SELECT 1 FROM cards WHERE id=?", (repeated_steps[1].card_id,)).fetchone() is None
+                    assert database.execute("SELECT parent_card_id FROM opening_graph_steps WHERE repertoire_id=%s AND line_id=%s AND decision_index=%s", (repetition_repertoire, repetition_line, decision_index)).fetchone()[0] == expected_parent
+                assert database.execute("SELECT moves_json FROM repertoire_lines WHERE id=%s", (repetition_line,)).fetchone()[0] == repetition_source["moves_json"]
+                assert database.execute("SELECT 1 FROM cards WHERE id=%s", (repeated_steps[1].card_id,)).fetchone() is None
         with postgres.connection() as database:
-            database.execute("UPDATE cards SET state='learning' WHERE id=?", (repeated_steps[0].card_id,))
-            database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(?,'correct',?,0,1)", (repeated_steps[0].card_id, today))
+            database.execute("UPDATE cards SET state='learning' WHERE id=%s", (repeated_steps[0].card_id,))
+            database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(%s,'correct',%s,0,1)", (repeated_steps[0].card_id, today))
             child_id = repeated_steps[2].card_id
             cursor = f"{int(child_id, 16) - 1:064x}"
-            assert database.execute(f"SELECT id FROM cards WHERE {main._OPENING_UNLOCK_ELIGIBILITY_SQL} AND id>? ORDER BY id LIMIT 1", (cursor,)).fetchone()[0] == child_id
+            assert database.execute(f"SELECT id FROM cards WHERE {main._OPENING_UNLOCK_ELIGIBILITY_SQL} AND id>%s ORDER BY id LIMIT 1", (cursor,)).fetchone()[0] == child_id
             main._unlock_eligible_opening_cards(database, today, after_card_id=cursor, batch_size=1)
-            assert database.execute("SELECT state FROM cards WHERE id=?", (child_id,)).fetchone()[0] == "new"
-            assert database.execute("SELECT state FROM cards WHERE id=?", (repeated_steps[4].card_id,)).fetchone()[0] == "locked"
+            assert database.execute("SELECT state FROM cards WHERE id=%s", (child_id,)).fetchone()[0] == "new"
+            assert database.execute("SELECT state FROM cards WHERE id=%s", (repeated_steps[4].card_id,)).fetchone()[0] == "locked"
         print("PASS test_deleted_repeated_route_prerequisite_reparents_each_occurrence_without_self_dependency; permanent deletion, reconnect/rebuild and real descendant unlock")
 
     try:
         with postgres.connection() as database:
             queue_snapshot = snapshot_queue_environment(database, (today, tomorrow))
             main_ids = [row[0] for row in database.execute("SELECT id FROM repertoires WHERE is_main=1")]
-            retained_existed = database.execute("SELECT 1 FROM repertoires WHERE id=?", (RETAINED_REPERTOIRE_ID,)).fetchone() is not None
+            retained_existed = database.execute("SELECT 1 FROM repertoires WHERE id=%s", (RETAINED_REPERTOIRE_ID,)).fetchone() is not None
             for repertoire_id in repertoire_ids:
-                database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)", (repertoire_id, repertoire_id, "synthetic deletion proof", today))
-            database.execute("UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END", (other,))
+                database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)", (repertoire_id, repertoire_id, "synthetic deletion proof", today))
+            database.execute("UPDATE repertoires SET is_main=CASE WHEN id=%s THEN 1 ELSE 0 END", (other,))
             for repertoire_id in (keep, delete):
                 for suffix, learned in (("learned", True), ("new", False), ("shared", True), ("archived", True), ("introduced", True)):
                     identifier = f"{repertoire_id}-{suffix}"
                     card_ids.append(identifier)
-                    database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,interval_days,archived) VALUES(?,?,'prefix',?,'[\"e2e4\"]','mature',?,?,7,?)", (identifier, repertoire_id, chess.STARTING_FEN, tomorrow, today if learned else None, int(suffix == "archived")))
-                    database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", (repertoire_id, identifier))
-                    database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_repertoire_id) VALUES(?,?,?,?)", (today, identifier, 100000 + len(card_ids), repertoire_id))
+                    database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,interval_days,archived) VALUES(%s,%s,'prefix',%s,'[\"e2e4\"]','mature',%s,%s,7,%s)", (identifier, repertoire_id, chess.STARTING_FEN, tomorrow, today if learned else None, int(suffix == "archived")))
+                    database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)", (repertoire_id, identifier))
+                    database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_repertoire_id) VALUES(%s,%s,%s,%s)", (today, identifier, 100000 + len(card_ids), repertoire_id))
                     if suffix == "introduced":
-                        database.execute("UPDATE cards SET state='learning',due_date=? WHERE id=?", (today, identifier))
+                        database.execute("UPDATE cards SET state='learning',due_date=%s WHERE id=%s", (today, identifier))
                     if learned and suffix != "introduced":
-                        database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(?,'correct',?,0,7)", (identifier, today))
+                        database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(%s,'correct',%s,0,7)", (identifier, today))
                     if suffix == "shared":
-                        database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", (other, identifier))
+                        database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)", (other, identifier))
             target_task = enqueue_task_in_transaction(database, "opening_graph_rebuild", keep, {"repertoire_id": keep})
             unrelated_task = enqueue_task_in_transaction(database, "coverage", other, {"repertoire_id": other, "position": f"{keep}\0position", "nested": {"repertoire_id": keep}})
             task_ids.extend((target_task["id"], unrelated_task["id"]))
             target_task["lease_token"] = "stale-graph-lease"
-            database.execute("UPDATE background_tasks SET state='leased',lease_token=? WHERE id=?", (target_task["lease_token"], target_task["id"]))
+            database.execute("UPDATE background_tasks SET state='leased',lease_token=%s WHERE id=%s", (target_task["lease_token"], target_task["id"]))
         for repertoire_id, policy in ((keep, "keep"), (delete, "delete")):
             assert command("repertoires.delete", {"repertoire_id": repertoire_id, "learned_cards": policy}) == {"deleted": True, "id": repertoire_id}
+            if policy == "keep" and retained_existed is False:
+                retained_created = True
         with postgres.connection() as database:
             assert not lock_current_slice(database, target_task)
-            assert database.execute("SELECT state FROM background_tasks WHERE id=?", (unrelated_task["id"],)).fetchone()[0] == "queued"
-            assert database.execute("SELECT is_main FROM repertoires WHERE id=?", (other,)).fetchone()[0] == 1
+            assert database.execute("SELECT state FROM background_tasks WHERE id=%s", (unrelated_task["id"],)).fetchone()[0] == "queued"
+            assert database.execute("SELECT is_main FROM repertoires WHERE id=%s", (other,)).fetchone()[0] == 1
             for repertoire_id in (keep, delete):
-                assert database.execute("SELECT 1 FROM repertoires WHERE id=?", (repertoire_id,)).fetchone() is None
-                assert database.execute("SELECT 1 FROM cards WHERE id=?", (f"{repertoire_id}-new",)).fetchone() is None
-                assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (f"{repertoire_id}-shared",)).fetchone()[0] == 1
-                assert database.execute("SELECT repertoire_id FROM cards WHERE id=?", (f"{repertoire_id}-shared",)).fetchone()[0] == other
-                assert database.execute("SELECT 1 FROM deleted_cards WHERE card_id=?", (f"{repertoire_id}-shared",)).fetchone() is None
+                assert database.execute("SELECT 1 FROM repertoires WHERE id=%s", (repertoire_id,)).fetchone() is None
+                assert database.execute("SELECT 1 FROM cards WHERE id=%s", (f"{repertoire_id}-new",)).fetchone() is None
+                assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (f"{repertoire_id}-shared",)).fetchone()[0] == 1
+                assert database.execute("SELECT repertoire_id FROM cards WHERE id=%s", (f"{repertoire_id}-shared",)).fetchone()[0] == other
+                assert database.execute("SELECT 1 FROM deleted_cards WHERE card_id=%s", (f"{repertoire_id}-shared",)).fetchone() is None
                 try:
                     review_commands.submit_review(database, {"card_id": f"{repertoire_id}-new", "review": ReviewRequest(outcome="correct").durable_payload()})
                 except ReviewConflict as error:
                     assert error.code == "card_deleted"
                 else:
                     raise AssertionError("Delayed repertoire review graded deleted content")
-                assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (f"{repertoire_id}-new",)).fetchone()[0] == 0
-            assert tuple(database.execute("SELECT repertoire_id,interval_days,due_date FROM cards WHERE id=?", (f"{keep}-learned",)).fetchone()) == (RETAINED_REPERTOIRE_ID, 7, tomorrow)
-            assert database.execute("SELECT archived FROM cards WHERE id=?", (f"{keep}-archived",)).fetchone()[0] == 1
-            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (f"{keep}-learned",)).fetchone()[0] == 1
-            assert database.execute("SELECT 1 FROM cards WHERE id=?", (f"{delete}-learned",)).fetchone() is None
+                assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (f"{repertoire_id}-new",)).fetchone()[0] == 0
+            assert tuple(database.execute("SELECT repertoire_id,interval_days,due_date FROM cards WHERE id=%s", (f"{keep}-learned",)).fetchone()) == (RETAINED_REPERTOIRE_ID, 7, tomorrow)
+            assert database.execute("SELECT archived FROM cards WHERE id=%s", (f"{keep}-archived",)).fetchone()[0] == 1
+            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (f"{keep}-learned",)).fetchone()[0] == 1
+            assert database.execute("SELECT 1 FROM cards WHERE id=%s", (f"{delete}-learned",)).fetchone() is None
             from app.services.postgres_queue_refresh import _reconcile_one_unseen_entry, _admit_one_due_card
             introduced_id = f"{keep}-introduced"
-            entry = database.execute("SELECT id,card_id,admission_repertoire_id AS repertoire_id FROM daily_queue WHERE card_id=?", (introduced_id,)).fetchone()
+            entry = database.execute("SELECT id,card_id,admission_repertoire_id AS repertoire_id FROM daily_queue WHERE card_id=%s", (introduced_id,)).fetchone()
             assert not _reconcile_one_unseen_entry(database, today, dict(entry), 0)
-            assert database.execute("SELECT 1 FROM daily_queue WHERE id=?", (entry["id"],)).fetchone()
+            assert database.execute("SELECT 1 FROM daily_queue WHERE id=%s", (entry["id"],)).fetchone()
             main._reset_stale_opening_introductions(database, tomorrow)
-            assert tuple(database.execute("SELECT state,introduced_at,trained_color FROM cards WHERE id=?", (introduced_id,)).fetchone()) == ("learning", today, "white")
+            assert tuple(database.execute("SELECT state,introduced_at,trained_color FROM cards WHERE id=%s", (introduced_id,)).fetchone()) == ("learning", today, "white")
             _admit_one_due_card(database, tomorrow, introduced_id)
-            assert database.execute("SELECT 1 FROM daily_queue WHERE card_id=? AND queue_date=?", (introduced_id, tomorrow)).fetchone()
+            assert database.execute("SELECT 1 FROM daily_queue WHERE card_id=%s AND queue_date=%s", (introduced_id, tomorrow)).fetchone()
         print("PASS test_repertoire_delete_ignores_unrelated_null_job_payload; exact cancellation fences stale workers")
         print("PASS test_repertoire_keep_delete_preserves_shared_schedules_history_and_non_main_selection; durable policy replay")
         print("PASS test_retained_introduced_cards_survive_queue_refresh_and_next_day_without_a_review")
@@ -389,12 +398,12 @@ def main_check():
         with postgres.connection() as database:
             assert not database.execute_native("SELECT 1 FROM cards WHERE id=ANY(%s)", ([step.card_id for step in steps],)).fetchone(), "Proof identities collide with another fixture"
             card_ids.extend(step.card_id for step in steps)
-            database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,'Proof','white',?,?,?)", (line_id, graph, source["start_fen"], source["moves_json"], today))
+            database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,'Proof','white',%s,%s,%s)", (line_id, graph, source["start_fen"], source["moves_json"], today))
             task = enqueue_task_in_transaction(database, "opening_graph_rebuild", graph, {"repertoire_id": graph, "local_day": today, "step_offset": 0})
             task["payload"] = json.loads(task["payload_json"])
             task_ids.append(task["id"])
             task["lease_token"] = "graph-proof"
-            database.execute("UPDATE background_tasks SET state='leased',lease_token=? WHERE id=?", (task["lease_token"], task["id"]))
+            database.execute("UPDATE background_tasks SET state='leased',lease_token=%s WHERE id=%s", (task["lease_token"], task["id"]))
             prepared = PreparedGraphLine(line_id, steps)
         contention_result = []
         def attempt_contended_slice():
@@ -408,27 +417,27 @@ def main_check():
             contender = threading.Thread(target=attempt_contended_slice)
             contender.start()
             with postgres.connection(read_only=True) as reader:
-                assert reader.execute("SELECT 1 FROM repertoires WHERE id=?", (graph,)).fetchone()
+                assert reader.execute("SELECT 1 FROM repertoires WHERE id=%s", (graph,)).fetchone()
             contender.join(timeout=5)
             assert not contender.is_alive() and len(contention_result) == 1 and isinstance(contention_result[0], (psycopg.errors.LockNotAvailable, psycopg.errors.TransactionTimeout)), f"Background slice did not yield to the foreground deletion lock: {contention_result}"
         with postgres.connection() as database:
             assert stage_graph_line_in_transaction(database, task, prepared)
-            database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(?,?,'ready',?)", (graph, task["generation"], today))
-            assert database.execute("SELECT state FROM cards WHERE id=?", (steps[1].card_id,)).fetchone()[0] == "locked"
+            database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,%s,'ready',%s)", (graph, task["generation"], today))
+            assert database.execute("SELECT state FROM cards WHERE id=%s", (steps[1].card_id,)).fetchone()[0] == "locked"
         print("PASS test_permanent_card_deletion_foreground_contention_yields_and_replays_idempotently")
         assert command("cards.delete", {"card_id": steps[0].card_id, "expected_revision": 1})["deleted"]
         with postgres.connection() as database:
-            assert database.execute("SELECT moves_json FROM repertoire_lines WHERE id=?", (line_id,)).fetchone()[0] == source["moves_json"]
-            assert database.execute("SELECT parent_card_id FROM opening_graph_steps WHERE card_id=?", (steps[1].card_id,)).fetchone()[0] is None
+            assert database.execute("SELECT moves_json FROM repertoire_lines WHERE id=%s", (line_id,)).fetchone()[0] == source["moves_json"]
+            assert database.execute("SELECT parent_card_id FROM opening_graph_steps WHERE card_id=%s", (steps[1].card_id,)).fetchone()[0] is None
             unlock_cursor = f"{int(steps[1].card_id, 16) - 1:064x}"
-            assert database.execute(f"SELECT id FROM cards WHERE {main._OPENING_UNLOCK_ELIGIBILITY_SQL} AND id>? ORDER BY id LIMIT 1", (unlock_cursor,)).fetchone()[0] == steps[1].card_id
+            assert database.execute(f"SELECT id FROM cards WHERE {main._OPENING_UNLOCK_ELIGIBILITY_SQL} AND id>%s ORDER BY id LIMIT 1", (unlock_cursor,)).fetchone()[0] == steps[1].card_id
             main._unlock_eligible_opening_cards(database, today, after_card_id=unlock_cursor, batch_size=1)
-            assert database.execute("SELECT state FROM cards WHERE id=?", (steps[1].card_id,)).fetchone()[0] == "new"
-            assert database.execute("SELECT state FROM cards WHERE id=?", (steps[2].card_id,)).fetchone()[0] == "locked"
-            assert database.execute("SELECT COUNT(*) FROM opening_evidence_presentations WHERE card_id=?", (steps[0].card_id,)).fetchone()[0] == 0
+            assert database.execute("SELECT state FROM cards WHERE id=%s", (steps[1].card_id,)).fetchone()[0] == "new"
+            assert database.execute("SELECT state FROM cards WHERE id=%s", (steps[2].card_id,)).fetchone()[0] == "locked"
+            assert database.execute("SELECT COUNT(*) FROM opening_evidence_presentations WHERE card_id=%s", (steps[0].card_id,)).fetchone()[0] == 0
             with database.raw.transaction():
                 try:
-                    database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,'[]','new',?)", (steps[0].card_id, graph, chess.STARTING_FEN, today))
+                    database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(%s,%s,'prefix',%s,'[]','new',%s)", (steps[0].card_id, graph, chess.STARTING_FEN, today))
                 except psycopg.errors.CheckViolation as error:
                     assert error.diag.constraint_name == "deleted_card_content"
                     raise
@@ -438,18 +447,18 @@ def main_check():
         # The failed insert's nested transaction has rolled back. Reconnect to
         # prove the exclusion survives connection/worker restart and stale input.
         with postgres.connection() as database:
-            assert database.execute("SELECT 1 FROM deleted_cards WHERE card_id=?", (steps[0].card_id,)).fetchone()
-            database.execute("UPDATE background_tasks SET state='leased',phase='stage',lease_token=?,payload_json=? WHERE id=?", (task["lease_token"], json.dumps(task["payload"]), task["id"]))
+            assert database.execute("SELECT 1 FROM deleted_cards WHERE card_id=%s", (steps[0].card_id,)).fetchone()
+            database.execute("UPDATE background_tasks SET state='leased',phase='stage',lease_token=%s,payload_json=%s WHERE id=%s", (task["lease_token"], json.dumps(task["payload"]), task["id"]))
             assert stage_graph_line_in_transaction(database, task, prepared)
-            assert database.execute("SELECT 1 FROM cards WHERE id=?", (steps[0].card_id,)).fetchone() is None
-            assert database.execute("SELECT parent_card_id FROM opening_graph_steps WHERE card_id=?", (steps[1].card_id,)).fetchone()[0] is None
+            assert database.execute("SELECT 1 FROM cards WHERE id=%s", (steps[0].card_id,)).fetchone() is None
+            assert database.execute("SELECT parent_card_id FROM opening_graph_steps WHERE card_id=%s", (steps[1].card_id,)).fetchone()[0] is None
             try:
                 review_commands.submit_review(database, {"card_id": steps[0].card_id, "review": ReviewRequest(outcome="correct").durable_payload()})
             except ReviewConflict as error:
                 assert error.code == "card_deleted"
             else:
                 raise AssertionError("Delayed review graded deleted content")
-            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (steps[0].card_id,)).fetchone()[0] == 0
+            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (steps[0].card_id,)).fetchone()[0] == 0
         assert command("cards.delete", {"card_id": f"{keep}-shared", "expected_revision": 1})["deleted"]
         print("PASS test_permanent_card_delete_global_history_rebuild_restart_descendant_usability_and_delayed_review")
         from app.pgn_import_commands import prepare_import_payload
@@ -468,24 +477,30 @@ def main_check():
         with postgres.connection() as database:
             from app.card_deletion import cancel_repertoire_tasks
             cancel_repertoire_tasks(database, imported["repertoire_id"])
-            task_ids.extend(row[0] for row in database.execute("SELECT id FROM background_tasks WHERE deduplication_key=?", (imported["repertoire_id"],)))
+            task_ids.extend(row[0] for row in database.execute("SELECT id FROM background_tasks WHERE deduplication_key=%s", (imported["repertoire_id"],)))
         print("PASS test_import_does_not_report_deleted_content_as_created_or_shared")
         prove_repeated_route_dependencies()
     finally:
-        with postgres.connection() as database:
-            if card_ids:
-                from app.card_deletion import purge_card_data
-                purge_card_data(database, list(set(card_ids)))
-                database.execute_native("DELETE FROM deleted_cards WHERE card_id=ANY(%s)", (card_ids,))
-                database.execute_native("DELETE FROM queue_attempt_origins WHERE card_id=ANY(%s)", (card_ids,))
-            database.execute_native("DELETE FROM background_tasks WHERE id=ANY(%s)", (task_ids,))
-            database.execute_native("DELETE FROM operation_receipts WHERE operation_id=ANY(%s)", (operation_ids,))
-            database.execute_native("DELETE FROM repertoires WHERE id=ANY(%s)", (repertoire_ids,))
-            if not retained_existed:
-                database.execute("DELETE FROM repertoires WHERE id=?", (RETAINED_REPERTOIRE_ID,))
-            database.execute_native("UPDATE repertoires SET is_main=CASE WHEN id=ANY(%s) THEN 1 ELSE 0 END", (main_ids,))
-            if queue_snapshot:
-                restore_queue_environment(database, queue_snapshot)
+        original_error = sys.exception()
+        try:
+            with postgres.connection() as database:
+                if card_ids:
+                    from app.card_deletion import purge_card_data
+                    purge_card_data(database, list(set(card_ids)))
+                    database.execute_native("DELETE FROM deleted_cards WHERE card_id=ANY(%s)", (card_ids,))
+                    database.execute_native("DELETE FROM queue_attempt_origins WHERE card_id=ANY(%s)", (card_ids,))
+                database.execute_native("DELETE FROM background_tasks WHERE id=ANY(%s)", (task_ids,))
+                database.execute_native("DELETE FROM operation_receipts WHERE operation_id=ANY(%s)", (operation_ids,))
+                database.execute_native("DELETE FROM repertoires WHERE id=ANY(%s)", (repertoire_ids,))
+                remove_owned_retained_repertoire(database, retained_existed=retained_existed, retained_created=retained_created)
+                if main_ids is not None:
+                    database.execute_native("UPDATE repertoires SET is_main=CASE WHEN id=ANY(%s) THEN 1 ELSE 0 END", (main_ids,))
+                if queue_snapshot:
+                    restore_queue_environment(database, queue_snapshot)
+        except Exception as cleanup_error:
+            if original_error is None:
+                raise
+            original_error.add_note(f"Deletion proof cleanup failed: {type(cleanup_error).__name__}: {cleanup_error}")
 
 
 if __name__ == "__main__":
