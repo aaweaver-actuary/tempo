@@ -33,10 +33,12 @@ the existing application suites or shared runner inventories.
 | BUI-24 | tests/repairs.test.tsx | Obsolete orientation DOM generation cannot schedule redraw or receive piece/drawing input |
 | BUI-25 (6 cases) | tests/boundaries.test.ts | Brown/blue/green, white/black orientations: stylesheet-derived color at all 64 square interiors has dark a1/h8 and light h1/a8 |
 
+FE21 adds `drawing opt-in remains available while movement is locked and fences old drawing events` in `tests/controller.test.ts`; it checks locked/read-only drawing, movement exclusion and stale callback fencing. The qualifier checks all 54 exact test names and outcomes.
+
 FE20 adds three cases: a detached diagnostic snapshot cannot mutate the renderer,
 latest diagnostic callbacks stop after controller disposal, and the public handle
 returns no snapshot after unmount. The original 25 BUI identities and their
-50 cases remain; the qualifier checks all 53 exact test names and outcomes. The real Chessground cases use jsdom and
+50 cases remain alongside those three diagnostic cases. The real Chessground cases use jsdom and
 do not establish native browser behavior. `consumer/public-types.ts` and
 `consumer/smoke.mjs` additionally check every public type, real built export,
 React render, CSS/assets/notices, and private export rejection after source
