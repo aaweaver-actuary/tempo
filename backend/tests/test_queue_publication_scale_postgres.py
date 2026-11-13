@@ -132,5 +132,3 @@ def test_queue_refresh_native_publication_budget(owned_postgres, monkeypatch):
         assert not failures, f'publication exceeded budget: {failures}'
     finally:
         postgres.close_pools()
-
-
