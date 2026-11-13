@@ -598,8 +598,14 @@ read-only source adapter. Existing legal replay, cursor, source-token recheck an
 main endpoint remain visible; this source map is not native or runtime proof. The
 previously reported fixture gaps remain unresolved.
 
-At this base revision, 55 of 289 tracked Python files in those trees remain
-outside the combined 234-file selections. The registry alone assigns owners;
+A forty-third selection maps current analysis-paste preview, commit command and
+line storage. Existing preview token/currentness, command identity and graph/
+integrity edges remain visible; retired Coverage inputs are rejected and no gap
+state is written. This source map is not runtime proof; previous fixture gaps
+remain unresolved.
+
+At this base revision, 52 of 289 tracked Python files in those trees remain
+outside the combined 237-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

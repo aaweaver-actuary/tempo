@@ -193,7 +193,8 @@
               "background_metrics",
               "redis_runtime",
               "study_control",
-              "repertoire_move_verification"
+              "repertoire_move_verification",
+              "analysis_paste"
             ]
           }
         }

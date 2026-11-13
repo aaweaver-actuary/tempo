@@ -2,6 +2,111 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "analysis-paste-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/analysis_paste_commands.py#commit_analysis_paste"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "analysis-paste-service",
+        "study-calendar-capture",
+        "integrity-scan-service",
+        "opening-graph-rebuild"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/analysis_paste_commands.py"
+      ],
+      "ownershipRole": "Register and apply pasted analysis",
+      "dependencyNotes": [
+        "Registers analysis.paste.commit for task composition; rejects retired Coverage input, validates prepared preview and requests integrity/graph work in caller transaction."
+      ],
+      "censusScope": "analysis_paste"
+    },
+    {
+      "id": "analysis-paste-service",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/analysis_paste.py#PastedLine",
+        "backend/app/services/analysis_paste.py#parse_pasted_lines",
+        "backend/app/services/analysis_paste.py#build_paste_preview",
+        "backend/app/services/analysis_paste.py#commit_pasted_lines"
+      ],
+      "dependencies": [
+        "analysis-paste-storage",
+        "backend-chess-identity",
+        "backend-pgn-helpers",
+        "canonical-prefix-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/analysis_paste.py"
+      ],
+      "ownershipRole": "Prepare and commit authored paste",
+      "dependencyNotes": [
+        "Uses python-chess and existing source snapshot signature, preview token and currentness recheck. Main prepares preview, command commits selected lines; retired gap result remains false."
+      ],
+      "censusScope": "analysis_paste"
+    },
+    {
+      "id": "analysis-paste-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/analysis_paste.py#repertoires",
+        "database/tempo_storage/authored_repertoires/analysis_paste.py#lines",
+        "database/tempo_storage/authored_repertoires/analysis_paste.py#insert_line",
+        "database/tempo_storage/authored_repertoires/analysis_paste.py#initial_depth",
+        "database/tempo_storage/authored_repertoires/analysis_paste.py#set_line_depth"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/analysis_paste.py"
+      ],
+      "ownershipRole": "Read and write pasted authored lines",
+      "dependencyNotes": [
+        "Caller-connection SQL reads repertoires and lines and inserts selected line and depth; service owns validation and caller owns transaction."
+      ],
+      "censusScope": "analysis_paste"
+    },
+    {
       "id": "repertoire-move-verification",
       "type": "integration",
       "maintainer": "Tempo",
@@ -3498,7 +3603,7 @@
       ],
       "ownershipRole": "Persist authored branch changes",
       "dependencyNotes": [
-        "Caller-transaction native SQL locks repertoire and gap candidates, reads settings/lines and writes line, training depth and gap state; integrity repair also uses the repertoire lock."
+        "Caller-transaction native SQL locks repertoire, reads settings/lines and writes lines and training depth; integrity repair also uses the repertoire lock."
       ],
       "censusScope": "card_branch_edits"
     },
