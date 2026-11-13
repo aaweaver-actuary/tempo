@@ -2,6 +2,172 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "pgn-import-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/pgn_import_commands.py#prepare_import_payload",
+        "backend/app/pgn_import_commands.py#admit_pgn_import",
+        "backend/app/pgn_import_commands.py#explicit_pgn_import",
+        "backend/app/pgn_import_commands.py#discard_pgn_import"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "study-calendar-capture",
+        "pgn-import-validation",
+        "pgn-import-storage",
+        "opening-graph-builder",
+        "opening-graph-rebuild",
+        "integrity-scan-service",
+        "integrity-source-service"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/pgn_import_commands.py"
+      ],
+      "ownershipRole": "Prepare and apply PGN import commands",
+      "dependencyNotes": [
+        "Registers imports.pgn.admit, imports.pgn.explicit and imports.pgn.discard at import; task composition imports it and main calls payload preparation. Uses canonical prefix, card identity and caller transaction."
+      ],
+      "censusScope": "pgn_import"
+    },
+    {
+      "id": "pgn-import-validation",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/pgn_import_validation.py#validate_sources"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/pgn_import_validation.py"
+      ],
+      "ownershipRole": "Validate bounded PGN source and conflicts",
+      "dependencyNotes": [
+        "Uses python-chess legality and existing repertoire conflict owner; bounded diagnostics preserve source/conflict decision behavior."
+      ],
+      "censusScope": "pgn_import"
+    },
+    {
+      "id": "explicit-import-delivery",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/explicit_repertoire_import.py#permitted_delivery",
+        "backend/app/services/explicit_repertoire_import.py#require_delivery"
+      ],
+      "dependencies": [
+        "pgn-import-preparation-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/explicit_repertoire_import.py"
+      ],
+      "ownershipRole": "Check explicit import task delivery provenance",
+      "dependencyNotes": [
+        "Task composition and durable task service invoke this receipt-bound graph/integrity delivery filter; uses authoritative background reader and existing Redis admission defer exception."
+      ],
+      "censusScope": "pgn_import"
+    },
+    {
+      "id": "pgn-import-preparation-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/pgn_import",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/pgn_import/preparation.py#receipt_scope",
+        "database/tempo_storage/authored_repertoires/pgn_import/preparation.py#predicate",
+        "database/tempo_storage/authored_repertoires/pgn_import/preparation.py#delivery"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/pgn_import/preparation.py"
+      ],
+      "ownershipRole": "Read receipt-bound import preparation delivery",
+      "dependencyNotes": [
+        "Native SQL binds original complete import receipt, graph identity and generation to leased graph or integrity task; uses existing claimability predicate, durable tasks owns lease writes."
+      ],
+      "censusScope": "pgn_import"
+    },
+    {
+      "id": "pgn-import-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/pgn_import",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/pgn_import/storage.py#lock_main_repertoire",
+        "database/tempo_storage/authored_repertoires/pgn_import/storage.py#insert_import_rows",
+        "database/tempo_storage/authored_repertoires/pgn_import/storage.py#insert_discard_receipt",
+        "database/tempo_storage/authored_repertoires/pgn_import/storage.py#discard_receipt"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/pgn_import/storage.py",
+        "database/tempo_storage/authored_repertoires/pgn_import/__init__.py"
+      ],
+      "ownershipRole": "Persist PGN import and discard facts",
+      "dependencyNotes": [
+        "Caller-transaction SQL locks repertoires, stores import rows and discard operation receipts; application owns import and discard decisions."
+      ],
+      "censusScope": "pgn_import"
+    },
+    {
       "id": "opening-graph-builder",
       "type": "integration",
       "maintainer": "Tempo",

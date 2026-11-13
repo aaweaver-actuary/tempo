@@ -387,8 +387,15 @@ lease, graph publication, queue retirement, card links and integrity blocks rema
 visible. This is a source map, not a runtime isolation or native qualification.
 The inherited legacy command fixture remains unresolved.
 
-At this base revision, 201 of 291 tracked Python files in those trees remain
-outside the combined 90-file selections. The registry alone assigns owners;
+A thirteenth selection maps existing PGN import commands, validation, explicit
+delivery filtering, and preparation and import SQL. Receipt, operation and task
+generation identity remain with existing owners; graph, integrity, canonical
+prefix, durable task, Redis admission and task/main composition are existing
+edges. This source map does not establish native or runtime qualification.
+The inherited legacy command fixture remains unresolved.
+
+At this base revision, 195 of 291 tracked Python files in those trees remain
+outside the combined 96-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

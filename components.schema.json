@@ -163,7 +163,8 @@
               "annotation",
               "activity",
               "integrity",
-              "opening_graph"
+              "opening_graph",
+              "pgn_import"
             ]
           }
         }
