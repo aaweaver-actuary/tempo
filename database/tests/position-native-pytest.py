@@ -102,6 +102,11 @@ def execute():
     import psycopg
     from psycopg import sql
     import pytest
+    # Reject libpq environment overrides before the bootstrap connection too.
+    if os.environ.get('TEMPO_NATIVE_POSITION_CHECK') == 'frozen-requeue-cycle':
+        if any(name.startswith('PG') and name not in {'PG_VERSION', 'PG_MAJOR'}
+               for name in os.environ):
+            raise RuntimeError('Invalid owned frozen bridge identity: ambient libpq configuration')
     project, revision = identity(os.environ)
     nodeid = selected_nodeid(os.environ)
     database = 'tempo_position_test_' + uuid.uuid4().hex

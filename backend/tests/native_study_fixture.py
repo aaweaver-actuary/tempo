@@ -88,7 +88,12 @@ def owned_postgres(tmp_path_factory, *, additional_ports=(), profile="default"):
         project = os.environ.get('TEMPO_TEST_COMPOSE_PROJECT', '')
         revision = os.environ.get('TEMPO_NATIVE_CANDIDATE_REVISION', '')
         info = conninfo_to_dict(bridge_dsn)
-        if (additional_ports or profile != 'default' or os.environ.get('TEMPO_TEST_INSTANCE') != 'disposable'
+        # libpq defaults can redirect even an apparently explicit DSN.
+        ambient_pg = any(name.startswith('PG') and name not in {'PG_VERSION', 'PG_MAJOR'}
+                         for name in os.environ)
+        if (set(info) != {'host', 'port', 'user', 'dbname'}
+                or ambient_pg
+                or additional_ports or profile != 'default' or os.environ.get('TEMPO_TEST_INSTANCE') != 'disposable'
                 or not re.fullmatch(r'tempo-pg-regressions-[0-9]+-[0-9a-f]{8}', project)
                 or not re.fullmatch(r'[0-9a-f]{40}', revision)
                 or info.get('host') != 'postgres' or info.get('port') != '5432' or info.get('user') != 'postgres'
@@ -97,6 +102,9 @@ def owned_postgres(tmp_path_factory, *, additional_ports=(), profile="default"):
         with psycopg.connect(bridge_dsn, autocommit=True) as raw:
             row = raw.execute("SELECT current_database(),shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()").fetchone()
             if row != (info['dbname'], project): raise RuntimeError('Owned frozen bridge database marker differs')
+            parent = raw.execute("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname='tempo'").fetchone()
+            if parent != ('tempo-disposable-postgres-test',):
+                raise RuntimeError('Owned frozen bridge parent cluster marker differs')
             if raw.execute("SELECT count(*) FROM information_schema.tables WHERE table_schema='public'").fetchone()[0]:
                 raise RuntimeError('Owned frozen bridge database is not empty')
         apply_migrations(bridge_dsn)

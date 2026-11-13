@@ -29,11 +29,20 @@ test("P14 checkpoint has one fixed browser and native selection", () => {
 test("P14 frozen owner bridge refuses foreign or incomplete identities before connecting", () => {
   const script = `import os,runpy
 m=runpy.run_path('backend/tests/native_study_fixture.py'); f=m['owned_postgres'].__wrapped__
-for dsn,project,revision in [('postgresql://postgres@postgres:5432/tempo','tempo-pg-regressions-1-12345678','a'*40),('postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32,'foreign','a'*40),('postgresql://postgres@localhost:5432/tempo_position_test_'+'a'*32,'tempo-pg-regressions-1-12345678','a'*40)]:
+def no_connection(*args,**kwargs): raise AssertionError('unexpected connection')
+f.__globals__['psycopg'].connect=no_connection
+for dsn,project,revision in [('postgresql://postgres@postgres:5432/tempo','tempo-pg-regressions-1-12345678','a'*40),('postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32,'foreign','a'*40),('postgresql://postgres@localhost:5432/tempo_position_test_'+'a'*32,'tempo-pg-regressions-1-12345678','a'*40),('postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32+'?hostaddr=127.0.0.1','tempo-pg-regressions-1-12345678','a'*40),('postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32+'?service=foreign','tempo-pg-regressions-1-12345678','a'*40),('postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32+'?options=-csearch_path%3Dfoo','tempo-pg-regressions-1-12345678','a'*40)]:
  os.environ.update(TEMPO_NATIVE_FROZEN_BRIDGE_DSN=dsn,TEMPO_TEST_COMPOSE_PROJECT=project,TEMPO_NATIVE_CANDIDATE_REVISION=revision,TEMPO_TEST_INSTANCE='disposable')
  try: next(f(None))
  except RuntimeError as error: assert 'identity' in str(error)
  else: raise AssertionError('foreign target accepted')
+for variable in ('PGHOSTADDR','PGSERVICE','PGOPTIONS'):
+ os.environ.update(TEMPO_NATIVE_FROZEN_BRIDGE_DSN='postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32,TEMPO_TEST_COMPOSE_PROJECT='tempo-pg-regressions-1-12345678',TEMPO_NATIVE_CANDIDATE_REVISION='a'*40,TEMPO_TEST_INSTANCE='disposable')
+ os.environ[variable]='foreign'
+ try: next(f(None))
+ except RuntimeError as error: assert 'identity' in str(error)
+ else: raise AssertionError('ambient override accepted')
+ del os.environ[variable]
 class Cursor:
  def fetchone(self): return ('tempo_position_test_'+'a'*32,'foreign-project')
 class Conn:
@@ -44,7 +53,16 @@ os.environ.update(TEMPO_NATIVE_FROZEN_BRIDGE_DSN='postgresql://postgres@postgres
 f.__globals__['psycopg'].connect=lambda *args,**kwargs: Conn()
 try: next(f(None))
 except RuntimeError as error: assert 'marker differs' in str(error)
-else: raise AssertionError('foreign database marker accepted')`;
+else: raise AssertionError('foreign database marker accepted')
+class ParentConn(Conn):
+ def execute(self, query, *args):
+  class Result:
+   def fetchone(self): return ('tempo_position_test_'+'a'*32,'tempo-pg-regressions-1-12345678') if 'current_database()' in query else ('foreign-parent',)
+  return Result()
+f.__globals__['psycopg'].connect=lambda *args,**kwargs: ParentConn()
+try: next(f(None))
+except RuntimeError as error: assert 'parent cluster marker differs' in str(error)
+else: raise AssertionError('foreign parent accepted')`;
   const result = spawnSync(resolvePython(), ["-c", script], { cwd: root, env: { ...process.env, PYTHONPATH: "backend:database" }, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
 });
