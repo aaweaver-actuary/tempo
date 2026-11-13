@@ -94,7 +94,7 @@ export function Chessboard({
   const surfaceRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<BoardHandle>(null);
   const captureRef = useRef<ReturnType<typeof installTempoDragCapture> | null>(null);
-  const [movedPosition, setMovedPosition] = useState("");
+  const [movedPosition, setMovedPosition] = useState<{ token: string; shapes: string }>();
   const [flippedOwner, setFlippedOwner] = useState<string | null>(null);
   const flipped = flippedOwner === (owner ?? "embedded");
   const visualOrientation = flipped
@@ -160,7 +160,7 @@ export function Chessboard({
   useLayoutEffect(() => {
     if (previousPositionToken.current !== positionToken) {
       previousPositionToken.current = positionToken;
-      setMovedPosition("");
+      setMovedPosition(undefined);
     }
   }, [positionToken]);
   useEffect(() => { if (hint) onHintExposure?.(fen); }, [hint, fen, onHintExposure]);
@@ -189,10 +189,17 @@ export function Chessboard({
       } catch { playMoveSound({ illegal: true }); }
       onMove(from, to);
     }
-    setMovedPosition(positionToken);
+    setMovedPosition({ token: positionToken, shapes: JSON.stringify(neutralShapes(hint ? [...shapes, hint as DrawShape] : shapes)) });
     finishDrop(); requestAnimationFrame(finishMove);
   }
-  const displayShapes = movedPosition === positionToken ? [] : neutralShapes(hint ? [...shapes, hint as DrawShape] : shapes);
+  const currentShapes = neutralShapes(hint ? [...shapes, hint as DrawShape] : shapes);
+  const shapeFingerprint = JSON.stringify(currentShapes);
+  useLayoutEffect(() => {
+    if (movedPosition?.token === positionToken && movedPosition.shapes !== shapeFingerprint)
+      setMovedPosition(undefined);
+  }, [movedPosition, positionToken, shapeFingerprint]);
+  const displayShapes = movedPosition?.token === positionToken && movedPosition.shapes === shapeFingerprint
+    ? [] : currentShapes;
   const last = lastMove && boardSquare(lastMove[0]) && boardSquare(lastMove[1])
     ? [boardSquare(lastMove[0])!, boardSquare(lastMove[1])!] as const : undefined;
 
@@ -204,7 +211,7 @@ export function Chessboard({
         <Board ref={boardRef} fen={fen} positionIdentity={positionIdentity} positionRevision={revision}
           orientation={visualOrientation} turn={position.chess.turn() === "w" ? "white" : "black"}
           check={position.chess.isCheck() ? (position.chess.turn() === "w" ? "white" : "black") : false}
-          mode={selectOnly ? "select" : editMode ? "free" : "legal"} locked={locked}
+          mode={selectOnly ? "select" : editMode ? "free" : "legal"} locked={locked} drawingWhileLocked
           destinations={position.destinations} theme={theme} pieceSet={pieceSet} lastMove={last}
           shapes={displayShapes} drawnShapes={neutralShapes(drawnShapes)} layoutAnchor={layoutAnchor}
           onMove={({ from, to }) => move(from, to)} onFreeMove={({ from, to }) => move(from, to)}

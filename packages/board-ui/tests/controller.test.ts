@@ -177,3 +177,22 @@ it("FE20 diagnostic events use the latest handler and stop on disposal", () => {
   controller.destroy(); controller.update({ ...base, check: "black", onDiagnosticEvent: current });
   expect(current).toHaveBeenCalledOnce();
 });
+
+it('drawing opt-in remains available while movement is locked and fences old drawing events', () => {
+  const onMove = vi.fn(), onDrawingChange = vi.fn();
+  const original = { ...base, onMove, onDrawingChange, drawingWhileLocked: true };
+  const { controller, api, initial, events } = setup(original);
+  controller.update({ ...original, locked: true });
+  const locked = events();
+  expect(api.set).toHaveBeenLastCalledWith(expect.objectContaining({
+    draggable: { enabled: false, showGhost: true }, selectable: { enabled: false },
+    drawable: expect.objectContaining({ enabled: true }),
+  }));
+  draw(initial); move(initial); move(locked);
+  expect(onMove).not.toHaveBeenCalled(); expect(onDrawingChange).not.toHaveBeenCalled();
+  draw(locked); expect(onDrawingChange).toHaveBeenCalledOnce();
+  controller.update({ ...original, readOnly: true });
+  draw(locked); expect(onDrawingChange).toHaveBeenCalledOnce();
+  draw(events()); expect(onDrawingChange).toHaveBeenCalledTimes(2);
+  controller.destroy(); draw(events()); expect(onDrawingChange).toHaveBeenCalledTimes(2);
+});

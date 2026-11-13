@@ -221,3 +221,20 @@ it("heading size changes clear hit-test bounds without canceling a held drag", (
   act(() => notify?.()); expect(boardDiagnostics().inputCancellations).toBe(baseline.inputCancellations);
   expect(observed.mounts).toBe(1); view.unmount(); expect(disconnected).toHaveBeenCalled();
 });
+
+it('FE21 a same-position move clears old shapes once but later changed annotations appear', () => {
+  const first = [{ orig: 'e2', dest: 'e4', brush: 'green' }] as import('@lichess-org/chessground/draw').DrawShape[];
+  const next = [{ orig: 'd2', dest: 'd4', brush: 'blue' }] as import('@lichess-org/chessground/draw').DrawShape[];
+  const view = render(<Chessboard {...boardProps} shapes={first} />);
+  const identity = observed.props!.positionIdentity, revision = observed.props!.positionRevision;
+  expect(observed.props!.shapes).toEqual(first);
+  act(() => observed.props!.onMove?.({ from: 'e2', to: 'e4', positionIdentity: identity, positionRevision: revision }));
+  expect(observed.props!.shapes).toEqual([]);
+  view.rerender(<Chessboard {...boardProps} shapes={[{ ...first[0] }]} />);
+  expect(observed.props!.shapes).toEqual([]);
+  view.rerender(<Chessboard {...boardProps} shapes={next} />);
+  expect(observed.props!.shapes).toEqual(next);
+  view.rerender(<Chessboard {...boardProps} shapes={first} />);
+  expect(observed.props!.shapes).toEqual(first);
+  expect(observed.props!.drawingWhileLocked).toBe(true);
+});

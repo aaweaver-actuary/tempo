@@ -30,6 +30,11 @@ export class BoardController {
     return this.active && Boolean(this.props) && !this.props?.locked && !this.props?.readOnly;
   }
 
+  private canDraw(): boolean {
+    return this.active && Boolean(this.props) && this.props?.drawingEnabled !== false &&
+      (this.canInteract() || Boolean(this.props?.drawingWhileLocked));
+  }
+
   private events(): Config {
     const generation = this.generation;
     const current = () => generation === this.generation && this.canInteract() ? this.props : undefined;
@@ -47,8 +52,8 @@ export class BoardController {
           positionIdentity: props.positionIdentity, positionRevision: props.positionRevision });
       } },
       drawable: { onChange: (shapes: DrawShape[]) => {
-        const props = current();
-        if (props && props.drawingEnabled !== false) props.onDrawingChange?.({
+        const props = generation === this.generation && this.canDraw() ? this.props : undefined;
+        if (props) props.onDrawingChange?.({
           shapes: drawingShapes(shapes as BoardShape[]), positionIdentity: props.positionIdentity,
           positionRevision: props.positionRevision,
         });
@@ -65,6 +70,7 @@ export class BoardController {
       previous.orientation !== next.orientation || previous.turn !== next.turn || modeChanged ||
       Boolean(previous.locked) !== Boolean(next.locked) || Boolean(previous.readOnly) !== Boolean(next.readOnly) ||
       (previous.drawingEnabled !== false) !== (next.drawingEnabled !== false) ||
+      Boolean(previous.drawingWhileLocked) !== Boolean(next.drawingWhileLocked) ||
       !sameDestinations(previous.destinations, next.destinations);
     // Snapshot all mutable input data. Future callback-only updates use the latest committed handlers.
     this.props = { ...next, destinations: copyDestinations(next.destinations),
@@ -88,7 +94,7 @@ export class BoardController {
         dests: copyDestinations(next.destinations), showDests: next.showDestinations !== false };
       config.draggable = { enabled: enabled && next.mode !== "select", showGhost: true };
       config.selectable = { enabled };
-      config.drawable = { ...config.drawable, enabled: enabled && next.drawingEnabled !== false };
+      config.drawable = { ...config.drawable, enabled: this.canDraw() };
     } else {
       if (previous.check !== next.check) config.check = next.check;
       if (previous.lastMove?.[0] !== next.lastMove?.[0] || previous.lastMove?.[1] !== next.lastMove?.[1])
