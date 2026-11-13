@@ -30,9 +30,6 @@
     "app.services.study_attempts": [
       "backend/tests/test_study_durability.py"
     ],
-    "app.main": [
-      "backend/tests/test_prepared_review_continuation.py"
-    ],
     "app.services.learning_review_adapter": [
       "backend/tests/test_position_review_integration.py",
       "backend/tests/test_position_review_reconciliation.py"
@@ -103,5 +100,21 @@
     "app.study.policy.clock": "backend/app/study/policy/clock.py",
     "app.study.policy.opening_maturity": "backend/app/study/policy/opening_maturity.py"
   },
-  "packaged_owner": "app.study.policy.scheduling_review_application"
+  "packaged_owner": "app.study.policy.scheduling_review_application",
+  "semantic_dispatch": {
+    "route_module": "app.main",
+    "route_path": "backend/app/main.py",
+    "routes": {
+      "review": "cards.review",
+      "reconcile_review": "cards.review.reconcile"
+    },
+    "task_module": "app.tasks",
+    "task_path": "backend/app/tasks.py",
+    "registration_module": "app.review_commands",
+    "registration_path": "backend/app/review_commands.py",
+    "registry_path": "services/learning/application/src/tempo_learning_review/commands.py",
+    "tests": [
+      "backend/tests/test_prepared_review_continuation.py"
+    ]
+  }
 }

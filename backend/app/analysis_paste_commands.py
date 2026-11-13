@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from .services.study_calendar import capture_study_calendar
 
 from .command_gateway import register_command
-from app.contracts.transport.authored_lines import AnalysisPasteCommitRequest
+from app.contracts.transport.authored_lines import AnalysisPasteCommitRequest, reject_retired_coverage
 from tempo_storage.postgres import PostgresConnection
 from .services.analysis_paste import (
     PastedLine,
@@ -25,8 +25,9 @@ def commit_analysis_paste(
     database: PostgresConnection,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    calendar = capture_study_calendar(database)
+    reject_retired_coverage(payload["request"].get("source_gap_id"))
     request = AnalysisPasteCommitRequest.model_validate(payload["request"])
+    calendar = capture_study_calendar(database)
     prepared_preview = payload["prepared_preview"]
     parsed_lines = [
         PastedLine(str(line["starting_fen"]), tuple(line["moves"]), str(line["san"]))

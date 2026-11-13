@@ -14,12 +14,6 @@ def lines(database):
     )]
 
 
-def coverage_gap(database, node_id, opponent_move):
-    return database.execute(
-        'SELECT n.fen,n.repertoire_id FROM repertoire_coverage_candidates c\n           JOIN repertoire_coverage_nodes n ON n.id=c.node_id\n           WHERE c.node_id=%s AND c.move_uci=%s', (node_id, opponent_move)
-    ).fetchone()
-
-
 def insert_line(database, line_id, repertoire_id, name, trained_color, starting_fen, moves_json, created_at):
     return database.execute(
         'INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)\n                   VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING',
@@ -35,11 +29,4 @@ def set_line_depth(database, line_id, depth):
     database.execute(
         'INSERT INTO repertoire_line_training_depths(line_id,learner_decision_count) VALUES(%s,%s) ON CONFLICT DO NOTHING',
         (line_id, depth),
-    )
-
-
-def cover_gap(database, node_id, opponent_move):
-    database.execute(
-        'UPDATE repertoire_coverage_candidates SET covered=1 WHERE node_id=%s AND move_uci=%s',
-        (node_id, opponent_move),
     )

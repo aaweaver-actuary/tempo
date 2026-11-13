@@ -162,6 +162,14 @@ export function validateCompositionOwnership(manifest, paths) {
 // Scope predicates enumerate tracked inputs independently of ownership. The
 // component registry is the only mapping from an input to its owner.
 const censusPredicates = {
+  analysis_paste: path => /^(backend\/app\/analysis_paste_commands[^/]*|backend\/app\/services\/analysis_paste[^/]*|database\/tempo_storage\/authored_repertoires\/analysis_paste[^/]*)\.py$/.test(path),
+  repertoire_move_verification: path => /^(backend\/app\/services\/repertoire_move_verification[^/]*|database\/tempo_storage\/repertoire_scope\/.*)\.py$/.test(path),
+  study_control: path => /^backend\/app\/services\/(?:activity_gate|study_mode|study_priority)[^/]*\.py$/.test(path),
+  redis_runtime: path => /^(backend\/app\/services\/(?:redis_admission_gate|background_wakes|background_runtime)[^/]*|database\/tempo_storage\/redis_control\/.*)\.py$/.test(path),
+  background_metrics: path => /^(backend\/app\/services\/background_(?:metric_kinds|diagnostic_types|metrics)[^/]*|database\/tempo_storage\/lifecycle\/background_metrics[^/]*)\.py$/.test(path),
+  background_activity: path => /^(backend\/app\/services\/background_activity[^/]*|database\/tempo_storage\/controls\/activity\/.*)\.py$/.test(path),
+  repertoire_snapshot: path => /^backend\/app\/repertoire\/(?:__init__|position_index|position_schedule_occurrences|snapshot|interfaces\/.*)\.py$/.test(path),
+  scheduling_review: path => /^(backend\/app\/services\/(?:scheduler|scheduling_review_application|scheduling_review_contracts)[^/]*|backend\/app\/study\/policy\/(?:opening_maturity|scheduling_review_application|scheduling_review_contracts)[^/]*|database\/tempo_storage\/scheduling_review_store[^/]*)\.py$/.test(path),
   chess_helpers: path => /^backend\/app\/chess\/.*\.py$/.test(path),
   captured_tactic: path => /^(backend\/app\/study\/(?:interfaces\/)?captured_tactic[^/]*|database\/tempo_storage\/study\/captured_tactic[^/]*)\.py$/.test(path),
   position_source: path => /^(backend\/app\/repertoire\/position_study_source[^/]*|backend\/app\/study\/position_learning\/source_change_policy[^/]*|database\/tempo_storage\/authored_repertoires\/(?:product_snapshot|position_study_source)[^/]*|database\/tempo_storage\/study\/position_owner_epoch[^/]*)\.py$/.test(path),

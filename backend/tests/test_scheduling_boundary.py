@@ -280,6 +280,61 @@ raise SystemExit(pytest.main([sys.argv[1] + '/backend/tests/test_scheduling_revi
     assert "13 passed" in completed.stdout
 
 
+def validate_semantic_review_dispatch(metadata, sources, dependency_graph):
+    """Check named source links, not broker execution or runtime delivery."""
+    def tree(key):
+        return ast.parse(sources[key])
+
+    routes = {node.name: node for node in tree("route").body
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    for route, command in metadata["routes"].items():
+        function = routes.get(route)
+        assert function is not None, f"missing route: {route}"
+        matches = [node for node in ast.walk(function)
+                   if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                   and node.func.id == "dispatch_command" and node.args
+                   and isinstance(node.args[0], ast.Constant) and node.args[0].value == command]
+        assert len(matches) == 1, f"missing route dispatch: {route} {command}"
+    task_imports = [node for node in ast.walk(tree("task"))
+                    if isinstance(node, ast.ImportFrom) and node.level == 1
+                    and node.module is None
+                    and any(alias.name == "review_commands" for alias in node.names)]
+    assert task_imports, "missing task review registration import"
+    registration_calls = [node for node in ast.walk(tree("registration"))
+                          if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                          and node.func.id == "register_review_commands" and node.args
+                          and isinstance(node.args[0], ast.Name)
+                          and node.args[0].id == "register_prepared_review"]
+    assert len(registration_calls) == 1, "missing review registration bridge"
+    bridge = [node for node in tree("registration").body
+              if isinstance(node, ast.FunctionDef) and node.name == "register_prepared_review"]
+    assert len(bridge) == 1 and any(
+        isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        and node.func.id == "register_command"
+        for node in ast.walk(bridge[0])
+    ), "missing gateway registration"
+    assert {keyword.arg: keyword.value.id for keyword in registration_calls[0].keywords
+            if isinstance(keyword.value, ast.Name)} == {
+        "submit": "submit_review", "reconcile": "reconcile_review"
+    }, "missing review handler bindings"
+    registry = tree("registry")
+    definitions = [node for node in registry.body if isinstance(node, ast.FunctionDef)
+                   and node.name == "register_review_commands"]
+    assert len(definitions) == 1, "missing review command registry"
+    calls = [node for node in ast.walk(definitions[0])
+             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+             and node.func.id == "register" and node.args
+             and isinstance(node.args[0], ast.Constant)]
+    for command in metadata["routes"].values():
+        assert sum(node.args[0].value == command for node in calls) == 1, f"missing registry command: {command}"
+    assert dependency_graph.find_shortest_chain(metadata["task_module"], CONTRACTS), "missing task contract chain"
+
+
+def semantic_review_sources(metadata):
+    return {key: (REPOSITORY / metadata[key + "_path"]).read_text()
+            for key in ("route", "task", "registration", "registry")}
+
+
 def ownership_selection(changed_module, dependency_graph):
     """Module-local demonstration only; does not authorize or modify CI."""
     if changed_module == METADATA["unrelated"]["module"]:
@@ -293,6 +348,9 @@ def ownership_selection(changed_module, dependency_graph):
         for consumer, tests in METADATA["consumers"].items():
             assert consumer in consumers, consumer
             selected.update(tests)
+        semantic = METADATA["semantic_dispatch"]
+        validate_semantic_review_dispatch(semantic, semantic_review_sources(semantic), dependency_graph)
+        selected.update(semantic["tests"])
     else:
         assert changed_module == APPLICATION
     return selected
@@ -314,10 +372,29 @@ def test_scheduling_contract_change_expands_consumer_qualification(dependency_gr
     selected = ownership_selection(CONTRACTS, dependency_graph)
     assert selected == set(METADATA["owning_tests"]) | {
         test for tests in METADATA["consumers"].values() for test in tests
-    }
+    } | set(METADATA["semantic_dispatch"]["tests"])
     assert set(METADATA["owning_tests"]) < selected
     for file in selected | set(METADATA["native_boundaries"]["browser_specs"]):
         assert (REPOSITORY / file).is_file(), file
+
+
+@pytest.mark.parametrize("source_key, old, replacement", [
+    ("route", '"cards.review",', '"cards.review.changed",'),
+    ("route", '"cards.review.reconcile",', '"cards.review.reconcile.changed",'),
+    ("task", 'from . import review_commands', 'from . import removed_review_commands'),
+    ("registration", 'register_review_commands(', 'removed_review_commands('),
+    ("registration", 'register_command(name, handler, prepare=prepare_review)', 'removed_register(name, handler, prepare=prepare_review)'),
+    ("registration", 'submit=submit_review', 'submit=wrong_review'),
+    ("registry", 'register("cards.review", submit)', 'register("changed", submit)'),
+    ("registry", 'register("cards.review.reconcile", reconcile)', 'register("changed", reconcile)'),
+])
+def test_semantic_review_dispatch_rejects_missing_source_link(dependency_graph, source_key, old, replacement):
+    semantic = METADATA["semantic_dispatch"]
+    sources = semantic_review_sources(semantic)
+    assert old in sources[source_key]
+    sources[source_key] = sources[source_key].replace(old, replacement, 1)
+    with pytest.raises(AssertionError):
+        validate_semantic_review_dispatch(semantic, sources, dependency_graph)
 
 
 def test_scheduling_boundary_tools_are_declared_for_canonical_uv_setup():
