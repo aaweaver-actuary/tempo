@@ -2,6 +2,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { PendingOperationError } from "../../app/lib/operation-status";
 import { saveLocalSettings } from "../../app/lib/settings-save";
 
+const settingsResult = { initial_depth: 5, timezone: "UTC", new_cards_per_day: 12,
+  study_new_per_day: 2, tactics_new_per_day: 5, study_only_mode: false, light_first_interval_days: 1 };
+
 afterEach(() => {
   localStorage.clear();
   vi.unstubAllGlobals();
@@ -21,7 +24,7 @@ it("settings retries a pending Celery save with its durable operation ID", async
       statusReads += 1;
       return Response.json(statusReads <= 2
         ? { state: "pending" }
-        : { state: "complete", response: { new_cards_per_day: 12 } });
+        : { state: "complete", response: settingsResult });
     }
     throw new Error(`Unexpected request: ${url}`);
   }));
@@ -33,6 +36,43 @@ it("settings retries a pending Celery save with its durable operation ID", async
   await saveLocalSettings({ new_cards_per_day: 12 });
   expect(submittedKeys).toHaveLength(2);
   expect(submittedKeys[0]).toBe(submittedKeys[1]);
+  expect(localStorage.getItem("tempo-pending-settings-save-v1")).toBeNull();
+});
+
+it.each(["foreign", "missing"])("%s initial acknowledgment retains settings key and exact body", async kind => {
+  let savedDuringSend: string | null = null;
+  const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.method).toBe("PUT");
+    savedDuringSend = localStorage.getItem("tempo-pending-settings-save-v1");
+    expect(init?.body).toBe(JSON.stringify({ new_cards_per_day: 12 }));
+    return Response.json(kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" }, { status: 202 });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  await expect(saveLocalSettings({ new_cards_per_day: 12 })).rejects.toBeInstanceOf(PendingOperationError);
+  expect(localStorage.getItem("tempo-pending-settings-save-v1")).toBe(savedDuringSend);
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
+it.each(["direct", "receipt"])("malformed %s settings result retains the original key and bytes", async kind => {
+  const original = JSON.stringify({ operationId: "original", body: JSON.stringify({ new_cards_per_day: 12 }) });
+  if (kind === "receipt") localStorage.setItem("tempo-pending-settings-save-v1", original);
+  let sent: string | null = null;
+  vi.stubGlobal("fetch", vi.fn(async () => {
+    sent = localStorage.getItem("tempo-pending-settings-save-v1");
+    return Response.json(kind === "receipt" ? { state: "complete", response: { new_cards_per_day: 12 } } : { new_cards_per_day: 12 });
+  }));
+  await expect(saveLocalSettings({ new_cards_per_day: 12 })).rejects.toBeInstanceOf(PendingOperationError);
+  expect(localStorage.getItem("tempo-pending-settings-save-v1")).toBe(kind === "receipt" ? original : sent);
+});
+
+it.each(["direct", "receipt"])("valid %s settings result clears only after validation", async kind => {
+  const original = JSON.stringify({ operationId: "original", body: JSON.stringify({ new_cards_per_day: 12 }) });
+  if (kind === "receipt") localStorage.setItem("tempo-pending-settings-save-v1", original);
+  const fetcher = vi.fn(async () => Response.json(kind === "receipt"
+    ? { operation_id: "original", state: "complete", response: settingsResult } : settingsResult));
+  vi.stubGlobal("fetch", fetcher);
+  await saveLocalSettings({ new_cards_per_day: 12 });
+  expect(fetcher).toHaveBeenCalledOnce();
   expect(localStorage.getItem("tempo-pending-settings-save-v1")).toBeNull();
 });
 

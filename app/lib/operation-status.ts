@@ -1,4 +1,4 @@
-import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
+import { decodeOperationAcceptance, decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { defaultStudyClient, type StudyClient } from "./study-connection";
 import { notifyOperationStatusChange } from "./operation-status-events";
 
@@ -37,6 +37,20 @@ export async function confirmOperationResponse(response: Response, options: Oper
   // their own status endpoint confirms. Preserve that response for its caller.
   if (!pending.operation_id) return response;
   return readReceipt(pending.operation_id, options, binding);
+}
+
+/** Confirm a command only against the identity that was actually submitted. */
+export async function confirmOriginalOperationResponse(response: Response, expectedOperationId: string, options: OperationResponseOptions = {}): Promise<Response> {
+  if (response.status !== 202) return response;
+  const binding = operationBinding(options);
+  let wire: unknown;
+  try { wire = await response.clone().json(); }
+  catch { requireBinding(binding); throw new PendingOperationError(expectedOperationId); }
+  requireBinding(binding);
+  const acceptance = decodeOperationAcceptance(wire, "command");
+  if (acceptance.kind === "malformed" || acceptance.operationId !== expectedOperationId)
+    throw new PendingOperationError(expectedOperationId);
+  return readReceipt(expectedOperationId, options, binding);
 }
 
 // Resolve a known command through the same receipt semantics as a 202 response.

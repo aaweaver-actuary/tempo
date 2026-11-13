@@ -4,7 +4,7 @@ import { readPendingCardDeletionBytes } from "../../database/browser/adapters/au
 import { z } from "zod";
 import { API_URL } from "../const";
 import { prefixSplitResponseSchema } from "../domain/schemas";
-import { confirmOperationResponse, PendingOperationError } from "./operation-status";
+import { confirmOriginalOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
 const rejectionSchema = z.strictObject({ rejected_after_review_id: z.number().int() });
@@ -59,7 +59,7 @@ async function decidePrefixSplit(cardId: string, revision: number, decision: Dec
     headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
     body: JSON.stringify({ expected_revision: revision, ...(pending.queueEntryId === undefined ? {} : { queue_entry_id: pending.queueEntryId }) }),
   });
-  response = await confirmOperationResponse(response);
+  response = await confirmOriginalOperationResponse(response, pending.operationId);
   const result = decision === "accept"
     ? await readJsonResponse(response, prefixSplitResponseSchema, "accepted prefix split")
     : await readJsonResponse(response, rejectionSchema, "rejected prefix split");

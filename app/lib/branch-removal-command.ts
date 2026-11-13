@@ -2,7 +2,7 @@ import { decodeOperationResult } from "../domain/adapters/operation-result-adapt
 import { readPendingBranchRemovalRecord, writePendingBranchRemovalRecord, clearPendingBranchRemovalRecord } from "../../database/browser/adapters/authoring/branch-removal";
 import { API_URL } from "../const";
 import { removeBranchResultSchema } from "../domain/schemas";
-import { confirmOperationResponse, PendingOperationError } from "./operation-status";
+import { confirmOriginalOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
 type BranchRemoval = { repertoire_id: string; starting_fen: string; moves: string[] };
@@ -47,7 +47,7 @@ export async function removeBranchCommand(payload: BranchRemoval) {
     headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
     body,
   });
-  response = await confirmOperationResponse(response);
+  response = await confirmOriginalOperationResponse(response, pending.operationId);
   const result = await readJsonResponse(response, removeBranchResultSchema, "remove repertoire branch");
   clearPendingBranchRemovalRecord();
   return result;

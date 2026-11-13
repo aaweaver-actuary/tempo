@@ -1,6 +1,6 @@
 import { learningFetch as fetch, type StudyClient } from "./study-connection";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
-import { confirmOperationResponse, FailedOperationError, readOperationResponse } from "./operation-status";
+import { confirmOriginalOperationResponse, FailedOperationError, readOperationResponse } from "./operation-status";
 import { rejectOpeningEvidence } from "./opening-evidence-journal";
 import { createReviewTransport } from "./review-transport";
 
@@ -30,19 +30,20 @@ export async function saveEvidenceAwareReview(options: ReviewEvidenceOptions): P
   let rejection = options.evidenceRejected;
   const send = async (): Promise<Response> => {
     requireCurrent();
+    const sentOperationId = `${options.operationKey}${rejection || options.aggregateOnly ? ":aggregate-only" : ""}`;
     if (options.verifyReceiptFirst) {
-      const receipt = await readOperationResponse(`${options.operationKey}${rejection || options.aggregateOnly ? ":aggregate-only" : ""}`,
+      const receipt = await readOperationResponse(sentOperationId,
         { signal: options.signal, allowMissing: true, ...(options.client ? { client: options.client } : {}) });
       requireCurrent();
       if (receipt.status !== 404) return receipt;
     }
     requireCurrent();
     return request(options.endpoint, { method: "POST", signal: options.signal,
-    headers: { "Content-Type": "application/json", "Idempotency-Key": `${options.operationKey}${rejection || options.aggregateOnly ? ":aggregate-only" : ""}` },
+    headers: { "Content-Type": "application/json", "Idempotency-Key": sentOperationId },
     body: JSON.stringify({ ...options.body, ...(options.completion && !rejection && !options.aggregateOnly ? { opening_evidence_completion: options.completion } : {}) }),
   }).then(response => {
     requireCurrent();
-    return confirmOperationResponse(response, { signal: options.signal, ...(options.client ? { client: options.client } : {}) });
+    return confirmOriginalOperationResponse(response, sentOperationId, { signal: options.signal, ...(options.client ? { client: options.client } : {}) });
   }).then(response => { requireCurrent(); return response; });
   };
   let response: Response;
