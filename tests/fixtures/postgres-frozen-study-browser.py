@@ -38,7 +38,6 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
         db.execute("INSERT INTO studies(id,title,created_at,updated_at) VALUES(%s,'P12 frozen Study','2000-01-01','2000-01-01')", (prefix,))
         db.execute("INSERT INTO study_chapters(id,study_id,title,position) VALUES(%s,%s,'Owned chapter',1)", (prefix+'-chapter',prefix))
         db.execute("INSERT INTO study_sources(id,chapter_id,source_group_id,version,raw_pgn,sha256,filename,record_index,headers_json,diagnostics_json,valid,created_at) VALUES(%s,%s,%s,1,'','p12','fixture',0,'{}','{}',1,'2000-01-01')", (prefix+'-source',prefix+'-chapter',prefix+'-group'))
-        db.execute("INSERT INTO study_positions(id,source_id,child_index,fen,history_json,node_path,valid) VALUES(%s,%s,0,%s,'[]','root',1)", (prefix+'-position',prefix+'-source',fen))
         base = {'hint':'', 'explanation':'P12 original feedback'}
         definitions = [dict(base, type='move_line', prompt='P12 first move', mode='single', grading_policy='reference', accepted_lines=[['e2e4']]),
             dict(base, type='explanation', prompt='P12 explain the move', rubric='The pawn claims the centre.'),
@@ -47,13 +46,18 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
         entries = []
         for index, specification in enumerate(definitions):
             exercise, card = f'{prefix}-exercise-{index}', f'{prefix}-card-{index}'
+            position = f'{prefix}-position-{index}'
+            db.execute("INSERT INTO study_positions(id,source_id,child_index,fen,history_json,node_path,valid) VALUES(%s,%s,%s,%s,'[]',%s,1)", (position,prefix+'-source',index,fen,f'fixture-{index}'))
             encoded = json.dumps(specification, sort_keys=True, separators=(',', ':'))
             digest = hashlib.sha256(encoded.encode()).hexdigest()
-            db.execute("INSERT INTO study_exercises(id,study_id,position_id,current_revision,status,created_at,updated_at) VALUES(%s,%s,%s,1,'published','2000-01-01','2000-01-01')", (exercise,prefix,prefix+'-position'))
+            db.execute("INSERT INTO study_exercises(id,study_id,position_id,current_revision,status,created_at,updated_at) VALUES(%s,%s,%s,1,'published','2000-01-01','2000-01-01')", (exercise,prefix,position))
             db.execute("INSERT INTO study_exercise_revisions(exercise_id,revision,specification_json,specification_hash,created_at) VALUES(%s,1,%s,%s,'2000-01-01')", (exercise,encoded,digest))
             db.execute("INSERT INTO cards(id,repertoire_id,kind,content_type,study_exercise_id,start_fen,moves_json,state,due_date,revision,trained_color,introduced_at,first_correct_at) VALUES(%s,NULL,'exercise','study_exercise',%s,%s,'[]','learning',%s,1,'white','2000-01-01','2000-01-01T00:00:00+00:00')", (card,exercise,fen,day))
             entry = db.execute("INSERT INTO daily_queue(queue_date,card_id,position,cycle,admission_kind) VALUES(%s,%s,%s,0,'explicit') RETURNING id", (day,card,index)).fetchone()[0]
             entries.append(entry)
+        positions = db.execute('SELECT position_id FROM study_exercises WHERE study_id=%s ORDER BY id', (prefix,)).fetchall()
+        if len(positions) != len(definitions) or len({row[0] for row in positions}) != len(definitions):
+            raise RuntimeError('Frozen fixture positions are not distinct')
         if action == 'seed-requeue':
             # Retained old cycles are source facts; the real owner chooses the
             # next cycle after the genuine parent review is committed.
@@ -100,7 +104,7 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
                 restored += db.execute('UPDATE daily_queue SET position=%s WHERE id=%s AND position=%s', (original,entry,expected)).rowcount
         remaining = {}
         for table, column, value in [('studies','id',prefix), ('study_chapters','study_id',prefix),
-          ('study_exercises','study_id',prefix), ('study_attempts','exercise_id',prefix+'-exercise-%'),
+          ('study_exercises','study_id',prefix), ('study_positions','source_id',prefix+'-source'), ('study_attempts','exercise_id',prefix+'-exercise-%'),
           ('cards','id',prefix+'-card-%'), ('reviews','card_id',prefix+'-card-%'),
           ('daily_queue','card_id',prefix+'-card-%'), ('queue_attempt_origins','card_id',prefix+'-card-%'),
           ('review_attempt_receipts','card_id',prefix+'-card-%')]:
