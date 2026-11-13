@@ -2,7 +2,7 @@ import ts from "typescript";
 import { readFileSync, readdirSync, realpathSync, existsSync } from "node:fs";
 import { resolve, dirname, relative, sep } from "node:path";
 import { spawnSync } from "node:child_process";
-import { parseSelection, readManifest, selectComponents, selectSuites } from "./selection.mjs";
+import { parseSelection, readManifest, selectComponents, selectSuites, validateOwnedPaths } from "./selection.mjs";
 import { checkWorker } from "./worker-qualifier.mjs";
 
 export const repository = resolve(new URL("../../", import.meta.url).pathname);
@@ -38,6 +38,13 @@ export function validateManifest(manifest, root = repository, options = {}) {
     identities.add(component.id);
     if (component.qualification && !["board-ui", "evidence-math"].includes(component.qualification)) throw new Error("Unknown owner qualification: " + component.qualification);
     if (!inside(resolve(root), resolve(root, component.root)) || component.root.startsWith("/")) throw new Error("Source root escape");
+    if (component.status === "mapped") {
+      if (!component.ownershipRole || !component.ownedFiles?.length || component.artifact !== null || component.buildCommand !== null || component.tests.length) throw new Error("Invalid mapped composition contract: " + component.id);
+      if (new Set(component.ownedFiles).size !== component.ownedFiles.length) throw new Error("Duplicate mapped source: " + component.id);
+      for (const file of component.ownedFiles) {
+        if (file.startsWith("/") || file.split("/").some(part => !part || part === "." || part === "..") || !inside(resolve(root), resolve(root, file)) || !existsSync(resolve(root, file)) || !inside(realpathSync(root), realpathSync(resolve(root, file)))) throw new Error("Unavailable/escaping mapped source: " + file);
+      }
+    }
     if (component.status === "implemented") {
       if (!component.buildCommand || !component.artifact?.name || !component.artifact?.version || !component.tests.length || !component.publicExports.length) throw new Error("Implemented component lacks build/export/test contract");
       if (options.componentIds && !options.componentIds.includes(component.id)) continue;
@@ -133,9 +140,29 @@ export function checkConsumer(source, artifact, exports, publicSubpaths = []) {
     if (bindings && ts.isNamedImports(bindings)) for (const imported of bindings.elements) if (!exports.includes((imported.propertyName ?? imported.name).text)) throw new Error("Unavailable export: " + imported.name.text);
   }
 }
+// Finite scope: browser source/static, root executable configs, CLI and scripts.
+// Test fixtures, backend and packages are outside this composition batch.
+export function compositionPaths(root = repository) {
+  const result = spawnSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" });
+  if (result.error || result.status !== 0) throw new Error("Cannot enumerate tracked composition sources");
+  return result.stdout.split("\0").filter(path => path === "tempo" || (!path.includes("/") && /\.(?:sh|js|mjs|cjs|py|ts|tsx)$/.test(path)) ||
+    (path.startsWith("static/") && !path.endsWith(".md")) ||
+    (path.startsWith("public/") && path !== "public/README.md") ||
+    (path.startsWith("app/") && /\.(?:ts|tsx|js|mjs|css)$/.test(path)) ||
+    (path.startsWith("scripts/") && !path.startsWith("scripts/tests/") && /\.(?:sh|js|mjs|cjs|py|ts)$/.test(path)) ||
+    (path.startsWith("tools/component-build/") && !path.startsWith("tools/component-build/tests/") && /\.(?:sh|js|mjs|cjs|py|ts)$/.test(path)));
+}
+export function validateCompositionOwnership(manifest, paths) {
+  const ids = ["study-web", "tempo-cli", "integration"];
+  validateOwnedPaths(manifest, paths, ids);
+  const declared = manifest.components.filter(component => ids.includes(component.id)).flatMap(component => component.ownedFiles ?? []);
+  if (new Set(declared).size !== declared.length || declared.length !== paths.length || declared.some(path => !paths.includes(path))) throw new Error("Composition inventory contains duplicate or untracked source");
+}
+
 export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", options = {}) {
   const manifest = readManifest(root);
   const selected = selectComponents(manifest, options.componentIds);
+  if (root === repository && options.componentIds === undefined) validateCompositionOwnership(manifest, compositionPaths(root));
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
   const results = [];
   for (const component of selected) {

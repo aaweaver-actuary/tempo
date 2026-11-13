@@ -161,10 +161,10 @@ print(json.dumps(results))
   assert.deepEqual(JSON.parse(result.stdout), [publicExports]);
 });
 test("M02 manifest rejects duplicate missing escaping and false implemented components", () => {
-  const plannedComponent = manifest.components.find(component => component.status === "planned");
-  assert.ok(plannedComponent, "The false-implemented fixture requires a planned component");
+  const nonArtifact = manifest.components.find(component => component.status !== "implemented");
+  assert.ok(nonArtifact, "The false-implemented fixture requires a non-artifact component");
   for (const change of [copy => copy.components.push(copy.components[0]), copy => delete copy.components[0].maintainer,
-    copy => copy.components[0].root = "../outside", copy => copy.components.find(component => component.id === plannedComponent.id).status = "implemented",
+    copy => copy.components[0].root = "../outside", copy => copy.components.find(component => component.id === nonArtifact.id).status = "implemented",
     copy => copy.components[0].tests = [{ command: "pretend" }]]) {
     const copy = structuredClone(manifest); change(copy);
     assert.throws(() => validateManifest(copy));
