@@ -95,7 +95,7 @@ def test_essential_recovery_dispatches_existing_operation_before_one_intent_chec
     monkeypatch.setattr(tasks, "study_only_enabled", lambda: True)
     monkeypatch.setattr(tasks, "claim_recoverable_operation", lambda **kw: operation)
     monkeypatch.setattr(tasks.celery_app, "send_task", lambda *a, **kw: events.append(("dispatch", kw["task_id"])))
-    monkeypatch.setattr(recovery, "enqueue_one_ready_split", lambda: events.append(("scan",)) or True)
+    monkeypatch.setattr(recovery, "enqueue_one_ready_split", lambda published: events.append(("scan",)) or True)
     assert tasks.recover_study_operations.run() is True
     assert events == [("dispatch", "existing"), ("scan",)]
 
@@ -152,3 +152,60 @@ def test_locked_first_intent_does_not_starve_later_due_intent(harness, monkeypat
     assert recovery.enqueue_one_ready_split() is False
     assert recovery.enqueue_one_ready_split() is True
     assert events[-1] == ('ready', 'intent', 'original', 41, 'prefix-split-intent:intent')
+
+
+def test_new_child_wake_occurs_after_owner_commit_and_keeps_exact_identity(harness, monkeypatch):
+    from contextlib import nullcontext
+    from app import tasks
+    facts, events, _ = harness
+    facts['matches'] = [review()]
+    @contextmanager
+    def connection(*, background):
+        yield object()
+        events.append(('committed',))
+    monkeypatch.setattr(recovery, 'connection', connection)
+    monkeypatch.setattr(tasks.activity_gate, 'background_job', lambda *a, **kw: nullcontext())
+    monkeypatch.setattr(tasks.activity_gate, 'background_control', lambda: nullcontext())
+    monkeypatch.setattr(tasks, 'study_only_enabled', lambda: True)
+    monkeypatch.setattr(tasks, 'claim_recoverable_operation', lambda **kw: None)
+    monkeypatch.setattr(tasks.celery_app, 'connection_for_write', lambda **kw: nullcontext(object()))
+    def publish(name, **kwargs):
+        assert events[-1] == ('committed',)
+        events.append(('published', name, kwargs))
+    monkeypatch.setattr(tasks.celery_app, 'send_task', publish)
+    assert tasks.recover_study_operations.run()
+    _, name, sent = events[-1]
+    assert name == 'app.tasks.execute_foreground_command'
+    assert sent['task_id'] == 'prefix-split-intent:intent' and sent['queue'] == 'foreground'
+    assert sent['args'] == ['prefix-split-intent:intent', 'cards.prefix_split.apply_deferred', {'intent_id':'intent'}]
+    assert sent['retry'] is False
+
+
+def test_rolled_back_child_never_wakes_and_broker_failure_does_not_undo_commit(harness, monkeypatch):
+    from contextlib import nullcontext
+    from app import tasks
+    facts, events, _ = harness
+    facts['matches'] = [review()]
+    @contextmanager
+    def failed_commit(*, background):
+        yield object()
+        raise RuntimeError('commit failed')
+    monkeypatch.setattr(tasks.activity_gate, 'background_job', lambda *a, **kw: nullcontext())
+    monkeypatch.setattr(tasks.activity_gate, 'background_control', lambda: nullcontext())
+    monkeypatch.setattr(tasks, 'study_only_enabled', lambda: True)
+    monkeypatch.setattr(tasks, 'claim_recoverable_operation', lambda **kw: None)
+    monkeypatch.setattr(recovery, 'connection', failed_commit)
+    monkeypatch.setattr(tasks.celery_app, 'connection_for_write', lambda **kw: pytest.fail('must not wake before commit'))
+    with pytest.raises(RuntimeError, match='commit failed'):
+        tasks.recover_study_operations.run()
+    @contextmanager
+    def successful_commit(*, background):
+        yield object()
+        events.append(('committed',))
+    monkeypatch.setattr(recovery, 'connection', successful_commit)
+    def failed_broker(**kwargs):
+        assert events[-1] == ('committed',)
+        raise OSError('broker unavailable')
+    monkeypatch.setattr(tasks.celery_app, 'connection_for_write', failed_broker)
+    assert tasks.recover_study_operations.run()
+    assert events[-1] == ('committed',)

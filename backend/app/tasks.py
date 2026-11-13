@@ -408,8 +408,25 @@ def recover_study_operations() -> bool:
     # Preserve the normal recovery dispatch above. One bounded intent check may
     # atomically enqueue a foreground child for the next existing recovery pass.
     from .services.deferred_prefix_split_recovery import enqueue_one_ready_split
+    published = []
     with activity_gate.background_control():
-        enqueued = enqueue_one_ready_split()
+        enqueued = enqueue_one_ready_split(published)
+    # The owner transaction has committed and its connection is closed before
+    # advisory broker I/O. A failed or duplicate wake leaves the same durable
+    # receipt for the existing periodic recovery and gateway fences.
+    if published:
+        child, command, payload = published[0]
+        try:
+            transport_options = {**celery_app.conf.broker_transport_options,
+                "socket_connect_timeout": 1, "socket_timeout": 1,
+                "max_retries": 0, "retry_on_timeout": False}
+            with celery_app.connection_for_write(connect_timeout=1, transport_options=transport_options) as connection:
+                celery_app.send_task("app.tasks.execute_foreground_command",
+                    args=[child, command, payload], task_id=child, queue="foreground",
+                    connection=connection, retry=False, ignore_result=True,
+                    headers={"submitted_at": time.time()})
+        except Exception:
+            _LOGGER.exception("Deferred split wake unavailable; original child remains queued for periodic recovery")
     return operation is not None or enqueued
 
 

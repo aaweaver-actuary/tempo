@@ -268,7 +268,12 @@ def test_delayed_split_readiness_respects_queued_grace_and_recovers_original_chi
     monkeypatch.setattr(queue_refresh_wakeup, 'wake_queue_refresh', lambda *a, **kw: None)
     monkeypatch.setattr(recovery, '_scan_cursor', '')
     dispatched = []
-    monkeypatch.setattr(tasks.celery_app, 'send_task', lambda name, **kw: dispatched.append((name, kw)))
+    monkeypatch.setattr(tasks.celery_app, 'connection_for_write', lambda **kw: nullcontext(object()))
+    def send_task(name, **kw):
+        if kw['task_id'].startswith('prefix-split-intent:') and kw.get('retry') is False:
+            raise OSError('injected post-commit broker failure')
+        dispatched.append((name, kw))
+    monkeypatch.setattr(tasks.celery_app, 'send_task', send_task)
 
     # A real owner lock delays this split while another eligible receipt routes.
     with native() as locked:
@@ -283,7 +288,7 @@ def test_delayed_split_readiness_respects_queued_grace_and_recovers_original_chi
     with native() as db:
         make_due(db, accepted['intent_id'])
     dispatched.clear()
-    # The recovery beat enqueues the child after its claim phase; no wake is sent.
+    # The post-commit advisory wake fails; periodic recovery remains authoritative.
     assert tasks.recover_study_operations.run()
     assert dispatched == []
     with native() as db:
@@ -313,3 +318,8 @@ def test_delayed_split_readiness_respects_queued_grace_and_recovers_original_chi
         assert db.execute_native('SELECT result_json FROM review_attempt_receipts WHERE attempt_id=%s', (case['attempt'],)).fetchone()[0] == original_review
         receipt = db.execute_native('SELECT state,response_json FROM operation_receipts WHERE operation_id=%s', (child,)).fetchone()
         assert receipt['state'] == 'complete' and json.loads(receipt['response_json']) == result
+    # A duplicate delivery must not create a second operation or effect.
+    again, _, _, _ = gateway.record_operation_attempt(child, call['args'][1], call['args'][2], background=False)
+    assert not again
+    with native() as db:
+        assert db.execute_native('SELECT COUNT(*) FROM prefix_splits WHERE source_card_id=%s', (case['card'],)).fetchone()[0] == 1
