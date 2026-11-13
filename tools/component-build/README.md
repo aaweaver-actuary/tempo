@@ -507,8 +507,14 @@ locked-origin fingerprint and accepted-review/position exclusions remain visible
 This source map does not authorize abandonment or establish native qualification;
 the nineteen previously reported fixture failures remain unresolved.
 
-At this base revision, 123 of 291 tracked Python files in those trees remain
-outside the combined 168-file selections. The registry alone assigns owners;
+A twenty-ninth selection maps opening evidence policy, checkpoint coordination
+and SQL. Existing immutable presentation, original attempt/event identities, issued
+position fences, review receipt and caller transaction edges remain visible. The
+policy also checks current UTC time; this is a source map, not native proof. The
+nineteen previously reported fixture failures remain unresolved.
+
+At this base revision, 117 of 291 tracked Python files in those trees remain
+outside the combined 174-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

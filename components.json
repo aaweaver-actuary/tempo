@@ -2,6 +2,142 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "opening-evidence-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/study/policy/opening_decision_evidence.py#decision_manifest",
+        "backend/app/study/policy/opening_decision_evidence.py#validate_checkpoint",
+        "backend/app/study/policy/opening_decision_evidence.py#reduce_observations"
+      ],
+      "dependencies": [
+        "backend-contracts"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/policy/opening_decision_evidence.py",
+        "backend/app/services/opening_decision_evidence.py"
+      ],
+      "ownershipRole": "Interpret opening evidence manifests and events",
+      "dependencyNotes": [
+        "Uses opening evidence contracts, chess/segment identity and current UTC time validation; assignment-only service facade retains existing exports."
+      ],
+      "censusScope": "opening_evidence"
+    },
+    {
+      "id": "opening-observation-summary",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/policy",
+      "publicExports": [
+        "backend/app/study/policy/observation_summary.py#observation_counts"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/policy/observation_summary.py"
+      ],
+      "ownershipRole": "Summarize opening observation counts",
+      "dependencyNotes": [
+        "Checkpoint and card deletion consume the existing observation count policy; it does not own persistence."
+      ],
+      "censusScope": "opening_evidence"
+    },
+    {
+      "id": "opening-checkpoint-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study",
+      "publicExports": [
+        "backend/app/study/position_checkpoint.py#prepare_checkpoint",
+        "backend/app/study/position_checkpoint.py#persist_checkpoint",
+        "backend/app/study/position_checkpoint.py#complete_review_evidence",
+        "backend/app/study/position_checkpoint.py#prepare_position_checkpoint",
+        "backend/app/study/position_checkpoint.py#commit_position_checkpoint",
+        "backend/app/study/position_checkpoint.py#commit_standalone_checkpoint"
+      ],
+      "dependencies": [
+        "opening-evidence-policy",
+        "opening-observation-summary",
+        "opening-evidence-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/position_checkpoint.py"
+      ],
+      "ownershipRole": "Prepare and commit opening evidence checkpoints",
+      "dependencyNotes": [
+        "Uses immutable presentation and issued position identities, bounded preparation, original attempt/event ordering, position first-response fences and caller-transaction review effects. Review, Study composition, main and task registration remain external."
+      ],
+      "censusScope": "opening_evidence"
+    },
+    {
+      "id": "opening-evidence-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/opening_evidence",
+      "publicExports": [
+        "database/tempo_storage/opening_evidence/storage.py#insert_attempt",
+        "database/tempo_storage/opening_evidence/storage.py#locked_attempt",
+        "database/tempo_storage/opening_evidence/storage.py#insert_event",
+        "database/tempo_storage/opening_evidence/storage.py#presentation_context",
+        "database/tempo_storage/opening_evidence/storage.py#completed_review",
+        "database/tempo_storage/opening_evidence/storage.py#attempt_status"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/opening_evidence/__init__.py",
+        "database/tempo_storage/opening_evidence/storage.py"
+      ],
+      "ownershipRole": "Persist opening attempt evidence and receipts",
+      "dependencyNotes": [
+        "Caller-transaction SQL reads original card, scope, queue and parent review, and writes attempt, event, observation, summary and completion facts; checkpoint and review own decisions."
+      ],
+      "censusScope": "opening_evidence"
+    },
+    {
       "id": "queue-attempt-origin-application",
       "type": "integration",
       "maintainer": "Tempo",
