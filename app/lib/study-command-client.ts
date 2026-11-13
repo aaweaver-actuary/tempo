@@ -2,7 +2,7 @@ import { defaultStudyClient, type StudyClient } from "./study-connection";
 import { registerStudyDeliveryAdapter, studySession } from "./study-session-runtime";
 import { notifications, publishNotification, resolveNotification } from "./notifications";
 import type { IntentRecord, IntentStore } from "@tempo/browser-intents";
-import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
+import { confirmOriginalOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
 import { isStudyIntentStoreCurrent, studyIntentStore } from "../../database/browser/study-intent-storage";
 import { studySettingsSchema } from "./study-connection";
 import { z } from "zod";
@@ -70,12 +70,7 @@ export function createStudyCommandDelivery(client: StudyClient, getStore: () => 
         response = await client.learningFetch(record.endpoint, { method: "POST", signal, headers: request.headers, body: JSON.stringify(request.body) });
       }
       requireAuthority();
-      if (response.status === 202) {
-        const operation = await response.clone().json() as { operation_id?: string };
-        requireAuthority();
-        if (operation.operation_id && operation.operation_id !== record.requestId) throw new Error("The service did not confirm the original study operation.");
-      }
-      response = await confirmOperationResponse(response, { signal, client });
+      response = await confirmOriginalOperationResponse(response, record.requestId, { signal, client });
       requireAuthority();
       if (response.status === 202) throw new PendingOperationError(record.requestId);
       body = await response.json() as Record<string, unknown>;

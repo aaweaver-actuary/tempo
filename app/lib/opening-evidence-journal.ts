@@ -6,7 +6,7 @@ import type { PracticeCard } from "../domain/cards";
 import type { AssistanceKind, OpeningDecisionEvent, OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { openingEvidenceCheckpointSchema, openingDecisionEventSchema } from "../domain/opening-evidence";
 import { offlineTrainingDatabase } from "../../database/browser/offline-training-storage";
-import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
+import { confirmOriginalOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
 import { notifications, publishNotification, resolveNotification } from "./notifications";
 import { markOpeningEvidenceTimeout, openingEvidenceFetch, OpeningEvidenceHttpError, openingEvidenceRecoveryPolicy, openingEvidenceRetryDelays } from "./opening-evidence-recovery-policy";
 import { subscribeOperationStatusChange } from "./operation-status-events";
@@ -448,11 +448,11 @@ async function deliverOpeningEvidence(attemptId?: string): Promise<void> {
     let receipt: OpeningEvidenceReceipt;
     try {
       let response = frozenDelivery ? await readOperationResponse(operationKey, { background: true, signal: controller.signal, fetch: openingEvidenceFetch, allowMissing: true }) : undefined;
-      if (!response || response.status === 404) response = await confirmOperationResponse(await openingEvidenceFetch(`${API_URL}/api/opening-evidence/checkpoints`, {
+      if (!response || response.status === 404) response = await confirmOriginalOperationResponse(await openingEvidenceFetch(`${API_URL}/api/opening-evidence/checkpoints`, {
         method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": operationKey,
           "X-Tempo-Work-Class": "background" },
         body: JSON.stringify(checkpoint), signal: controller.signal,
-      }), { background: true, signal: controller.signal, fetch: openingEvidenceFetch });
+      }), operationKey, { background: true, signal: controller.signal, fetch: openingEvidenceFetch });
       if (!response.ok) {
         if (response.status === 409 || response.status === 422) {
           await rejectOpeningEvidence(checkpoint.attempt_id, await response.text());

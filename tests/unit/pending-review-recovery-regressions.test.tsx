@@ -372,3 +372,64 @@ it("C05 operation status wake preserves a transient review retry deadline", asyn
   await advance(1999); expect(fetch).toHaveBeenCalledTimes(2);
   await advance(1); expect(fetch).toHaveBeenCalledTimes(3);
 });
+
+it('C11 idle orphan recovery yields between identities and respects the foreground block', async () => {
+  const { studyIntentStore, refreshStudyIntents } = await import('../../database/browser/study-intent-storage');
+  const { defaultStudyClient } = await import('../../app/lib/study-connection');
+  const store = await studyIntentStore();
+  for (const suffix of ['first', 'second']) {
+    const attemptId = `orphan-idle-${suffix}`, original = { ...review, backendId: attemptId, attemptId, completedAt: '2026-11-12T00:00:00Z' };
+    await enqueuePendingReview(original);
+    await store.update(`review:${attemptId}`, current => ({ ...current, state: 'committed', receipt: { persisted: true } }));
+    const id = `review-attempt:${attemptId}`;
+    await store.put({ key: `review-delivery:${id}`, kind: 'review-delivery', attemptId, requestId: id,
+      endpoint: `${defaultStudyClient.origin}/api/cards/${attemptId}/review`, createdAt: original.completedAt,
+      payload: { parentKey: `review:${attemptId}`, headers: { 'Idempotency-Key': id }, body: {
+        outcome: original.outcome, guided: original.guided, queue_entry_id: original.queueEntryId,
+        attempt_id: attemptId, recorded_at: original.completedAt } } });
+  }
+  await refreshStudyIntents();
+  const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.method ?? 'GET').toBe('GET');
+    const id = decodeURIComponent(String(url)).split('/').pop()!;
+    return Response.json(id.endsWith('first') ? { operation_id: id, state: 'unknown' } :
+      { operation_id: id, state: 'complete', response: { persisted: true } });
+  });
+  vi.stubGlobal('fetch', fetcher); const confirmed = vi.fn();
+  const mounted = render(<Harness blocked confirmed={confirmed} />);
+  await advance(5000); expect(fetcher).not.toHaveBeenCalled();
+  mounted.rerender(<Harness confirmed={confirmed} />);
+  await advance(1000); expect(fetcher).toHaveBeenCalledTimes(1);
+  await advance(1000); expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(await store.get('review-delivery:review-attempt:orphan-idle-first')).toMatchObject({ state: 'pending' });
+  expect(await store.get('review-delivery:review-attempt:orphan-idle-second')).toMatchObject({ state: 'committed' });
+  expect(confirmed).not.toHaveBeenCalled();
+});
+
+it('C11 deferred review retry does not starve an independent orphan receipt', async () => {
+  const { studyIntentStore, refreshStudyIntents } = await import('../../database/browser/study-intent-storage');
+  const { defaultStudyClient } = await import('../../app/lib/study-connection');
+  const orphan = { ...review, backendId: 'independent', attemptId: 'independent-orphan', completedAt: '2026-11-12T00:00:00Z' };
+  await enqueuePendingReview(orphan);
+  const store = await studyIntentStore();
+  await store.update(`review:${orphan.attemptId}`, current => ({ ...current, state: 'committed', receipt: { persisted: true } }));
+  const id = `review-attempt:${orphan.attemptId}`;
+  await store.put({ key: `review-delivery:${id}`, kind: 'review-delivery', attemptId: orphan.attemptId, requestId: id,
+    endpoint: `${defaultStudyClient.origin}/api/cards/${orphan.backendId}/review`, createdAt: orphan.completedAt,
+    payload: { parentKey: `review:${orphan.attemptId}`, headers: { 'Idempotency-Key': id }, body: {
+      outcome: orphan.outcome, guided: orphan.guided, queue_entry_id: orphan.queueEntryId,
+      attempt_id: orphan.attemptId, recorded_at: orphan.completedAt } } });
+  await enqueuePendingReview(review);
+  await refreshStudyIntents();
+  const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+    const operationId = decodeURIComponent(String(url)).split('/').pop()!;
+    return operationId === id ? Response.json({ operation_id: id, state: 'complete', response: { persisted: true } })
+      : Response.json({ operation_id: operationId, state: 'queued' });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  render(<Harness confirmed={vi.fn()} />);
+  await advance(1000); await advance(1000);
+  expect(await store.get(`review-delivery:${id}`)).toMatchObject({ state: 'committed' });
+  expect(pendingReviews().map(item => item.attemptId)).toContain(review.attemptId);
+  expect(fetcher.mock.calls.some(([url]) => decodeURIComponent(String(url)).includes(id))).toBe(true);
+});

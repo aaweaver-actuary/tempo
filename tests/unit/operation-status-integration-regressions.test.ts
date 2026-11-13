@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "../../app/lib/operation-status";
+import { confirmOperationResponse, confirmOriginalOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "../../app/lib/operation-status";
 import { subscribeOperationStatusChange } from "../../app/lib/operation-status-events";
 
 vi.hoisted(() => vi.resetModules());
@@ -9,6 +9,31 @@ vi.mock("../../app/lib/study-connection", async importOriginal => {
 });
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+it.each([
+  ["foreign", JSON.stringify({ operation_id: "foreign", state: "queued" })],
+  ["absent", JSON.stringify({ state: "queued" })],
+  ["nonstring", JSON.stringify({ operation_id: 42, state: "queued" })],
+  ["empty", JSON.stringify({ operation_id: "", state: "queued" })],
+  ["overlength", JSON.stringify({ operation_id: "x".repeat(129), state: "queued" })],
+  ["unsupported state", JSON.stringify({ operation_id: "original", state: "complete" })],
+  ["malformed JSON", "{"],
+])("original confirmation rejects %s before polling or notification", async (_label, body) => {
+  const request = vi.fn(); const notice = vi.fn(); const unsubscribe = subscribeOperationStatusChange(notice);
+  try {
+    await expect(confirmOriginalOperationResponse(new Response(body, { status: 202 }), "original", { fetch: request }))
+      .rejects.toMatchObject({ name: "PendingOperationError", operationId: "original" });
+    expect(request).not.toHaveBeenCalled(); expect(notice).not.toHaveBeenCalled();
+  } finally { unsubscribe(); }
+});
+
+it("confirms the exact gateway-valid generic ID with URL encoding", async () => {
+  const id = "original /?%#";
+  const request = vi.fn(async () => Response.json({ operation_id: id, state: "complete", response: { saved: true } }));
+  const response = await confirmOriginalOperationResponse(Response.json({ operation_id: id, state: "queued" }, { status: 202 }), id, { fetch: request });
+  expect(request).toHaveBeenCalledWith(`https://learning.example/api/operations/${encodeURIComponent(id)}`, undefined);
+  await expect(response.json()).resolves.toEqual({ saved: true });
+});
 
 it("Study receipt callers retain the selected Learning origin by default", async () => {
   const operationId = "original-study-operation";

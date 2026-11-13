@@ -21,7 +21,7 @@ it("uses the supplied authority and store for POST and original receipt", async 
       expect(input).toBe(record.endpoint);
       expect(init.headers).toEqual({ "Idempotency-Key": "original", "Content-Type": "application/json" });
       expect(JSON.parse(String(init.body))).toEqual({ attempt_id: "attempt" });
-      return Response.json({ operation_id: "original" }, { status: 202 });
+      return Response.json({ operation_id: "original", state: "queued" }, { status: 202 });
     }
     expect(String(input)).toBe("https://a.example/api/operations/original");
     return Response.json({ operation_id: "original", state: "complete", response: { attempt_id: "attempt" } });
@@ -77,4 +77,19 @@ it.each(["defense-command", "endgame-command"])("holds retired %s before touchin
   await expect(delivery.checkReceipt(record, new AbortController().signal)).rejects.toThrow("retired exercise is held");
   expect(fetch).not.toHaveBeenCalled();
   expect(store.update).not.toHaveBeenCalled();
+});
+
+
+it.each(["missing", "foreign"])("%s Study acknowledgment cannot poll another operation or commit the command", async kind => {
+  const { record, store } = fixture();
+  const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.method).toBe("POST");
+    expect(new Headers(init?.headers).get("Idempotency-Key")).toBe(record.requestId);
+    expect(init?.body).toBe(JSON.stringify({ attempt_id: "attempt" }));
+    return Response.json(kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" }, { status: 202 });
+  });
+  const delivery = createStudyCommandDelivery(client(fetch), async () => store);
+  await expect(delivery.deliver(record, new AbortController().signal)).rejects.toMatchObject({ name: "PendingOperationError", operationId: "original" });
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(record.payload).toMatchObject({ body: { attempt_id: "attempt" } });
 });

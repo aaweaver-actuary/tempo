@@ -1,6 +1,6 @@
 import { LEARNING_URL as API_URL, learningFetch as fetch } from "./study-connection";
 import type { IntentRecord } from "@tempo/browser-intents";
-import { confirmOperationResponse, readOperationResponse, PendingOperationError } from "./operation-status";
+import { confirmOriginalOperationResponse, readOperationResponse, PendingOperationError } from "./operation-status";
 import { rememberTeachingFact, studyIntentRecords, studyIntentStore, refreshStudyIntents } from "../../database/browser/study-intent-storage";
 import { registerStudyDeliveryAdapter, studySession } from "./study-session-runtime";
 
@@ -39,11 +39,7 @@ async function deliver(record: IntentRecord, signal: AbortSignal) {
     method: "POST", signal, headers: { "Content-Type": "application/json", "Idempotency-Key": record.requestId },
     body: JSON.stringify({ revision: state.revision, ply: state.ply }),
   });
-  if (delivered.status === 202) {
-    const pending = await delivered.clone().json() as { operation_id?: string };
-    if (pending.operation_id && pending.operation_id !== record.requestId) throw new Error("Learning returned another teaching operation.");
-  }
-  const response = await confirmOperationResponse(delivered, { signal });
+  const response = await confirmOriginalOperationResponse(delivered, record.requestId, { signal });
   if (response.status === 202) throw new PendingOperationError(record.requestId);
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { detail?: string };
