@@ -1,4 +1,5 @@
 import { positionStudyUnavailable } from "../domain/attempt";
+import { pendingPrefixSplitStatus } from "../lib/prefix-split-command";
 import { independentStudy } from "../lib/study-connection";
 import { pendingReviewMessage, reviewSaveNoticeKey } from "../lib/review-save-notice";
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
@@ -67,7 +68,7 @@ interface TrainingViewProps {
   handleAttemptFailure: () => void;
   resetCardAttempt: () => void;
   setEditorCard?: (card: PracticeCard | null) => void;
-  onAcceptPrefixSplit?: (card: PracticeCard) => Promise<void>;
+  onAcceptPrefixSplit?: (card: PracticeCard) => Promise<"waiting" | void>;
   onRejectPrefixSplit?: (card: PracticeCard) => Promise<void>;
   onOpeningAssistance?: (moveOffset: number, kind: AssistanceKind) => void;
   onMove: (from: Square, to: Square) => void;
@@ -112,9 +113,26 @@ function StandardTrainingView({
   const [prefixSplitPendingAction, setPrefixSplitPendingAction] = useState<"accept" | "reject" | null>(null);
   const [rejectedPrefixOfferKey, setRejectedPrefixOfferKey] = useState("");
   const [prefixSplitError, setPrefixSplitError] = useState<{ key: string; message: string }>();
+  const [prefixSplitNotice, setPrefixSplitNotice] = useState("");
   const reviewNotificationId = useRef<string | undefined>(undefined);
   const reviewNotificationKey = useRef<string | undefined>(undefined);
   const prefixOfferKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${card.prefixSplitLatestFailureId ?? 0}`;
+  useEffect(() => {
+    let current = true;
+    setPrefixSplitNotice("");
+    if (!usesLocalApi()) return;
+    const check = () => void pendingPrefixSplitStatus().then(status => {
+      if (!current || !status) return;
+      if ("status" in status)
+        setPrefixSplitNotice(status.status === "held"
+          ? `The shortening request is held: ${status.reason ?? "check the original attempt"}.`
+          : status.reason ?? "Shortening is saved and will continue after the original review is saved.");
+      else setPrefixSplitNotice("Shortening completed. Refresh the queue to load the updated cards.");
+    }).catch(() => { if (current) setPrefixSplitNotice("Shortening status is unavailable; the saved request is retained."); });
+    check();
+    const timer = window.setInterval(check, 30000);
+    return () => { current = false; window.clearInterval(timer); };
+  }, [card.backendId, card.queueEntryId]);
   const {
     boardAttempt,
     attemptFailed,
@@ -464,6 +482,7 @@ function StandardTrainingView({
               <FailureNote failureAnnotation={failureAnnotation} />
             )}
             {!phoneOpening && moveTrail}
+            {prefixSplitNotice && <p role="status">{prefixSplitNotice}</p>}
             {usesLocalApi() && !independentStudy && card.suggestShorterPrefix &&
               rejectedPrefixOfferKey !== prefixOfferKey &&
               card.kind === "opening" &&
@@ -530,7 +549,8 @@ function StandardTrainingView({
     setPrefixSplitError(undefined);
     try {
       if (action === "accept") {
-        await onAcceptPrefixSplit(card);
+        const outcome = await onAcceptPrefixSplit(card);
+        if (outcome === "waiting") setPrefixSplitNotice("Shortening is saved and will continue after this review is saved.");
         setRejectedPrefixOfferKey(prefixOfferKey);
       } else {
         await onRejectPrefixSplit(card);

@@ -3,7 +3,7 @@ import { readPendingTacticCapture, storePendingTacticCapture, clearPendingTactic
 import { independentStudy } from "./study-connection";
 import { z } from "zod";
 import { API_URL } from "../const";
-import { confirmOperationResponse, FailedOperationError, PendingOperationError } from "./operation-status";
+import { confirmOriginalOperationResponse, FailedOperationError, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
 const captureRequestSchema = z.object({
@@ -68,7 +68,7 @@ export async function saveTacticCapture(draft?: TacticCaptureDraft) {
       clearPendingTacticCapture();
       await readJsonResponse(response, tacticCaptureResultSchema, "tactic capture");
     }
-    response = await confirmOperationResponse(response);
+    response = await confirmOriginalOperationResponse(response, pending.capture_id);
     const result = await readJsonResponse(response, tacticCaptureResultSchema, "tactic capture");
     if (result.capture_id !== pending.capture_id) throw new Error("The service returned a different capture identity. Retry to resolve this save.");
     clearPendingTacticCapture();

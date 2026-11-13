@@ -139,7 +139,7 @@ def test_absent_queue_task_is_advisory_locked_then_rechecked_before_projection(
             if count == 1:
                 return Cursor(None)
             if count == 2:
-                return Cursor({"id": "task"})
+                return Cursor({"id": "task", "payload_json": '{"queue_date":"2026-10-21"}'})
             return Cursor(
                 {
                     "state": "ready",
@@ -311,3 +311,20 @@ def test_legacy_issuance_owner_facts_are_fenced_before_card_locks(
             position_presentation=None,
             position_study_hold="owner-unavailable",
         )
+
+
+def test_backward_day_locks_existing_day_task_before_its_projection():
+    events = []
+    class Cursor:
+        def __init__(self, value): self.value = value
+        def fetchone(self): return self.value
+    class Database:
+        def execute(self, statement, parameters=()):
+            events.append((statement, parameters))
+            if "deduplication_key='current'" in statement:
+                return Cursor({"id":"old", "payload_json":'{"queue_date":"2026-11-12"}'})
+            return Cursor({"id":"new", "payload_json":'{"queue_date":"2026-11-11"}'})
+    task = storage.lock_current_queue_task(Database(), "2026-11-11")
+    assert task["id"] == "new"
+    assert len(events) == 2 and all("FOR UPDATE" in event[0] for event in events)
+    assert events[1][1] == ("current-day:2026-11-11",)

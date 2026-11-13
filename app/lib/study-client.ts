@@ -1,4 +1,4 @@
-import type { RetainedAuthorityInspection, RetainedStudyExport } from "../domain/study-authority";
+import type { RegisteredAuthority, RetainedAuthorityInspection, StudyAuthorityStorage } from "../domain/study-authority";
 import { z } from "zod";
 
 export const studySettingsSchema = z.strictObject({
@@ -16,14 +16,10 @@ export class StudyConnectionError extends Error {
     super(message, options); this.name = "StudyConnectionError";
   }
 }
-export type StudyClientStorage = {
-  readAuthorityRegistry(): string | null;
-  readRetainedStudyData(registeredOfflineDatabases: () => string[], validateStorage?: boolean): Promise<RetainedStudyExport>;
-  inspectRetainedStudyAuthority(registeredOfflineDatabases: () => string[]): Promise<RetainedAuthorityInspection>;
+export type StudyClientStorage = StudyAuthorityStorage & {
   readSessionConnection(): string | null;
   removeSessionConnection(): void;
   sessionConnectionAvailable(): boolean;
-  writeAuthorityRegistry(value: string): void;
   writeSessionConnection(value: string): void;
 };
 export type StudyClientConfiguration = {
@@ -42,7 +38,6 @@ export function createStudyClient(configuration: StudyClientConfiguration) {
   let connectionGeneration = 0;
   let current: StudyConnection | undefined;
   const authorityIdentity = (origin: string, workspace: string) => `${origin}:study:${encodeURIComponent(workspace)}`;
-  const offlineDatabaseFor = (identity: string) => `tempo-offline-training:${encodeURIComponent(identity)}`;
   function validatedOrigin(origin: string) {
     const parsed = new URL(origin);
     if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash)
@@ -76,21 +71,11 @@ export function createStudyClient(configuration: StudyClientConfiguration) {
       : `${new URL(configuration.baseUrl || "/", configuration.resolveBaseHref()).origin}:study`;
   }
   function studyOfflineDatabaseName() {
-    return configuration.independent ? offlineDatabaseFor(studyWorkspace()) : "tempo-offline-training";
+    return storage.offlineStoreLocator(configuration.independent ? studyWorkspace() : null);
   }
-  type Authority = { origin: string; workspace: string; offlineDatabase: string };
-  function authorities(): Record<string, Authority> {
-    try {
-      const value: unknown = JSON.parse(storage.readAuthorityRegistry() ?? "{}");
-      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid registry");
-      for (const [identity, entry] of Object.entries(value)) {
-        const authority = entry as Authority;
-        if (!authority || typeof authority.origin !== "string" || typeof authority.workspace !== "string" || !authority.workspace.trim() ||
-            validatedOrigin(authority.origin) !== authority.origin || authorityIdentity(authority.origin, authority.workspace) !== identity ||
-            authority.offlineDatabase !== offlineDatabaseFor(identity)) throw new Error("Invalid authority binding");
-      }
-      return value as Record<string, Authority>;
-    } catch (cause) {
+  function authorities(): Record<string, RegisteredAuthority> {
+    try { return Object.fromEntries(storage.readRegisteredAuthorities().map(authority => [authority.identity, authority])); }
+    catch (cause) {
       throw new StudyConnectionError("storage", "The saved Learning authority registry is incompatible. Keep browser data for recovery.", false, undefined, { cause });
     }
   }
@@ -139,16 +124,16 @@ export function createStudyClient(configuration: StudyClientConfiguration) {
     return response;
   }
 
-  /** Composition supplies registered names; storage inspection owns its schema checks. */
+  /** Storage owns the physical registry and its inspection. */
   async function retainedStudyData(validateStorage = false) {
-    return storage.readRetainedStudyData(() => Object.values(authorities()).map(authority => authority.offlineDatabase), validateStorage);
+    try { return await storage.readRetainedStudyData(validateStorage); }
+    catch (cause) { throw new StudyConnectionError("storage", String(cause), false, undefined, { cause }); }
   }
   type AuthorityTransition = "resume" | "recover" | "cutover";
   async function assertStudyAuthority(origin: string, workspace: string, transition: AuthorityTransition = "cutover") {
     const identity = authorityIdentity(origin, workspace);
     let inspection: RetainedAuthorityInspection;
-    try { inspection = await storage.inspectRetainedStudyAuthority(
-      () => Object.values(authorities()).map(authority => authority.offlineDatabase)); }
+    try { inspection = await storage.inspectRetainedStudyAuthority(); }
     catch (cause) { throw new StudyConnectionError("storage", String(cause), false, undefined, { cause }); }
     const registered = authorities();
     const recovering = transition !== "cutover" && Boolean(registered[identity]);
@@ -229,9 +214,8 @@ export function createStudyClient(configuration: StudyClientConfiguration) {
     await assertStudyAuthority(candidate.origin, candidate.workspace, transition);
     requireCurrent();
     try {
-      const registered = authorities();
-      storage.writeAuthorityRegistry(JSON.stringify({ ...registered, [identity]: {
-        origin: candidate.origin, workspace: candidate.workspace, offlineDatabase: offlineDatabaseFor(identity) } }));
+      authorities();
+      storage.bindAuthority({ identity, origin: candidate.origin, workspace: candidate.workspace });
       if (configuration.persistSession) storage.writeSessionConnection(JSON.stringify({ ...candidate, bootstrap }));
     } catch (cause) { throw new StudyConnectionError("storage", "Could not save the Learning connection. Keep browser data and restore storage.", false, undefined, { cause }); }
     current = { ...candidate, bootstrap }; setUrl(candidate.origin);

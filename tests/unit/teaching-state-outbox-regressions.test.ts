@@ -39,3 +39,18 @@ it("teaching receipt for another fact cannot settle the retained original", asyn
   await expect(flushTeachingStates()).rejects.toThrow("original teaching fact");
   expect(pendingTeachingStates()).toEqual([state]);
 });
+
+it.each(["missing", "foreign"])("%s teaching acknowledgment preserves the original fact and never polls another operation", async kind => {
+  const state = { cardId: "original-ack", revision: 3, ply: 2 };
+  await enqueueTeachingState(state);
+  const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.method).toBe("POST");
+    expect(new Headers(init?.headers).get("Idempotency-Key")).toBe("teaching:original-ack:3:2");
+    expect(init?.body).toBe(JSON.stringify({ revision: 3, ply: 2 }));
+    return Response.json(kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" }, { status: 202 });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  await expect(flushTeachingStates()).rejects.toMatchObject({ name: "PendingOperationError", operationId: "teaching:original-ack:3:2" });
+  expect(pendingTeachingStates()).toEqual([state]);
+  expect(fetcher).toHaveBeenCalledOnce();
+});
