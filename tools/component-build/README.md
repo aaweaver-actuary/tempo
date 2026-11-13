@@ -402,8 +402,156 @@ operations include tombstones, retention, task cancellation, queue, graph and
 evidence mutations. Mapping does not authorize deletion or establish native proof.
 The inherited legacy fixture and three focused PGN failures remain unresolved.
 
-At this base revision, 192 of 291 tracked Python files in those trees remain
-outside the combined 99-file selections. The registry alone assigns owners;
+A fifteenth selection maps canonical prefix scope and its storage adapter. The
+application checks routes and positions with python-chess; caller-connection SQL
+optionally locks repertoire metadata, reads current-revision anchors and guards
+position replacement by source revision and route order. Main, PGN, branch, card,
+repair, retained mutation and analysis consumers remain external edges. This is a
+source map, not a native or runtime qualification. The inherited legacy fixture and
+three focused PGN failures remain unresolved.
+
+A sixteenth selection maps repertoire change conflict facts and validation, retained
+line/card mutations, and bounded source-lock storage. Existing snapshot/index,
+canonical prefix, integrity/card-edit storage, and branch/card/repair command
+edges remain visible. The caller owns the transaction and operation receipt; this
+source map does not establish native or runtime qualification. The three PGN and
+three legacy fixture failures remain unresolved. The retained mutation boundary
+test also fails importing the missing `retained` module; it is not runtime proof.
+
+A seventeenth selection maps registered card and branch edit commands and their
+SQL adapters. Existing caller transactions handle revisions, replacement, reviews,
+queue and membership changes, branch locks and graph/integrity requests. Gateway,
+calendar, source validation, canonical prefix, deletion, transport and task
+composition remain visible edges. This is a source map, not native proof. The
+three PGN, three legacy and one retained mutation fixture failures remain unresolved.
+
+An eighteenth selection maps repertoire control commands, opening limit responses
+and their foreground SQL. Main selection uses the existing advisory and stable row
+locks; deletion delegates to its owner, and settings updates request queue refresh
+within the caller transaction. Task/main composition, transport, calendar and
+queue consumers remain external. This is a source map, not native qualification.
+The three PGN, three legacy and one retained mutation fixture failures remain open.
+
+A nineteenth selection maps Tactics capture, attempt, activation and catalog
+services and SQL. Capture replay binds the original capture ID and request to its
+receipt; attempt storage retains its supplied identity. Existing Study admission
+and queue placement own scheduling, while Tactics supplies capture and catalog
+facts. Assets, calendar, queue locks and task/main composition remain visible
+edges. This source map is not native or runtime qualification. The three PGN,
+three legacy and one retained mutation fixture failures remain unresolved.
+
+A twentieth selection maps Study queue commands, placement and foreground SQL,
+plus the queue-position lock. Issuance uses prepared-head and issued-origin
+identity, card/date locks and owner fences; placement retains existing protected
+order and promotion checks. Gateway, durable tasks, review, Tactics, split,
+availability and task/main composition remain external edges. These are source
+roles, not native proof. The three PGN, three legacy and one retained mutation
+fixture failures remain unresolved. The focused queue command boundary suite also
+has eight unresolved failures: missing `postgres_sql` (one), SQLite rejection of
+PostgreSQL placeholders (four), and missing `is_postgres_connection` (three).
+
+A twenty-first selection maps Study ordering policy, receipt preservation, backend
+facade, presentation and priority preparation, and presentation SQL. Existing
+protected attempts, ownership rechecks, bounded reads and caller transactions remain
+visible; ordering does not grant serving eligibility. Frozen-order, review, Redis
+defer, queue refresh and main/task/placement are existing edges. This map is not
+native qualification. The eight queue, three PGN, three legacy and one retained
+mutation fixture failures remain unresolved.
+
+A twenty-second selection maps Study queue application coordination and its
+admission, eligibility, publication, repeat and seeding SQL. Prepared source and
+queue facts, graph and card/day locks, caller transactions and existing order,
+Tactics, frozen-order and durable-task edges remain visible. This is a source map,
+not native qualification. The eight queue, three PGN, three legacy and one retained
+mutation fixture failures remain unresolved. The queue admission boundary fixture
+also fails on missing `resolve_opportunity`; it is not runtime proof.
+
+A twenty-third selection maps the bounded queue refresh worker and its epoch,
+reader, eligibility, opening, admission and capacity SQL. Existing task/current-day
+and epoch fences, queue locks, frozen ordering, graph/source checks and caller
+transactions remain visible. This source map does not establish native proof. The
+eight queue command, one queue admission, three PGN, three legacy and one retained
+mutation fixture failures remain unresolved. The queue publication fixture also
+fails because its SQLite adapter rejects PostgreSQL `FOR SHARE`; it is not native
+proof.
+
+A twenty-fourth selection maps Study exercise transport, attempt commands,
+retirement guard, review finalization and storage. Existing attempt/card/entry/
+cycle/revision, issued-origin and retained presentation bindings, gateway receipt,
+grader, calendar, queue lock and scheduling review edges remain visible. This is a
+source map, not native qualification. The seventeen previously reported queue,
+PGN, legacy and retained-mutation fixture failures remain unresolved. Both Study
+attempt guard fixture cases also fail on missing `current_presentation_available`;
+they do not establish runtime behavior.
+
+A twenty-fifth selection maps Study grading policy and its assignment-only backend
+facade. Existing grader version 1, exercise/answer contracts and python-chess
+remain unchanged; attempt and retained presentation consumers remain external.
+This source map does not establish runtime or browser qualification. The nineteen
+previously reported fixture failures remain unresolved.
+
+A twenty-sixth selection maps supplied-snapshot repertoire conflict computation,
+its borrowed-reader facade and line storage. Existing six-field source identity,
+python-chess, bounded cache, PGN and main consumers remain visible. This source
+map does not establish native or runtime qualification; the nineteen previously
+reported fixture failures remain unresolved.
+
+A twenty-seventh selection maps frozen Study ordering policy, borrowed-connection
+composition and storage. Existing activation token, rank/fingerprint, exposed-card
+protection, queue change/rollback and reader-version edges remain visible. This
+source map does not authorize activation or establish native qualification; the
+nineteen previously reported fixture failures remain unresolved.
+
+A twenty-eighth selection maps original queue attempt recovery, provenance SQL and
+explicit abandonment lifecycle. Existing entry/card/revision/content, receipt,
+locked-origin fingerprint and accepted-review/position exclusions remain visible.
+This source map does not authorize abandonment or establish native qualification;
+the nineteen previously reported fixture failures remain unresolved.
+
+A twenty-ninth selection maps opening evidence policy, checkpoint coordination
+and SQL. Existing immutable presentation, original attempt/event identities, issued
+position fences, review receipt and caller transaction edges remain visible. The
+policy also checks current UTC time; this is a source map, not native proof. The
+nineteen previously reported fixture failures remain unresolved.
+
+A thirtieth selection maps position first-response proposal, envelope codec and
+receipt storage. Original issued plan, attempt/event/decision identities, digest,
+acceptance clock and caller-owned source/queue/owner fences remain visible. Grade
+ledger uniqueness and scheduling remain with their existing owner. This is a source
+map, not native proof; nineteen previously reported fixture failures remain open.
+
+A thirty-first selection maps position daily credit acceptance, borrowed-transaction
+grade effects and SQL. Existing original plan/event, owner epoch, completion receipt,
+one-Good-per-day and version-fenced schedule boundaries remain visible; checkpoint
+and Learning review are callers. This source map is not native qualification. The
+nineteen previously reported fixture failures remain unresolved.
+
+A thirty-second selection maps position Study ports, clean-prefix proof, route
+selection, immutable plan contract and sealed preparation. Supplied receipt facts
+and the preparation seal are claims, not storage attestations; the issuer still
+fences source, admission and schedule witnesses. This source map does not establish
+native qualification. The nineteen previously reported fixture failures remain open.
+
+A thirty-third selection maps bounded repertoire snapshot and position source
+preparation, source change policy and owner epoch fences. Original source digest,
+revision, admission identity and borrowed-writer checks remain visible; prepared
+claims do not authorize settlement or activate an owner. This source map is not
+native proof. Nineteen previously reported fixture failures remain unresolved.
+
+A thirty-fourth selection maps the Study captured-tactic admission interface,
+owner and borrowed storage. Study validates card identity and owns admission and
+queue placement; the Tactics capture owner retains the original receipt. Existing
+daily and queue locks and caller transaction remain visible. This source map is
+not native proof. Nineteen previously reported fixture failures remain unresolved.
+
+A thirty-fifth selection maps backend chess identity, opening segment and PGN
+helpers. The existing card ID facade imports chess-core; python-chess and graph,
+evidence, Tactics, Study and authoring consumers remain visible. This source map
+is not a standalone package or runtime qualification. Nineteen previously reported
+fixture failures remain unresolved.
+
+At this base revision, 90 of 289 tracked Python files in those trees remain
+outside the combined 199-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
