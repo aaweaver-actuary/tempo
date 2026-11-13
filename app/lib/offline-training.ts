@@ -6,7 +6,7 @@ import type { BackendQueueCard } from "../domain/transport";
 import { evaluateStudyAnswer, studyAnswerSchema, studySnapshotSchema, type StudyAnswer, type StudyAssessment } from "../domain/study-exercises";
 import { learningDayKey as localDayKey } from "./study-connection";
 import { readPreparedTraining, updatePreparedTraining } from "../../database/browser/prepared-training-storage";
-import type { OfflineAttempt, PreparedTraining } from "../domain/offline-training";
+import { classifyOfflineGradingProvenance, type OfflineAttempt, type PreparedTraining } from "../domain/offline-training";
 export { readPreparedTraining } from "../../database/browser/prepared-training-storage";
 export type { OfflineAttempt, PreparedTraining } from "../domain/offline-training";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
@@ -109,7 +109,7 @@ export async function recordOfflineAttempt(
   outcome: "again" | "correct",
   guided: boolean,
   studyResponse?: { studyId: string; exerciseId: string; attemptId: string; answer: StudyAnswer;
-    assessment: StudyAssessment; selfRating?: "correct" | "again" },
+    assessment: StudyAssessment; selfRating?: "correct" | "again"; gradingProvenance: { server_contract_version: 1; browser_implementation_revision: 2 } },
   openingResponse?: { attemptId: string; completion?: OpeningEvidenceCheckpoint },
 ): Promise<PreparedTraining> {
   const completedAt = openingResponse?.completion?.terminal?.ended_at ?? new Date().toISOString();
@@ -206,9 +206,15 @@ export async function recordOfflineStudyAttempt(localEntryId: number, studyId: s
   const outcome = selfRating ?? (assessment.outcome === "correct" ? "correct" : "again");
   const prepared = await recordOfflineAttempt(localEntryId, outcome, guided || Boolean(card.attempt_failed), {
     studyId, exerciseId: card.study_exercise_id, attemptId: crypto.randomUUID(),
-    answer: response, assessment, selfRating,
+    answer: response, assessment, selfRating, gradingProvenance: { server_contract_version: 1, browser_implementation_revision: 2 },
   });
   return { prepared, assessment };
+}
+
+function assessmentsDiffer(local: StudyAssessment | undefined, server: StudyAssessment | undefined): boolean {
+  if (!local || !server) return false;
+  return (["outcome", "feedback", "omitted", "extra", "outside_region"] as const)
+    .some((key) => JSON.stringify(local[key]) !== JSON.stringify(server[key]));
 }
 
 async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> {
@@ -232,7 +238,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
     }
     const studyFacts = [attempt.studyId, attempt.exerciseId, attempt.answer, attempt.attemptId];
     const incompleteStudy = studyFacts.slice(0, 3).some(Boolean) && !studyFacts.every(Boolean);
-    if (incompleteStudy || (attempt.answer && !studyAnswerSchema.safeParse(attempt.answer).success) ||
+    if (incompleteStudy || (attempt.studyId && classifyOfflineGradingProvenance(attempt.gradingProvenance) === "unsupported") || (attempt.answer && !studyAnswerSchema.safeParse(attempt.answer).success) ||
         heldCards.has(attempt.cardId) || (attempt.parentLocalEntryId !== undefined && heldEntries.has(attempt.parentLocalEntryId))) {
       hold(attempt, "This saved phone exercise is held because its original identity or answer is unsupported.");
       continue;
@@ -243,6 +249,14 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
         ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
           ? { ...item, conflict: "An earlier repeat conflicted with a computer review" } : item),
       }));
+      continue;
+    }
+    if (attempt.parentLocalEntryId !== undefined && (!parent || (!parent.serverAcknowledged && !parent.serverReviewId))) {
+      hold(attempt, "The original parent review has not confirmed a repeat on the computer.");
+      continue;
+    }
+    if (parent && (parent.serverAcknowledged || parent.serverReviewId) && parent.serverRepeatEntryId == null) {
+      hold(attempt, "The computer did not issue a repeat for this saved parent review.");
       continue;
     }
     const serverEntryId = parent?.serverRepeatEntryId ?? parent?.serverEntryId ?? attempt.localEntryId;
@@ -297,14 +311,29 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       }));
       continue;
     }
+    if (response.status === 422 && attempt.studyId && attempt.exerciseId && attempt.attemptId) {
+      const detail = await response.json().catch(() => ({})) as { detail?: unknown };
+      const reason = typeof detail.detail === "string" ? detail.detail : "The computer rejected the original answer.";
+      current = await updatePreparedTraining((saved) => ({ ...saved!, attempts: saved!.attempts.map((item) =>
+        item.localEntryId === attempt.localEntryId ? { ...item, conflict: `Computer rejected the saved answer: ${reason}` } : item) }));
+      hold(attempt, `The original phone answer was rejected: ${reason}`);
+      continue;
+    }
     if (!response.ok) throw new OfflineReplayError(`Could not sync phone review (HTTP ${response.status})`, reviewEndpoint);
     let result = await response.json() as { persisted?: boolean; review_id: number | null; requeue_entry_id: number | null;
       warning?: string; reconciliation?: string;
       competing_review?: { outcome?: string | null; completed_at?: string | null };
       pending_self_assessment?: boolean; review?: { review_id: number; requeue_entry_id: number | null } };
+    let serverAssessment: StudyAssessment | undefined;
     if (attempt.studyId && attempt.exerciseId && attempt.attemptId) {
       const decoded = decodeFrozenAttempt(result, { attemptId: attempt.attemptId, context: "review" });
+      serverAssessment = decoded.assessment;
       result = decoded as unknown as typeof result;
+    }
+    if (result.pending_self_assessment && serverAssessment) {
+      current = await updatePreparedTraining((saved) => ({ ...saved!, attempts: saved!.attempts.map((item) =>
+        item.localEntryId === attempt.localEntryId ? { ...item, serverAssessment,
+          ...(assessmentsDiffer(attempt.assessment, serverAssessment) ? { syncWarning: "The computer assessed the original answer differently from the saved phone assessment." } : {}) } : item) }));
     }
     if (result.pending_self_assessment && !attempt.selfRating) {
       hold(attempt, "The original phone answer is confirmed and awaits its saved self-assessment.");
@@ -332,6 +361,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       if (!assessed.ok) throw new OfflineReplayError(`Could not sync study self-assessment (HTTP ${assessed.status})`, assessmentEndpoint);
       const decoded = decodeFrozenAttempt(await assessed.json(), { attemptId: attempt.attemptId, context: "review" });
       if ("pending_self_assessment" in decoded) throw new Error("The original self-assessment has not completed.");
+      serverAssessment = decoded.assessment;
       result = decoded as unknown as typeof result;
     }
     if (result.review) result = { ...result.review };
@@ -343,7 +373,10 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
         ? { ...item, serverEntryId, serverReviewId: result.review_id ?? undefined,
             serverAcknowledged: true, conflict: undefined,
-            syncWarning: result.warning ? `${result.warning} Other saved result: ${result.competing_review?.outcome ?? "unknown"} ` +
+            ...(serverAssessment ? { serverAssessment } : {}),
+            syncWarning: assessmentsDiffer(attempt.assessment, serverAssessment)
+              ? "The computer assessed the original answer differently from the saved phone assessment."
+              : result.warning ? `${result.warning} Other saved result: ${result.competing_review?.outcome ?? "unknown"} ` +
               `at ${result.competing_review?.completed_at ?? "unknown"}.` : undefined,
             serverRepeatEntryId: result.requeue_entry_id } : item),
     }));
