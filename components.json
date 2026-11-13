@@ -2,6 +2,68 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "teaching-state-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/teaching_commands.py#record_teaching_state"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "teaching-state-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/teaching_commands.py"
+      ],
+      "ownershipRole": "Register and apply teaching-state command",
+      "dependencyNotes": [
+        "Registers cards.teaching.record at import; task composition imports this module. Uses the Study transport request, UTC clock and caller-provided PostgreSQL connection."
+      ],
+      "censusScope": "teaching"
+    },
+    {
+      "id": "teaching-state-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/commands",
+      "publicExports": [
+        "database/tempo_storage/commands/teaching.py#active_card_for_update",
+        "database/tempo_storage/commands/teaching.py#record_teaching_timestamp"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/commands/teaching.py"
+      ],
+      "ownershipRole": "Lock card and persist teaching-state timestamp",
+      "dependencyNotes": [
+        "Caller-transaction SQL locks an active card and inserts or replays the timestamp keyed by card, revision and ply; no transaction ownership is transferred."
+      ],
+      "censusScope": "teaching"
+    },
+    {
       "id": "settings-command",
       "type": "integration",
       "maintainer": "Tempo",

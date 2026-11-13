@@ -354,8 +354,13 @@ post-commit priority policy; the adapters read limits, lock and update global
 settings, and read the public projection on caller-owned connections. This records
 existing registration and dependencies without changing behavior.
 
-At this base revision, 219 of 291 tracked Python files in those trees remain
-outside the combined 72-file selections. The registry alone assigns owners;
+An eighth selection maps the existing teaching-state command and its SQL adapter.
+The command registers `cards.teaching.record` and is imported by task composition;
+the adapter locks the active card and inserts or replays the timestamp under the
+caller transaction. The transport, gateway and composition remain external edges.
+
+At this base revision, 217 of 291 tracked Python files in those trees remain
+outside the combined 74-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
