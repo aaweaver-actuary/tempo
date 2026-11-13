@@ -157,3 +157,63 @@ it("C14 retained tactic refuses a request whose saved attempt identity differs",
   await expect(delivery.deliver(record, new AbortController().signal)).rejects.toThrow("cannot prove its original card");
   expect(record.requestId).toBe("original");
 });
+
+it.each(['missing', 'rejecting', 'authority-change'])('C14 retained tactic %s digest failure keeps the durable original and recovers once', async fault => {
+  const { webcrypto } = await import('node:crypto');
+  const { IDBFactory } = await import('fake-indexeddb');
+  const { openIntentStore } = await import('@tempo/browser-intents');
+  const { createStudySession } = await import('@tempo/study-session');
+  const factory = new IDBFactory();
+  const store = await openIntentStore({ workspace: 'original-workspace', databaseName: 'c14-tactic-digest', indexedDB: factory });
+  const randomUUID = () => webcrypto.randomUUID();
+  let enterDigest!: () => void, releaseDigest!: () => void;
+  const entered = new Promise<void>(resolve => { enterDigest = resolve; });
+  const gate = new Promise<void>(resolve => { releaseDigest = resolve; });
+  const digest = fault === 'missing' ? undefined : fault === 'rejecting'
+    ? vi.fn(async () => { throw new Error('digest unavailable'); })
+    : vi.fn(async (algorithm: AlgorithmIdentifier, input: BufferSource) => {
+        enterDigest(); await gate; return webcrypto.subtle.digest(algorithm, input as Parameters<typeof webcrypto.subtle.digest>[1]);
+      });
+  vi.stubGlobal('crypto', { randomUUID, ...(digest ? { subtle: { digest } } : {}) });
+  const payload = { attempt_id: 'original-attempt', puzzle_id: 'polish-1', deck_id: 'deck', correct: true, clean: true,
+    source_fen: 'q3k1nr/1pp1nQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 b k - 0 17',
+    moves: ['e8d7', 'a2e6', 'd7d8', 'f7f8'] };
+  const envelope = { key: 'tactic:original', kind: 'tactic-command', requestId: 'original-operation', attemptId: 'original-attempt',
+    endpoint: 'https://a.example/api/tactics/attempt', createdAt: 'original-clock', revision: 1,
+    payload: { scope: 'tactic:deck:polish-1', headers: { 'Idempotency-Key': 'original-operation' }, body: payload } };
+  const original = structuredClone(envelope);
+  const calls: { url: string; method: string; body?: unknown; key?: string | null }[] = [];
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(input), method: init?.method ?? 'GET', ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}),
+      ...(init?.headers ? { key: new Headers(init.headers).get('Idempotency-Key') } : {}) });
+    if (init?.method === 'POST') return Response.json({ operation_id: 'original-operation', state: 'queued' }, { status: 202 });
+    return Response.json({ operation_id: 'original-operation', state: 'complete', response: {
+      card_id: '7102eb92e00287f834ec6f5a2dd1afaaebfdafd3c649b975444a77ccff836d5a', mode: 'normal', next_due: '2026-11-13' } });
+  });
+  const selected = client(fetcher);
+  const delivery = createStudyCommandDelivery(selected, async () => store);
+  const session = createStudySession({ store, learning: delivery, owner: 'owned-test' });
+  session.start(envelope.key);
+  try {
+    const pending = session.submit(envelope);
+    if (fault === 'authority-change') {
+      await entered;
+      Object.defineProperty(selected, 'generation', { value: 2, configurable: true });
+      releaseDigest();
+    }
+    await expect(pending).rejects.toThrow(fault === 'authority-change' ? 'Study authority changed' : fault === 'missing' ? 'verification is unavailable' : 'digest unavailable');
+    const retained = await store.get(envelope.key);
+    expect(retained).toMatchObject({ state: 'pending', requestId: original.requestId, attemptId: original.attemptId,
+      endpoint: original.endpoint, createdAt: original.createdAt, payload: original.payload });
+    expect(retained?.receipt).toBeUndefined();
+    expect(calls.filter(call => call.method === 'POST')).toEqual([{ url: original.endpoint, method: 'POST', body: payload, key: original.requestId }]);
+    vi.stubGlobal('crypto', webcrypto);
+    expect((await session.retrySave(envelope.key)).state).toBe('committed');
+    expect(await store.get(envelope.key)).toMatchObject({ state: 'committed', requestId: original.requestId,
+      attemptId: original.attemptId, payload: original.payload, receipt: { card_id: '7102eb92e00287f834ec6f5a2dd1afaaebfdafd3c649b975444a77ccff836d5a' } });
+    expect(calls.filter(call => call.method === 'POST')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'GET').every(call => call.url === 'https://a.example/api/operations/original-operation')).toBe(true);
+  } finally {
+    releaseDigest(); session.dispose(); store.close(); vi.unstubAllGlobals();
+  }
+});
