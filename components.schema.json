@@ -67,6 +67,8 @@
               "type": "string"
             }
           },
+          "moduleAssignments": {"type": "array", "items": {"type": "string"}},
+          "lifecycleEdges": {"type": "array", "items": {"type": "string"}},
           "dependencies": {
             "type": "array",
             "items": {
@@ -202,7 +204,8 @@
               "puzzle_helpers",
               "lifecycle_projection",
               "opening_kernels",
-              "opening_admission"
+              "opening_admission",
+              "startup_composition"
             ]
           }
         }
