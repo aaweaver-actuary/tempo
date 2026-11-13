@@ -9362,6 +9362,36 @@
       "resourceRoles": [
         "database/tooling/audit_postgres_reads.py#reader-route-audit"
       ]
+    },
+    {
+      "id": "postgres-study-census-resource",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tooling",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tooling/study_census.sql"
+      ],
+      "ownershipRole": "Metadata inspection SQL resource",
+      "dependencyNotes": [
+        "Declares bounded read-only catalog/statistics transaction ending in rollback; estimates are not usage or deletion authority.",
+        "database/tests/test_study_census.py statically checks query text; no current operational executor has been established. Source mapping does not execute SQL."
+      ],
+      "resourceRoles": [
+        "database/tooling/study_census.sql#inspection-sql"
+      ]
     }
   ],
   "suites": [

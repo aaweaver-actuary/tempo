@@ -748,3 +748,11 @@ passive source check. Current source expects 59 route results while an older
 regression note says 58; this discrepancy has not been qualified. The source
 census imports or invokes neither tool and does not prove runtime or native
 behavior. Other database tooling and previously recorded gaps remain open.
+
+## Study census SQL resource
+
+The existing metadata inspection SQL is a source resource, not a migration or
+deletion authority. Its catalog estimates do not establish usage. Existing
+`database/tests/test_study_census.py` statically checks the transaction and query
+text; no current operational executor is established. This census executes no
+SQL, and other database tooling and previous qualification gaps remain open.
