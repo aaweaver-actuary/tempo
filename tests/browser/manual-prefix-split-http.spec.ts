@@ -122,7 +122,7 @@ test('real manual split accepts original issued review and replays its exact rec
         const logs = execFileSync('docker', [...postgresFixtureComposeArguments(process.env.TEMPO_TEST_COMPOSE_PROJECT),
           'logs','--no-color','--tail','300','foreground-worker','background-scheduler'], {encoding:'utf8',timeout:10_000});
         const lines = logs.split('\n').filter(line => line.includes('recover_study_operations') ||
-          line.includes('execute_foreground_command') || line.includes(`prefix-split-intent:${acceptance.intent_id}`)).slice(-100);
+          line.includes('execute_foreground_command') || line.includes(`prefix-split-intent:${acceptance.intent_id}`)).slice(-100).map(line => line.slice(0, 2048));
         await testInfo.attach('split-recovery-routing', {body:lines.join('\n'),contentType:'text/plain'});
       } catch (diagnosticError) {
         await testInfo.attach('split-diagnostic-failure', {body:String(diagnosticError),contentType:'text/plain'}).catch(() => undefined);
