@@ -7982,6 +7982,122 @@
         "Caller-owned connection reads frozen opening identity, settings and recent queue projections."
       ],
       "censusScope": "http_composition"
+    },
+    {
+      "id": "study-issuance-provenance",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/study",
+      "publicExports": [
+        "database/tempo_storage/study/issuance.py#issuance_frontier",
+        "database/tempo_storage/study/issuance.py#stamp_issued_head",
+        "database/tempo_storage/study/issuance.py#attempt_issuance",
+        "database/tempo_storage/study/issuance.py#completion_issuance",
+        "database/tempo_storage/study/issuance.py#committed_issuance_count",
+        "database/tempo_storage/study/issuance.py#first_target_issuance"
+      ],
+      "dependencies": [
+        "backend-contracts"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/study/issuance.py"
+      ],
+      "ownershipRole": "Record and read issued attempt provenance",
+      "dependencyNotes": [
+        "Borrowed transaction serializes issuance frontier; stamps only authorized original entry/card/revision and resolves completion from retained review receipt. Historical unknown issuances are not inferred."
+      ],
+      "censusScope": "position_issuance_storage"
+    },
+    {
+      "id": "study-position-due-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/study",
+      "publicExports": [
+        "database/tempo_storage/study/position_due_candidates.py#PositionDueCursor",
+        "database/tempo_storage/study/position_due_candidates.py#PositionDueCandidate",
+        "database/tempo_storage/study/position_due_candidates.py#PositionDuePage",
+        "database/tempo_storage/study/position_due_candidates.py#PositionDueCandidateReader",
+        "database/tempo_storage/study/position_schedule_state.py#NativePositionTransaction",
+        "database/tempo_storage/study/position_schedule_state.py#PositionScheduleState",
+        "database/tempo_storage/study/position_schedule_state.py#PositionScheduleStateReader"
+      ],
+      "dependencies": [
+        "evidence-math"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/study/position_due_candidates.py",
+        "database/tempo_storage/study/position_schedule_state.py"
+      ],
+      "ownershipRole": "Read bounded position schedule and due witnesses",
+      "dependencyNotes": [
+        "Borrowed native transaction binds owner epoch and source digest; bounded cursor and due facts do not themselves grant issuance or prove live source current."
+      ],
+      "censusScope": "position_issuance_storage"
+    },
+    {
+      "id": "study-position-introduction-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/study",
+      "publicExports": [
+        "database/tempo_storage/study/position_introductions.py#IntroductionFence",
+        "database/tempo_storage/study/position_introductions.py#PreparedIntroduction",
+        "database/tempo_storage/study/position_introductions.py#canonical_introduction_admitted",
+        "database/tempo_storage/study/position_introductions.py#prepare_introduction",
+        "database/tempo_storage/study/position_introductions.py#fence_introduction",
+        "database/tempo_storage/study/position_introductions.py#record_history_hold",
+        "database/tempo_storage/study/position_introductions.py#initialize_introduction",
+        "database/tempo_storage/study/position_fsrs_namespace.py#fence_namespace"
+      ],
+      "dependencies": [
+        "study-position-due-storage",
+        "position-source-storage",
+        "evidence-math",
+        "position-owner-epoch-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/study/position_introductions.py",
+        "database/tempo_storage/study/position_fsrs_namespace.py"
+      ],
+      "ownershipRole": "Fence and initialize authorized position introductions",
+      "dependencyNotes": [
+        "Prepared source, owner epoch, namespace guard and seed preflight are fenced before card/day/queue locks; existing caller transaction records holds and initializes admitted state."
+      ],
+      "censusScope": "position_issuance_storage"
     }
   ],
   "suites": [
