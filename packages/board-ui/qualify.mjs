@@ -51,8 +51,67 @@ try {
   await run("producer-typecheck", "npm", ["run", "typecheck"], producer);
   await run("producer-tests", "npm", ["test", "--", "--reporter=json", "--outputFile=" + join(output, "unit-results.json")], producer);
   const unitResults = JSON.parse(await readFile(join(output, "unit-results.json"), "utf8"));
-  assert.equal(unitResults.numTotalTests, 50, "Execute the complete local regression inventory");
-  assert.equal(unitResults.numPassedTests, 50);
+  // Exact prior BUI inventory plus the three FE20 diagnostic regressions.
+  const expectedTests = [
+    "Board.test.tsx :: BUI-09 Strict Mode constructs clean lifecycles, fences previous callbacks and destroys each instance once",
+    "Board.test.tsx :: BUI-10 accessible focus and keyboard seams stay available while read-only blocks imperative input",
+    "Board.test.tsx :: BUI-11 heading translation and input capture clear bounds without reconstructing or cancelling a held board",
+    "Board.test.tsx :: FE20 the public diagnostic handle is inert after unmount",
+    "boundaries.test.ts :: BUI-13 renderer imports stay within its package, React peer, and pinned Chessground",
+    "boundaries.test.ts :: BUI-14 package metadata, styles, pieces and attribution form an installable local contract",
+    "boundaries.test.ts :: BUI-25 blue theme/black orientation has dark a1/h8 and light h1/a8 across all 64 squares",
+    "boundaries.test.ts :: BUI-25 blue theme/white orientation has dark a1/h8 and light h1/a8 across all 64 squares",
+    "boundaries.test.ts :: BUI-25 brown theme/black orientation has dark a1/h8 and light h1/a8 across all 64 squares",
+    "boundaries.test.ts :: BUI-25 brown theme/white orientation has dark a1/h8 and light h1/a8 across all 64 squares",
+    "boundaries.test.ts :: BUI-25 green theme/black orientation has dark a1/h8 and light h1/a8 across all 64 squares",
+    "boundaries.test.ts :: BUI-25 green theme/white orientation has dark a1/h8 and light h1/a8 across all 64 squares",
+    "chessground.test.tsx :: BUI-15 real Chessground legal destinations and read-only permissions constrain the keyboard seam",
+    "chessground.test.tsx :: BUI-15 real Chessground preserves selection across equivalent renders and delivers the latest legal handler once",
+    "chessground.test.tsx :: BUI-15 real deferred Chessground moves are fenced and pieces restored by same-FEN identity replacement",
+    "controller.test.ts :: BUI-06 nested shape inputs, outputs, defaults, and destination maps are detached from Chessground mutation",
+    "controller.test.ts :: BUI-07 translation clears cached bounds without cancellation; editor transition refreshes geometry without rebuilding DOM",
+    "controller.test.ts :: BUI-08 responsive sizes have integral squares and respect bounds including zero-width containers",
+    "controller.test.ts :: BUI-12 identity replacement cancels a live drawing before installing the replacement handler",
+    "controller.test.ts :: FE20 diagnostic events use the latest handler and stop on disposal",
+    "controller.test.ts :: FE20 diagnostic snapshots are detached and unavailable after disposal",
+    "controller.test.ts :: held input and authoritative position BUI-01 equivalent props and fresh callbacks preserve held input and forward the latest handler once",
+    "controller.test.ts :: held input and authoritative position BUI-02 annotations, appearance, check and last move never reapply FEN or cancel held input",
+    "controller.test.ts :: held input and authoritative position BUI-03 FEN replacement cancels input, restores FEN, and fences stale move/select/drawing callbacks",
+    "controller.test.ts :: held input and authoritative position BUI-03 changed destinations cancels input, restores FEN, and fences stale move/select/drawing callbacks",
+    "controller.test.ts :: held input and authoritative position BUI-03 drawing lock cancels input, restores FEN, and fences stale move/select/drawing callbacks",
+    "controller.test.ts :: held input and authoritative position BUI-03 free mode cancels input, restores FEN, and fences stale move/select/drawing callbacks",
+    "controller.test.ts :: held input and authoritative position BUI-03 lock cancels input, restores FEN, and fences stale move/select/drawing callbacks",
+    "controller.test.ts :: held input and authoritative position BUI-03 orientation cancels input, restores FEN, and fences stale move/select/drawing callbacks",
+    "controller.test.ts :: held input and authoritative position BUI-03 read-only cancels input, restores FEN, and fences stale move/select/drawing callbacks",
+    "controller.test.ts :: held input and authoritative position BUI-03 same-FEN identity replacement cancels input, restores FEN, and fences stale move/select/drawing callbacks",
+    "controller.test.ts :: held input and authoritative position BUI-03 same-FEN revision replacement cancels input, restores FEN, and fences stale move/select/drawing callbacks",
+    "controller.test.ts :: held input and authoritative position BUI-03 select mode cancels input, restores FEN, and fences stale move/select/drawing callbacks",
+    "controller.test.ts :: held input and authoritative position BUI-03 turn cancels input, restores FEN, and fences stale move/select/drawing callbacks",
+    "controller.test.ts :: held input and authoritative position BUI-04 free/select modes route only their typed event, and lock/unlock replaces the input generation",
+    "controller.test.ts :: held input and authoritative position BUI-05 obsolete callbacks after explicit cancellation and destruction cannot affect current handlers",
+    "repairs.test.tsx :: BUI-16 drawnShapes labels are literal, including markup, executable attributes and entity-like text",
+    "repairs.test.tsx :: BUI-16 shapes labels are literal, including markup, executable attributes and entity-like text",
+    "repairs.test.tsx :: BUI-17 drawnShapes discards undeclared nested fields and detaches caller/render/event snapshots",
+    "repairs.test.tsx :: BUI-17 shapes discards undeclared nested fields and detaches caller/render/event snapshots",
+    "repairs.test.tsx :: BUI-18 drawnShapes reconciles label fill/text/removal/plane and preserves a held piece",
+    "repairs.test.tsx :: BUI-18 shapes reconciles label fill/text/removal/plane and preserves a held piece",
+    "repairs.test.tsx :: BUI-19 destruction during held input (button 0) stops frames, callbacks and DOM mutation",
+    "repairs.test.tsx :: BUI-19 destruction during held input (button 2) stops frames, callbacks and DOM mutation",
+    "repairs.test.tsx :: BUI-20 pending animation/redraw/deferred move cannot mutate a destroyed or replacement instance",
+    "repairs.test.tsx :: BUI-21 initially disabled features survive permission/mode/orientation transitions ({\"drawingEnabled\":false})",
+    "repairs.test.tsx :: BUI-21 initially disabled features survive permission/mode/orientation transitions ({\"locked\":true})",
+    "repairs.test.tsx :: BUI-21 initially disabled features survive permission/mode/orientation transitions ({\"mode\":\"select\"})",
+    "repairs.test.tsx :: BUI-21 initially disabled features survive permission/mode/orientation transitions ({\"readOnly\":true})",
+    "repairs.test.tsx :: BUI-21 initially disabled features survive permission/mode/orientation transitions ({})",
+    "repairs.test.tsx :: BUI-22 Strict Mode, mode/orientation changes and retained observer callbacks leave no live resources",
+    "repairs.test.tsx :: BUI-23 real drawing completion emits detached literal labels and accepts its snapshot without double encoding",
+    "repairs.test.tsx :: BUI-24 obsolete DOM generation redraws and input listeners cannot affect the current orientation"
+  ];
+  const actualTests = unitResults.testResults.flatMap(file => file.assertionResults.map(test =>
+    `${basename(file.name)} :: ${test.fullName}`)).sort();
+  assert.deepEqual(actualTests, expectedTests, "Execute the exact board regression inventory");
+  assert.equal(unitResults.numTotalTests, 53);
+  assert.equal(unitResults.numPassedTests, 53);
   assert.equal(unitResults.numFailedTests, 0);
   assert.equal(unitResults.numPendingTests, 0);
   assert.equal(unitResults.numTodoTests, 0);
