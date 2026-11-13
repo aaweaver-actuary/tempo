@@ -10,7 +10,10 @@ export function createStudyRuntime(options: StudyRuntimeOptions) {
     if (entry.disposition === "deliver" ? typeof entry.adapter?.deliver !== "function" :
         entry.disposition !== "held" || typeof entry.reason !== "string" || !entry.reason.trim())
       throw new Error(`Invalid Study adapter: ${entry.kind}`);
-    adapters.set(entry.kind, entry.disposition === "held" ? { ...entry } : { ...entry, adapter: { ...entry.adapter } });
+    adapters.set(entry.kind, entry.disposition === "held" ? { ...entry } : { ...entry, adapter: {
+      deliver: entry.adapter.deliver.bind(entry.adapter),
+      ...(entry.adapter.checkReceipt ? { checkReceipt: entry.adapter.checkReceipt.bind(entry.adapter) } : {}),
+    } });
   }
   for (const kind of STUDY_INTENT_KINDS) if (!adapters.has(kind)) throw new Error(`Missing Study adapter: ${kind}`);
   let epoch = 0;
@@ -43,6 +46,11 @@ export function createStudyRuntime(options: StudyRuntimeOptions) {
       if (entry.disposition === "held") throw new HeldStudyIntentError(record, entry.reason);
       return entry.adapter;
     };
+    async function requireDeliverableExisting(key: string) {
+      const record = await guarded.get(key);
+      ensure();
+      if (record) entryFor(record);
+    }
     const learning: LearningClient = {
       async deliver(record, signal) { ensure(); const result = await entryFor(record).deliver(record, signal); ensure(); return result; },
       async checkReceipt(record, signal) { ensure(); const result = await entryFor(record).checkReceipt?.(record, signal); ensure(); return result; },
@@ -55,11 +63,15 @@ export function createStudyRuntime(options: StudyRuntimeOptions) {
       async submit(envelope: IntentEnvelope, data, submission) {
         ensure();
         if (!adapters.has(envelope.kind as StudyIntentKind)) throw new Error(`Unknown new Study intent kind: ${envelope.kind}`);
+        await requireDeliverableExisting(envelope.key);
         return inner.submit(envelope, data, submission);
       },
-      checkSave(key) { ensure(); return inner.checkSave(key); },
-      retrySave(key) { ensure(); return inner.retrySave(key); },
-      retryNext(key, acquire, stillCurrent, retryable) { ensure(); return inner.retryNext(key, acquire, () => options.isCurrent(store) && generation === epoch && stillCurrent(), retryable); },
+      async checkSave(key) { ensure(); await requireDeliverableExisting(key); return inner.checkSave(key); },
+      async retrySave(key) { ensure(); await requireDeliverableExisting(key); return inner.retrySave(key); },
+      async retryNext(key, acquire, stillCurrent, retryable) {
+        ensure(); await requireDeliverableExisting(key);
+        return inner.retryNext(key, acquire, () => options.isCurrent(store) && generation === epoch && stillCurrent(), retryable);
+      },
       dispose() { if (active?.session === inner) invalidate(); else inner.dispose(); },
     };
     active = { store, session: inner, facade };

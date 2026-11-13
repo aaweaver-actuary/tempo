@@ -62,3 +62,48 @@ describe("FE22 inert Study runtime construction", () => {
     } finally { release(); runtime.invalidate(); first.close(); second.close(); }
   });
 });
+
+it("preserves prototype adapter receivers for delivery and claimed receipt recovery", async () => {
+  class Client {
+    sent = 0; checked = 0;
+    async deliver() { this.sent++; return { state: "committed" as const, receipt: { source: "delivery" } }; }
+    async checkReceipt() { this.checked++; return { state: "committed" as const, receipt: { source: "receipt" } }; }
+  }
+  const owned = await store("fe22-prototype"), client = new Client();
+  const table = entries().map(entry => entry.kind === "review" ? { kind: "review" as const, disposition: "deliver" as const, adapter: client } : entry);
+  const runtime = createStudyRuntime({ store: async () => owned, isCurrent: value => value === owned, adapters: table });
+  try {
+    const session = await runtime.session(), first = envelope("review", "first"), second = envelope("review", "second");
+    session.start(first.key);
+    expect(await session.submit(first)).toEqual({ state: "committed", receipt: { source: "delivery" }, data: undefined });
+    await owned.put(second); expect(await owned.claim(second.key, "other", Date.now(), 60_000)).toBeTruthy();
+    expect(await session.checkSave(second.key)).toEqual({ state: "committed", receipt: { source: "receipt" }, data: undefined });
+    expect(client.sent).toBe(1); expect(client.checked).toBe(1);
+    expect(await owned.get(first.key)).toMatchObject({ state: "committed", receipt: { source: "delivery" } });
+    expect(await owned.get(second.key)).toMatchObject({ state: "committed", receipt: { source: "receipt" } });
+  } finally { runtime.invalidate(); owned.close(); }
+});
+
+it.each(["committed", "discarded", "conflicted"] as const)("holds unknown and retired terminal %s records without rewriting them", async state => {
+  const owned = await store(`fe22-terminal-${state}`), deliver = vi.fn(async () => ({ state: "committed" as const }));
+  const unknown = envelope("historic-unknown"), retired = envelope("endgame-command");
+  try {
+    for (const record of [unknown, retired]) {
+      await owned.put(record);
+      await owned.update(record.key, latest => ({ ...latest, state, receipt: { original: state } }));
+    }
+    const runtime = createStudyRuntime({ store: async () => owned, isCurrent: value => value === owned, adapters: entries(deliver) });
+    const session = await runtime.session();
+    for (const original of [unknown, retired]) {
+      const before = await owned.get(original.key);
+      await expect(session.checkSave(original.key)).rejects.toMatchObject({ name: "HeldStudyIntentError", key: original.key, requestId: original.requestId, attemptId: original.attemptId });
+      await expect(session.retrySave(original.key)).rejects.toMatchObject({ name: "HeldStudyIntentError", key: original.key });
+      if (original.kind === "endgame-command") await expect(session.submit(original)).rejects.toMatchObject({ name: "HeldStudyIntentError", key: original.key });
+      const advance = vi.fn();
+      await expect(session.retryNext(original.key, advance, () => true)).rejects.toMatchObject({ name: "HeldStudyIntentError", key: original.key });
+      expect(advance).not.toHaveBeenCalled();
+      expect(await owned.get(original.key)).toEqual(before);
+    }
+    expect(deliver).not.toHaveBeenCalled(); runtime.invalidate();
+  } finally { owned.close(); }
+});
