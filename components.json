@@ -2,6 +2,109 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "repertoire-control-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/repertoire_commands.py#select_main_repertoire",
+        "backend/app/repertoire_commands.py#rename_repertoire",
+        "backend/app/repertoire_commands.py#delete_repertoire",
+        "backend/app/repertoire_commands.py#update_repertoire_settings"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "repertoire-control-storage",
+        "repertoire-settings-application",
+        "card-deletion-application",
+        "study-calendar-capture"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/repertoire_commands.py"
+      ],
+      "ownershipRole": "Register and apply repertoire controls",
+      "dependencyNotes": [
+        "Registers four repertoire commands at import and task composition imports it. Uses authored transport, queue refresh and caller transaction; deletion delegates to existing deletion owner."
+      ],
+      "censusScope": "repertoire_controls"
+    },
+    {
+      "id": "repertoire-settings-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/repertoire_settings.py#effective_opening_limits",
+        "backend/app/repertoire_settings.py#repertoire_settings_response"
+      ],
+      "dependencies": [
+        "settings-control-storage",
+        "card-deletion-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/repertoire_settings.py"
+      ],
+      "ownershipRole": "Read and present repertoire opening limits",
+      "dependencyNotes": [
+        "Uses existing settings facts, authored transport response and system repertoire identities; queue application and main are existing consumers."
+      ],
+      "censusScope": "repertoire_controls"
+    },
+    {
+      "id": "repertoire-control-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/foreground_controls",
+      "publicExports": [
+        "database/tempo_storage/foreground_controls/repertoires.py#lock_main_selection",
+        "database/tempo_storage/foreground_controls/repertoires.py#store_main_selection",
+        "database/tempo_storage/foreground_controls/repertoires.py#rename_repertoire",
+        "database/tempo_storage/foreground_controls/repertoires.py#store_daily_limit"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/foreground_controls/repertoires.py"
+      ],
+      "ownershipRole": "Persist repertoire identity and limits",
+      "dependencyNotes": [
+        "Caller-transaction SQL takes main-repertoire advisory lock and stable eligible-row locks, updates selection, rename and daily limit; application owns decisions."
+      ],
+      "censusScope": "repertoire_controls"
+    },
+    {
       "id": "card-edit-command",
       "type": "integration",
       "maintainer": "Tempo",

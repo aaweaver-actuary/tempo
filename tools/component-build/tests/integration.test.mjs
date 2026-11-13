@@ -49,7 +49,7 @@ test("T02 mapped composition rejects unowned, duplicate and untracked files", ()
   stale.components.find(item => item.id === "study-web").ownedFiles.push("app/not-tracked.tsx");
   assert.throws(() => validateCompositionOwnership(stale, paths), /untracked source/);
 });
-for (const [scope, expected] of [["retained", 37], ["review", 14], ["durable", 5], ["calendar", 2], ["prefix_split", 7], ["readiness", 3], ["settings", 4], ["teaching", 2], ["annotation", 2], ["activity", 2], ["integrity", 8], ["opening_graph", 4], ["pgn_import", 6], ["card_deletion", 3], ["canonical_prefix", 3], ["repertoire_changes", 4], ["card_branch_edits", 5]]) {
+for (const [scope, expected] of [["retained", 37], ["review", 14], ["durable", 5], ["calendar", 2], ["prefix_split", 7], ["readiness", 3], ["settings", 4], ["teaching", 2], ["annotation", 2], ["activity", 2], ["integrity", 8], ["opening_graph", 4], ["pgn_import", 6], ["card_deletion", 3], ["canonical_prefix", 3], ["repertoire_changes", 4], ["card_branch_edits", 5], ["repertoire_controls", 3]]) {
   test(`T02 ${scope} census derives ownership and entrypoints from registry`, () => {
     const paths = censusPaths(scope, repository);
     assert.equal(paths.length, expected);
@@ -84,7 +84,7 @@ for (const [scope, expected] of [["retained", 37], ["review", 14], ["durable", 5
     assert.throws(() => validateCensusInterfaces(wrong, scope, repository, python), /Missing census interface/);
   });
 }
-for (const [scope, path] of [["retained", "backend/app/contracts/new_contract.py"], ["review", "database/tempo_storage/study/review/new_storage.py"], ["durable", "database/tempo_storage/durable_tasks/new_task.py"], ["calendar", "backend/app/services/study_calendar_extra.py"], ["prefix_split", "backend/app/prefix_split_new.py"], ["readiness", "backend/app/operations/new_health.py"], ["settings", "database/tempo_storage/controls/settings_extra.py"], ["teaching", "backend/app/teaching_commands_extra.py"], ["annotation", "backend/app/annotation_commands_extra.py"], ["activity", "backend/app/activity_commands_extra.py"], ["integrity", "database/tempo_storage/authored_repertoires/integrity/new_adapter.py"], ["opening_graph", "database/tempo_storage/opening_graph/new_adapter.py"], ["pgn_import", "database/tempo_storage/authored_repertoires/pgn_import/new_adapter.py"], ["card_deletion", "database/tempo_storage/authored_repertoires/card_deletion/new_adapter.py"], ["canonical_prefix", "database/tempo_storage/authored_repertoires/canonical_prefix/new_adapter.py"], ["repertoire_changes", "backend/app/repertoire/changes/new_adapter.py"], ["card_branch_edits", "database/tempo_storage/authored_repertoires/card_edits/new_adapter.py"]]) {
+for (const [scope, path] of [["retained", "backend/app/contracts/new_contract.py"], ["review", "database/tempo_storage/study/review/new_storage.py"], ["durable", "database/tempo_storage/durable_tasks/new_task.py"], ["calendar", "backend/app/services/study_calendar_extra.py"], ["prefix_split", "backend/app/prefix_split_new.py"], ["readiness", "backend/app/operations/new_health.py"], ["settings", "database/tempo_storage/controls/settings_extra.py"], ["teaching", "backend/app/teaching_commands_extra.py"], ["annotation", "backend/app/annotation_commands_extra.py"], ["activity", "backend/app/activity_commands_extra.py"], ["integrity", "database/tempo_storage/authored_repertoires/integrity/new_adapter.py"], ["opening_graph", "database/tempo_storage/opening_graph/new_adapter.py"], ["pgn_import", "database/tempo_storage/authored_repertoires/pgn_import/new_adapter.py"], ["card_deletion", "database/tempo_storage/authored_repertoires/card_deletion/new_adapter.py"], ["canonical_prefix", "database/tempo_storage/authored_repertoires/canonical_prefix/new_adapter.py"], ["repertoire_changes", "backend/app/repertoire/changes/new_adapter.py"], ["card_branch_edits", "database/tempo_storage/authored_repertoires/card_edits/new_adapter.py"], ["repertoire_controls", "backend/app/repertoire_settings_extra.py"]]) {
   test(`T02 discovers newly tracked ${scope} sibling without an owner`, context => {
     const root = mkdtempSync(join(tmpdir(), "tempo-census-map-"));
     context.after(() => rmSync(root, { recursive: true, force: true }));
@@ -97,6 +97,11 @@ for (const [scope, path] of [["retained", "backend/app/contracts/new_contract.py
     assert.throws(() => validateCensusOwnership(original, scope, paths), /found 0/);
   });
 }
+test("T02 repertoire controls census cannot disappear when all owner tags are removed", () => {
+  const missing = structuredClone(original);
+  for (const component of missing.components) if (component.censusScope === "repertoire_controls") delete component.censusScope;
+  assert.throws(() => validateCensusOwnership(missing, "repertoire_controls", censusPaths("repertoire_controls", repository)), /lacks owners/);
+});
 test("T02 card and branch edits census cannot disappear when all owner tags are removed", () => {
   const missing = structuredClone(original);
   for (const component of missing.components) if (component.censusScope === "card_branch_edits") delete component.censusScope;

@@ -424,8 +424,15 @@ calendar, source validation, canonical prefix, deletion, transport and task
 composition remain visible edges. This is a source map, not native proof. The
 three PGN, three legacy and one retained mutation fixture failures remain unresolved.
 
-At this base revision, 180 of 291 tracked Python files in those trees remain
-outside the combined 111-file selections. The registry alone assigns owners;
+An eighteenth selection maps repertoire control commands, opening limit responses
+and their foreground SQL. Main selection uses the existing advisory and stable row
+locks; deletion delegates to its owner, and settings updates request queue refresh
+within the caller transaction. Task/main composition, transport, calendar and
+queue consumers remain external. This is a source map, not native qualification.
+The three PGN, three legacy and one retained mutation fixture failures remain open.
+
+At this base revision, 177 of 291 tracked Python files in those trees remain
+outside the combined 114-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
