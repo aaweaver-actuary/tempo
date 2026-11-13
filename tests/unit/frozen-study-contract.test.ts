@@ -27,6 +27,31 @@ describe("retained frozen exercise transport", () => {
     expect(() => decodeFrozenFeedback({ specification: { ...specification, rubric: "x".repeat(10001) } })).toThrow();
     expect(() => decodeFrozenFeedback({ detail: "unavailable" })).toThrow();
   });
+  it("rejects ambiguous learner presentation fields forbidden by the owner", () => {
+    const common = { id: "exercise", revision: 3, prompt: "Question", hint: "", fen };
+    const malformed = [
+      { ...common, type: "choice", options: [{ id: "a", text: "First" }, { id: "a", text: "Second" }] },
+      { ...common, type: "square_set", criterion: "Select", candidate_region: ["a1", "a1"] },
+      { ...common, type: "knight_path", start_square: "g1", target_squares: ["e4", "e4"], minimum_hops: 1, maximum_hops: 2, hop_rule: "at_most", occupancy_rule: "static_non_capturing" },
+    ];
+    for (const value of malformed) expect(() => decodeFrozenPresentation(value, { exerciseId: "exercise", revision: 3 })).toThrow();
+  });
+  it("rejects feedback structures that violate the grader owner's authored invariants", () => {
+    const text = { prompt: "Question", hint: "", explanation: "" };
+    const square = { ...text, type: "square_set", required: ["a1"], optional: ["b1"], candidate_region: ["a1", "b1"], criterion: "Select" };
+    const choice = { ...text, type: "choice", options: [{ id: "a", text: "First" }, { id: "b", text: "Second" }], correct_option_ids: ["a"] };
+    const knight = { ...text, type: "knight_path", start_square: "g1", target_squares: ["e4"], minimum_hops: 1, maximum_hops: 2, hop_rule: "at_most", occupancy_rule: "static_non_capturing" };
+    const move = { ...text, type: "move_line", mode: "single", grading_policy: "reference", accepted_lines: [["e2e4"]] };
+    const malformed = [
+      { ...square, required: ["a1", "a1"] }, { ...square, optional: ["a1"] },
+      { ...square, candidate_region: ["a1", "a1", "b1"] }, { ...square, candidate_region: ["a1"] },
+      { ...choice, options: [choice.options[0], { id: "a", text: "Second" }] },
+      { ...choice, correct_option_ids: ["a", "a"] }, { ...choice, correct_option_ids: ["missing"] },
+      { ...knight, target_squares: ["e4", "e4"] }, { ...move, accepted_lines: [["e2e4", "e7e5"]] },
+    ];
+    for (const specification of malformed) expect(() => decodeFrozenFeedback({ specification })).toThrow();
+    for (const specification of [square, choice, knight, move]) expect(decodeFrozenFeedback({ specification }).specification).toEqual(specification);
+  });
   it("retains an owner-valid historical reference longer than the answer limit", () => {
     const line = Array.from({ length: 11 }, () => ["g1f3", "g8f6", "f3g1", "f6g8"]).flat();
     const specification = { type: "move_line", prompt: "Continue", hint: "", explanation: "",
