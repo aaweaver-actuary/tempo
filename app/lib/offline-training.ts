@@ -218,7 +218,15 @@ function assessmentsDiffer(local: StudyAssessment | undefined, server: StudyAsse
 }
 
 async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> {
+  const generation = defaultStudyClient.generation;
+  const origin = defaultStudyClient.origin;
+  const authority = defaultStudyClient.studyWorkspace();
+  const requirePassAuthority = () => {
+    if (defaultStudyClient.generation !== generation || defaultStudyClient.origin !== origin || defaultStudyClient.studyWorkspace() !== authority)
+      throw new OfflineReplayError("Study authority changed during phone recovery.", "phone recovery");
+  };
   let current = await readPreparedTraining();
+  requirePassAuthority();
   if (!current) return null;
   const heldCards = new Set<string>();
   const heldEntries = new Set<number>();
@@ -228,6 +236,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       message, details: { attemptId: attempt.attemptId ?? "unknown", localEntryId: attempt.localEntryId } });
   };
   for (const [attemptIndex, attempt] of current.attempts.entries()) {
+    requirePassAuthority();
     if (attempt.serverReviewId || attempt.serverAcknowledged || (attempt.conflict && attempt.studyId)) continue;
     if (current.attempts.slice(0, attemptIndex).some((earlier) => earlier.cardId === attempt.cardId && earlier.conflict)) {
       current = await updatePreparedTraining((saved) => ({
@@ -260,7 +269,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       continue;
     }
     let repeatBinding = attempt.repeatBinding;
-    let requireDeliveryAuthority = () => {};
+    let requireDeliveryAuthority = requirePassAuthority;
     if (parent && attempt.studyId && attempt.exerciseId) {
       if (!parent.attemptId || parent.studyId !== attempt.studyId || parent.exerciseId !== attempt.exerciseId ||
           parent.cardId !== attempt.cardId || !parent.serverReviewId || !parent.serverRepeatEntryId) {
@@ -272,6 +281,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       const authority = defaultStudyClient.studyWorkspace();
       const stillBound = () => defaultStudyClient.generation === generation && defaultStudyClient.origin === origin && defaultStudyClient.studyWorkspace() === authority;
       requireDeliveryAuthority = () => {
+        requirePassAuthority();
         if (!stillBound()) throw new OfflineReplayError("Study authority changed during original repeat delivery.", "queue repeat identity");
       };
       const matches = (value: OfflineAttempt["repeatBinding"]) => value && value.authority === authority &&
@@ -455,6 +465,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
             serverRepeatEntryId: result.requeue_entry_id } : item),
     }); });
   }
+  requirePassAuthority();
   return current;
 }
 
