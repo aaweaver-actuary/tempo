@@ -611,8 +611,15 @@ writes; the separately mapped settings adapter retains its owner. Queue consumer
 include main and Study composition as well as refresh and command storage. This is
 a source map, not runtime or native qualification; previous fixture gaps remain open.
 
-At this base revision, 44 of 289 tracked Python files in those trees remain
-outside the combined 245-file selections. The registry alone assigns owners;
+A forty-fifth selection maps existing Study issuance provenance and position
+due/state and introduction storage. Original issued entry/card/revision and
+receipt binding, bounded owner-epoch/source-digest reads, namespace and seed
+fences and the borrowed transaction remain with their existing owners. Due facts
+do not grant issuance or establish live source currentness. This source map is
+not native or runtime qualification; previous fixture gaps remain open.
+
+At this base revision, 39 of 289 tracked Python files in those trees remain
+outside the combined 250-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
