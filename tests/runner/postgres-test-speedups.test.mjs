@@ -808,8 +808,8 @@ test("nested timing cannot qualify failed, missing or stale durability and lifec
     const planned_stages = postgresTestStages({ mode });
     const plan = { commit: "candidate", hash: "immutable-plan", jobs: { [layer]: { mode, planned_stages } } };
     const report = { runner: "postgres", mode, commit: plan.commit, plan_hash: plan.hash, planned_stages,
-      stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0, duration_seconds: 1 }])),
-      details: [{ label: "expected_migration_rejection", category: "migration", exit_code: 1, completed: true }] };
+      acceptance_scope: mode, stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0, duration_seconds: 1 }])),
+      details: [...(mode === "durability" ? ["prefix_split_http_accept_replay", "prefix_split_http_restart_replay"].map(label => ({stage:"study_durability", label, category:"scenario", completed:true, exit_code:0})) : []), { label: "expected_migration_rejection", category: "migration", exit_code: 1, completed: true }] };
     assert.doesNotThrow(() => validatePostgresScenarios(layer, plan, report));
     for (const modify of [
       candidate => { candidate.stages[planned_stages[0]].exit_code = 1; },
@@ -829,7 +829,7 @@ test("packaged Games reader cannot be missing, skipped, failed, or omitted from 
   const planned_stages = postgresTestStages({ mode: "durability" });
   const plan = { commit: "candidate", hash: "immutable-plan", jobs: { postgres: { mode: "durability", planned_stages } } };
   const report = { runner: "postgres", mode: "durability", commit: plan.commit, plan_hash: plan.hash, planned_stages,
-    stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0 }])) };
+    acceptance_scope: "durability", details: ["prefix_split_http_accept_replay", "prefix_split_http_restart_replay"].map(label => ({stage:"study_durability", label, category:"scenario", completed:true, exit_code:0})), stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0 }])) };
   assert.doesNotThrow(() => validatePostgresScenarios("postgres", plan, report));
   for (const modify of [
     candidate => { delete candidate.stages.game_review_reader; },
@@ -1512,4 +1512,28 @@ test("P04 maintained queue receipt distinguishes pending native replacement from
   verifyMaintainedQueueReceipt(receipt);
   assert.throws(() => verifyMaintainedQueueReceipt({ ...receipt, excluded_cases: unresolvedQueueCases }));
   assert.throws(() => verifyMaintainedQueueReceipt({ ...receipt, unresolved_owner_cases: excludedQueueCases }));
+});
+
+
+test('P07 position atomicity bridge is explicitly selectable and cannot widen mode', () => {
+  const options = parse(['--mode', 'study', '--browser-grep', 'P07', '--native-check', 'position-review-atomicity']);
+  assert(postgresTestStages(options).includes('position-review-atomicity'));
+  assert.throws(() => parse(['--mode','durability','--native-check','position-review-atomicity']));
+  assert.throws(() => parse(['--mode','study','--browser-grep','P07','--native-check','position-review-atomicity','--native-check','position-review-atomicity']));
+  const source = readFileSync('database/tests/test-postgres-docker.mjs', 'utf8');
+  assert(source.includes("'position-grade-effects', 'position-review-atomicity', 'position-introductions'"));
+});
+
+test('P07 HTTP split report requires both exact completed cases and correct scope', async () => {
+  const { verifyStudyDurabilityScenario } = await import('../../database/tests/postgres-test-plan.mjs');
+  const details = ['prefix_split_http_accept_replay','prefix_split_http_restart_replay'].map(label => ({stage:'study_durability', label, category:'scenario', completed:true, exit_code:0}));
+  const report = {acceptance_scope:'durability', details};
+  assert.doesNotThrow(() => verifyStudyDurabilityScenario(report, 'durability'));
+  for (const invalid of [
+    {...report, acceptance_scope:'full'}, {...report, details:[]},
+    {...report, details:[details[0],details[0],details[1]]},
+    {...report, details:[details[0], {...details[1], skipped:true}]},
+    {...report, details:[details[0], {...details[1], retries:1}]},
+    {...report, details:[details[0], {...details[1], exit_code:1}]},
+  ]) assert.throws(() => verifyStudyDurabilityScenario(invalid, 'durability'));
 });

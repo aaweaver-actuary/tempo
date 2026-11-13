@@ -1,7 +1,7 @@
 // The executable plan is also the read-only --list output; keep one source of truth.
 export function postgresTestStages({ mode, nativeChecks = [], maintainedStudyProof = false }) {
   if (!Array.isArray(nativeChecks) || new Set(nativeChecks).size !== nativeChecks.length
-    || nativeChecks.some(check => !['redis-fixture-isolation', 'position-grade-effects', 'position-introductions', 'position-queue-admission', 'prefix-split-placement', 'game-review-reader'].includes(check))
+    || nativeChecks.some(check => !['redis-fixture-isolation', 'position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'prefix-split-placement', 'game-review-reader'].includes(check))
     || nativeChecks.length && !['study','browser'].includes(mode)) throw new Error('Invalid native PostgreSQL selection');
   if (!["full", "browser", "study", "durability", "lifecycle", "lifecycle-current"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
   const nativeStages = nativeChecks.map(check => check === "game-review-reader" ? "game_review_reader" : check);
@@ -153,4 +153,15 @@ export function verifyMaintainedBrowserReceipt(receipt) {
       || results.length !== 1 || results[0].status !== 'passed' || results[0].retry !== 0
       || results[0].title !== 'study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption')
     throw new Error('Maintained Study browser proof requires exactly one real passing case without skips or retries');
+}
+
+// A stage exit alone cannot establish that the HTTP split journey ran.
+export function verifyStudyDurabilityScenario(report, scope) {
+  if (report?.acceptance_scope !== scope) throw new Error('Wrong PostgreSQL acceptance scope');
+  for (const label of ['prefix_split_http_accept_replay', 'prefix_split_http_restart_replay']) {
+    const entries = (report.details ?? []).filter(entry => entry.stage === 'study_durability' && entry.label === label);
+    if (entries.length !== 1 || entries[0].category !== 'scenario' || entries[0].completed !== true
+        || entries[0].exit_code !== 0 || entries[0].skipped || entries[0].retries)
+      throw new Error('Missing or invalid PostgreSQL HTTP split evidence');
+  }
 }

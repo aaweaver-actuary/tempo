@@ -1,3 +1,4 @@
+import { verifyStudyDurabilityScenario } from '../database/tests/postgres-test-plan.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -143,7 +144,8 @@ export function validateFastGate(plan, report, needs, currentPullRequest, execut
     if (!scenarios || scenarios.mode !== 'study' || scenarios.commit !== plan.head || scenarios.plan_hash !== plan.hash
       || JSON.stringify(scenarios.planned_stages) !== JSON.stringify(stages)
       || JSON.stringify(Object.keys(scenarios.stages ?? {}).sort()) !== JSON.stringify([...stages].sort())
-      || stages.some(stage => scenarios.stages[stage]?.exit_code !== 0)) failures.push('Study durability evidence missing or failed');
+      || stages.some(stage => scenarios.stages[stage]?.exit_code !== 0 || scenarios.stages[stage]?.skipped || scenarios.stages[stage]?.retries)) failures.push('Study durability evidence missing or failed');
+    try { verifyStudyDurabilityScenario(scenarios, 'study'); } catch { failures.push('Study HTTP split evidence missing or invalid'); }
     if ((plan.nativeChecks ?? []).length) {
       const native = report.native;
       if (!native || native.head !== plan.head || native.planHash !== plan.hash || native.runId !== execution.id

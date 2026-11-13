@@ -25,7 +25,7 @@ function fixture(path = 'app/lib/review-outbox.ts') {
   if (plan.tier === 'STUDY') {
     report.studyStages = postgresTestStages({mode:'study',nativeChecks:plan.nativeChecks});
     report.scenarios = {mode:'study',commit:plan.head,plan_hash:plan.hash,planned_stages:report.studyStages,
-      stages:Object.fromEntries(report.studyStages.map(stage => [stage,{exit_code:0}]))};
+      acceptance_scope:'study', details:['prefix_split_http_accept_replay','prefix_split_http_restart_replay'].map(label => ({stage:'study_durability',label,category:'scenario',completed:true,exit_code:0})), stages:Object.fromEntries(report.studyStages.map(stage => [stage,{exit_code:0}]))};
   }
   if (plan.nativeChecks?.length) report.native = {head:plan.head,planHash:plan.hash,
     runId:execution.id,attempt:execution.attempt,repository:plan.repository,
