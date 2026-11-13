@@ -76,7 +76,7 @@ def lock_original_queue(database, plan):
             and rows[0]['admission_repertoire_id'] == plan.target.key.repertoire_id)
 
 
-def lock_attempt(database, attempt_id):
+def lock_attempt(database: PostgresConnection, attempt_id: str) -> bool:
     row = database.execute_native(
         "SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))",
         ("tempo:position-attempt:" + attempt_id,),
