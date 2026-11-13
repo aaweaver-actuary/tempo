@@ -75,6 +75,12 @@ export async function createFe25Harness(page: Page, context: BrowserContext, noL
   }, { credential, workspace });
   const observer = await context.newPage();
   await observer.goto('/fe25-evidence-harness');
+  async function connectObserverOwner() {
+    await observer.addScriptTag({ content: bundle.outputFiles[0].text });
+    await observer.evaluate(async ({ credential, workspace }) => {
+      await (window as unknown as BrowserState).fe25Proof.connectStudy(location.origin, workspace, credential);
+    }, { credential, workspace });
+  }
   const databaseName = await page.evaluate(() => (window as unknown as BrowserState).fe25Proof.studyOfflineDatabaseName());
   async function createAbortedCapture() {
     await page.evaluate((raw) => {
@@ -110,7 +116,7 @@ export async function createFe25Harness(page: Page, context: BrowserContext, noL
       tx.onabort = () => { db.close(); reject(tx.error); };
     };
   }), { name: databaseName, attemptId });
-  return { page, observer, databaseName, requests, createAbortedCapture, reconnect, recover, rows };
+  return { page, observer, databaseName, requests, createAbortedCapture, reconnect, recover, rows, connectObserverOwner };
 }
 
 export type Fe25Harness = Awaited<ReturnType<typeof createFe25Harness>>;

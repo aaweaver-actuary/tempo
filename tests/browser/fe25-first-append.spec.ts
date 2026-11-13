@@ -131,3 +131,86 @@ test('FE25 foreign authority never inserts original first-abort capture', async 
   expect(await page.evaluate(() => (window as unknown as State).fe25Capture.uncommittedEvents.size)).toBe(1);
   expect(h.requests).toEqual([]);
 });
+
+for (const first of ['phone', 'rebind'] as const) {
+  test(`FE25 concurrent phone and missing-anchor transactions: ${first} queued first`, async ({ page, context }) => {
+    const h = await createFe25Harness(page, context);
+    const original = await h.createAbortedCapture();
+    const completion = await page.evaluate(() => (window as unknown as State).fe25Capture.finish('complete'));
+    await expect.poll(() => page.evaluate(() => (window as unknown as State).fe25Aborts)).toBeGreaterThan(1);
+    await setFault(page, 'none'); await h.reconnect(); await h.connectObserverOwner();
+    await h.observer.evaluate(({ name, completion }) => new Promise<void>((resolve, reject) => {
+      const opened = indexedDB.open(name); opened.onerror = () => reject(opened.error);
+      opened.onsuccess = () => {
+        const db = opened.result, tx = db.transaction('training', 'readwrite');
+        tx.objectStore('training').put({ localDate: new Date().toISOString().slice(0, 10), preparedAt: completion.started_at,
+          nextTemporaryId: 1000000, attempts: [], cards: [{ id: completion.manifest.card_id, queue_entry_id: 101,
+            revision: completion.manifest.card_revision, cycle: 0, content_type: 'opening', moves: ['e2e4'],
+            scheduling_mode: 'normal', recent_attempts_json: '[]' }] }, 'prepared-daily-queue');
+        tx.oncomplete = () => { db.close(); resolve(); }; tx.onabort = () => reject(tx.error);
+      };
+    }), { name: h.databaseName, completion });
+    // Keep a real overlapping writer alive until both owner transactions have
+    // been created and remain pending. No transaction outcome is fabricated.
+    await h.observer.evaluate(name => new Promise<void>((resolve, reject) => {
+      const state = window as unknown as Record<string, unknown>;
+      const opened = indexedDB.open(name); opened.onerror = () => reject(opened.error);
+      opened.onsuccess = () => {
+        const db = opened.result, tx = db.transaction('training', 'readwrite');
+        state.fe25ReleaseBarrier = false; state.fe25BarrierDone = false;
+        const pump = () => { const read = tx.objectStore('training').get('prepared-daily-queue');
+          read.onsuccess = () => { if (!state.fe25ReleaseBarrier) pump(); }; };
+        tx.oncomplete = () => { state.fe25BarrierDone = true; db.close(); };
+        tx.onabort = () => { state.fe25BarrierDone = true; db.close(); };
+        pump(); resolve();
+      };
+    }), h.databaseName);
+    for (const tab of [page, h.observer]) await tab.evaluate(() => {
+      const state = window as unknown as Record<string, unknown>;
+      state.fe25Created = 0; state.fe25Settled = 0;
+      const transaction = IDBDatabase.prototype.transaction;
+      IDBDatabase.prototype.transaction = function (stores, mode, options) {
+        const tx = transaction.call(this, stores, mode, options);
+        const names = typeof stores === 'string' ? [stores] : Array.from(stores);
+        if (mode === 'readwrite' && names.includes('training')) {
+          state.fe25Created = Number(state.fe25Created) + 1;
+          tx.addEventListener('complete', () => { state.fe25Settled = Number(state.fe25Settled) + 1; });
+          tx.addEventListener('abort', () => { state.fe25Settled = Number(state.fe25Settled) + 1; });
+        }
+        return tx;
+      };
+    });
+    const phone = () => h.observer.evaluate(completion => {
+      const state = window as unknown as State & Record<string, unknown>;
+      state.fe25RacePromise = state.fe25Proof.recordOfflineAttempt(101, 'correct', false, undefined,
+        { attemptId: completion.attempt_id, completion });
+    }, completion);
+    const rebind = () => page.evaluate(() => {
+      const state = window as unknown as State & Record<string, unknown>;
+      state.fe25RacePromise = state.fe25Proof.recoverOpeningEvidence().catch(() => undefined);
+    });
+    const launch = async (which: 'phone' | 'rebind') => {
+      const tab = which === 'phone' ? h.observer : page;
+      await (which === 'phone' ? phone() : rebind());
+      await expect.poll(() => tab.evaluate(() => (window as unknown as Record<string, number>).fe25Created)).toBe(1);
+    };
+    await launch(first); await launch(first === 'phone' ? 'rebind' : 'phone');
+    for (const tab of [page, h.observer]) expect(await tab.evaluate(() => (window as unknown as Record<string, number>).fe25Settled)).toBe(0);
+    expect(await h.observer.evaluate(() => (window as unknown as Record<string, boolean>).fe25BarrierDone)).toBe(false);
+    await h.observer.evaluate(() => { (window as unknown as Record<string, boolean>).fe25ReleaseBarrier = true; });
+    for (const tab of [page, h.observer]) await tab.evaluate(async () => { await (window as unknown as Record<string, Promise<unknown>>).fe25RacePromise; });
+    const saved = await h.rows(original.attempt_id);
+    expect((saved.training as { attempts: unknown[] }).attempts).toEqual([expect.objectContaining({
+      attemptId: original.attempt_id, openingEvidenceCompletion: completion,
+    })]);
+    if (first === 'phone') {
+      expect(saved.attempt).toBeUndefined(); expect(saved.events).toEqual([]);
+      expect(await page.evaluate(() => (window as unknown as State).fe25Capture.rebindHeld)).toBe(true);
+      expect(await page.evaluate(() => (window as unknown as State).fe25Capture.snapshot())).toEqual(completion);
+    } else {
+      expect(saved.attempt).toMatchObject({ attempt_id: original.attempt_id, manifest: original.manifest });
+      expect(saved.events).toEqual(original.events.map(event => ({ ...event, attempt_id: original.attempt_id })));
+    }
+    expect(h.requests).toEqual([]);
+  });
+}
