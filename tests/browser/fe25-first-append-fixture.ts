@@ -22,6 +22,7 @@ type Api = typeof import('../../app/lib/opening-evidence-journal') & typeof impo
   enqueuePendingReview: typeof import('../../app/lib/review-outbox').enqueuePendingReview;
   recordOfflineAttempt: typeof import('../../app/lib/offline-training').recordOfflineAttempt;
   studyIntentStore: typeof import('../../database/browser/study-intent-storage').studyIntentStore;
+  createBrowserReviewServices: typeof import('../../app/features/study/browser-services').createBrowserReviewServices;
 };
 type Capture = import('../../app/lib/opening-evidence-journal').OpeningAttemptJournal;
 type BrowserState = { fe25Proof: Api; fe25Capture?: Capture; fe25Fault: 'none' | 'abort' | 'rotate' | 'expose'; fe25Aborts: number; fe25Pending?: Promise<string> };
@@ -35,6 +36,7 @@ export async function createFe25Harness(page: Page, context: BrowserContext, noL
     export { enqueuePendingReview } from './app/lib/review-outbox';
     export { recordOfflineAttempt } from './app/lib/offline-training';
     export { studyIntentStore } from './database/browser/study-intent-storage';
+    export { createBrowserReviewServices } from './app/features/study/browser-services';
   `, resolveDir: process.cwd() }, bundle: true, format: 'iife', globalName: 'fe25Proof', write: false,
     platform: 'browser', define: { __TEMPO_STUDY__: 'true', __TEMPO_API_URL__: '""' }, loader: { '.svg': 'dataurl', '.css': 'empty' } });
   const requests: { url: string; body: string | null; key: string | undefined }[] = [];

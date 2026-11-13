@@ -6,6 +6,7 @@ type Api = typeof import('../../app/lib/opening-evidence-journal') & typeof impo
   enqueuePendingReview: typeof import('../../app/lib/review-outbox').enqueuePendingReview;
   recordOfflineAttempt: typeof import('../../app/lib/offline-training').recordOfflineAttempt;
   studyIntentStore: typeof import('../../database/browser/study-intent-storage').studyIntentStore;
+  createBrowserReviewServices: typeof import('../../app/features/study/browser-services').createBrowserReviewServices;
 };
 type State = { fe25Proof: Api; fe25Capture: import('../../app/lib/opening-evidence-journal').OpeningAttemptJournal; fe25Aborts: number; fe25Pending?: Promise<string> };
 
@@ -214,3 +215,73 @@ for (const first of ['phone', 'rebind'] as const) {
     expect(h.requests).toEqual([]);
   });
 }
+
+test('FE25 browser review adapter holds an in-flight retain across same-locator generation change', async ({ page, context }) => {
+  const h = await createFe25Harness(page, context); await h.connectObserverOwner();
+  const intent = { backendId: 'fe25-retain-card', queueEntryId: 101, attemptId: 'fe25-retain-original',
+    outcome: 'correct' as const, guided: false, expectedRevision: 3, completedAt: '2026-11-01T12:00:00Z' };
+  const posts: string[] = [];
+  await context.route('**/api/cards/**/review', route => { posts.push(route.request().url()); return route.abort(); });
+  await page.evaluate(async intent => {
+    const state = window as unknown as State & Record<string, unknown>, api = state.fe25Proof;
+    const services = api.createBrowserReviewServices(), authority = await services.authority.capture();
+    const get = IDBObjectStore.prototype.get;
+    IDBObjectStore.prototype.get = function (key) {
+      const request = get.call(this, key);
+      if (this.name === 'intents' && Array.isArray(key) && key[1] === `review:${intent.attemptId}`) {
+        IDBObjectStore.prototype.get = get;
+        request.addEventListener('success', () => { state.fe25Switched = true; api.disconnectStudy(); }, { once: true });
+      }
+      return request;
+    };
+    state.fe25AdapterResult = services.reviews.retain(intent, authority).then(() => 'unexpected success', error => String(error));
+  }, intent);
+  const result = await page.evaluate(async () => (window as unknown as Record<string, Promise<string>>).fe25AdapterResult);
+  expect(result).toContain('authority changed');
+  expect(await page.evaluate(() => (window as unknown as Record<string, boolean>).fe25Switched)).toBe(true);
+  await h.reconnect();
+  const original = await h.observer.evaluate(async id => (window as unknown as State).fe25Proof.studyIntentStore().then(store => store.get(`review:${id}`)), intent.attemptId);
+  expect(original).toBeUndefined();
+  expect(posts).toEqual([]);
+});
+
+test('FE25 browser review adapter retains original pending bytes when response crosses authority', async ({ page, context }) => {
+  const h = await createFe25Harness(page, context); await h.connectObserverOwner();
+  const intent = { backendId: 'fe25-flush-card', queueEntryId: 101, attemptId: 'fe25-flush-original',
+    outcome: 'correct' as const, guided: false, expectedRevision: 3, completedAt: '2026-11-01T12:00:00Z' };
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const requests: { url: string; key: string | undefined; body: string | null }[] = [];
+  await context.route('**/api/cards/**/review', async route => {
+    requests.push({ url: route.request().url(), key: route.request().headers()['idempotency-key'], body: route.request().postData() });
+    await gate; await route.fulfill({ json: { persisted: true } });
+  });
+  await page.evaluate(async intent => {
+    const state = window as unknown as State & Record<string, unknown>, api = state.fe25Proof;
+    const services = api.createBrowserReviewServices(), authority = await services.authority.capture();
+    await services.reviews.retain(intent, authority);
+    state.fe25AdapterResult = services.reviews.flush(authority, { stopAfterAttemptId: intent.attemptId })
+      .then(() => 'unexpected success', error => String(error));
+  }, intent);
+  await expect.poll(() => requests.length).toBe(1);
+  const before = await h.observer.evaluate(async id => (window as unknown as State).fe25Proof.studyIntentStore().then(store => store.get(`review:${id}`)), intent.attemptId);
+  expect(before).toMatchObject({ attemptId: intent.attemptId, requestId: `review-attempt:${intent.attemptId}`, state: 'pending', payload: intent });
+  expect(requests[0].key).toBe(`review-attempt:${intent.attemptId}`);
+  const switched = await page.evaluate(async () => {
+    const api = (window as unknown as State).fe25Proof;
+    try { await api.connectStudy(location.origin, 'fe25-foreign-workspace', 'browser-fixture-credential-not-secret'); return true; }
+    catch { return false; } // Existing retained-authority cutover may itself hold.
+  });
+  release();
+  const result = await page.evaluate(async () => (window as unknown as Record<string, Promise<string>>).fe25AdapterResult);
+  expect(result).toContain('authority changed');
+  const after = await h.observer.evaluate(async id => (window as unknown as State).fe25Proof.studyIntentStore().then(store => store.get(`review:${id}`)), intent.attemptId);
+  expect(after).toMatchObject({ attemptId: intent.attemptId, requestId: `review-attempt:${intent.attemptId}`, state: 'pending', payload: intent });
+  expect(after?.payload).toEqual(before?.payload);
+  expect(after?.data).toEqual(before?.data);
+  if (switched) {
+    const foreign = await page.evaluate(async id => (window as unknown as State).fe25Proof.studyIntentStore().then(store => store.get(`review:${id}`)), intent.attemptId);
+    expect(foreign).toBeUndefined();
+  }
+  expect(requests).toHaveLength(1);
+});
