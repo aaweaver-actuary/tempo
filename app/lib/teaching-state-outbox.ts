@@ -2,7 +2,7 @@ import { defaultStudyClient } from "./study-connection";
 import { createTeachingDelivery, type PendingTeachingState } from "./teaching-delivery";
 export type { PendingTeachingState } from "./teaching-delivery";
 import { confirmOriginalOperationResponse, readOperationResponse, PendingOperationError } from "./operation-status";
-import { rememberTeachingFact, studyIntentRecords, studyIntentStore, refreshStudyIntents } from "../../database/browser/study-intent-storage";
+import { rememberTeachingFact, studyIntentRecords, studyIntentStore, refreshStudyIntents, isStudyIntentStoreCurrent } from "../../database/browser/study-intent-storage";
 import { registerStudyDeliveryAdapter, studySession } from "./study-session-runtime";
 
 let activeFlush: Promise<void> | undefined;
@@ -17,7 +17,7 @@ export async function enqueueTeachingState(state: PendingTeachingState): Promise
   await rememberTeachingFact({ key: id, ...state, kind: "seen" }, { key: `teaching:${id}`, kind: "teaching", attemptId: id, requestId: `teaching:${id}`,
     revision: state.revision, endpoint: `/api/cards/${encodeURIComponent(state.cardId)}/teaching`, createdAt: "teaching-fact", payload: state });
 }
-const { deliver, checkReceipt } = createTeachingDelivery(defaultStudyClient, studyIntentStore, { confirmOriginalOperationResponse, readOperationResponse, PendingOperationError });
+const { deliver, checkReceipt } = createTeachingDelivery(defaultStudyClient, studyIntentStore, { confirmOriginalOperationResponse, readOperationResponse, PendingOperationError }, isStudyIntentStoreCurrent);
 registerStudyDeliveryAdapter("teaching", deliver, checkReceipt);
 async function saveTeachingStates(): Promise<void> {
   const coordinator = await studySession();

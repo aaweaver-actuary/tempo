@@ -6,11 +6,11 @@ import { confirmOriginalOperationResponse, FailedOperationError, PendingOperatio
 import { isStudyIntentStoreCurrent, studyIntentStore } from "../../database/browser/study-intent-storage";
 import { createStudyCommandDelivery as createDelivery, predecessorSettled, commandKinds, isRetiredCommand, requireRetainedCommand, StudyRequestRejectedError, type StudyCommandKind, type FrozenStudyRequest, type RejectionReceipt } from "./study-command-delivery";
 export { StudyRequestRejectedError } from "./study-command-delivery";
-export function createStudyCommandDelivery(client: StudyClient, getStore: () => Promise<IntentStore>) {
-  return createDelivery(client, getStore, { confirmOriginalOperationResponse, readOperationResponse, FailedOperationError, PendingOperationError });
+export function createStudyCommandDelivery(client: StudyClient, getStore: () => Promise<IntentStore>, isStoreCurrent: (store: IntentStore) => boolean = () => true) {
+  return createDelivery(client, getStore, { confirmOriginalOperationResponse, readOperationResponse, FailedOperationError, PendingOperationError }, isStoreCurrent);
 }
 
-const defaultDelivery = createStudyCommandDelivery(defaultStudyClient, studyIntentStore);
+const defaultDelivery = createStudyCommandDelivery(defaultStudyClient, studyIntentStore, isStudyIntentStoreCurrent);
 for (const kind of commandKinds) registerStudyDeliveryAdapter(kind, defaultDelivery.deliver, defaultDelivery.checkReceipt);
 
 function practiceScope(scope: string) { return scope.endsWith(":self-assess") ? scope.slice(0, -12) : scope; }

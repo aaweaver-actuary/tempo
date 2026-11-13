@@ -76,12 +76,13 @@ function bindAuthority(client: StudyClient) {
   };
 }
 
-export function createStudyCommandDelivery(client: StudyClient, getStore: () => Promise<IntentStore>, operations: Pick<typeof import("./operation-status"), "confirmOriginalOperationResponse" | "readOperationResponse" | "FailedOperationError" | "PendingOperationError">) {
+export function createStudyCommandDelivery(client: StudyClient, getStore: () => Promise<IntentStore>, operations: Pick<typeof import("./operation-status"), "confirmOriginalOperationResponse" | "readOperationResponse" | "FailedOperationError" | "PendingOperationError">, isStoreCurrent: (store: IntentStore) => boolean = () => true) {
   const { confirmOriginalOperationResponse, readOperationResponse, PendingOperationError } = operations;
   async function deliver(record: IntentRecord, signal: AbortSignal) {
-    const requireAuthority = bindAuthority(client);
+    const authority = bindAuthority(client);
     const request = record.payload as FrozenStudyRequest;
     const store = await getStore();
+    const requireAuthority = () => { authority(); if (!isStoreCurrent(store)) throw new Error("Study storage changed. Recover the original operation with its original service."); };
     requireAuthority();
     const started = Boolean((record.data as { started?: boolean } | undefined)?.started);
     if (!started) {
@@ -89,7 +90,7 @@ export function createStudyCommandDelivery(client: StudyClient, getStore: () => 
       if (record.kind === "study-command") frozenIdentity(record, await frozenParent(record, store));
       requireAuthority();
     }
-    await store.update(record.key, current => ({ ...current, data: { ...current.data as object, started: true } }));
+    await store.update(record.key, current => { requireAuthority(); return { ...current, data: { ...current.data as object, started: true } }; });
     requireAuthority();
     try {
       let response = started ? await readOperationResponse(record.requestId, { allowMissing: true, signal, client }) : new Response(null, { status: 404 });
@@ -120,7 +121,7 @@ export function createStudyCommandDelivery(client: StudyClient, getStore: () => 
       const result = await assessResponse(record, body);
       requireAuthority();
       return result;
-    } catch (error) { return rejectionFromError(record, error, operations.FailedOperationError); }
+    } catch (error) { requireAuthority(); return rejectionFromError(record, error, operations.FailedOperationError); }
   }
   async function assessResponse(record: IntentRecord, body: Record<string, unknown>) {
     if (record.kind === "study-command") {
@@ -143,7 +144,10 @@ export function createStudyCommandDelivery(client: StudyClient, getStore: () => 
     return { state: body.status === "needs_analysis" ? "pending" as const : "committed" as const, receipt: body };
   }
   async function checkReceipt(record: IntentRecord, signal: AbortSignal) {
-    const requireAuthority = bindAuthority(client);
+    const authority = bindAuthority(client);
+    const store = await getStore();
+    const requireAuthority = () => { authority(); if (!isStoreCurrent(store)) throw new Error("Study storage changed. Recover the original operation with its original service."); };
+    requireAuthority();
     try {
       const response = await readOperationResponse(record.requestId, { allowMissing: true, signal, client });
       requireAuthority();
@@ -153,7 +157,7 @@ export function createStudyCommandDelivery(client: StudyClient, getStore: () => 
       const result = await assessResponse(record, body);
       requireAuthority();
       return result;
-    } catch (error) { return rejectionFromError(record, error, operations.FailedOperationError); }
+    } catch (error) { requireAuthority(); return rejectionFromError(record, error, operations.FailedOperationError); }
   }
   return { deliver, checkReceipt };
 }

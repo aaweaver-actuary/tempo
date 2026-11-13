@@ -60,7 +60,29 @@ it('FE23 teaching delivery imports and constructs without storage or session reg
   vi.doMock('../../database/browser/study-intent-storage', touch); vi.doMock('../../app/lib/study-session-runtime', touch);
   try {
     const { createTeachingDelivery } = await import('../../app/lib/teaching-delivery');
-    const factory = createTeachingDelivery({} as Parameters<typeof createTeachingDelivery>[0], touch, {} as Parameters<typeof createTeachingDelivery>[2]);
+    const factory = createTeachingDelivery({} as Parameters<typeof createTeachingDelivery>[0], touch, {} as Parameters<typeof createTeachingDelivery>[2], () => true);
     expect(typeof factory.deliver).toBe('function'); expect(typeof factory.checkReceipt).toBe('function'); expect(touch).not.toHaveBeenCalled();
   } finally { vi.doUnmock('../../database/browser/study-intent-storage'); vi.doUnmock('../../app/lib/study-session-runtime'); vi.resetModules(); }
+});
+
+it.each(['update', 'response', 'body', 'store'] as const)('FE23 teaching refuses settlement or send after %s authority change', async phase => {
+  const { createTeachingDelivery } = await import('../../app/lib/teaching-delivery');
+  const record = { key: 'teaching:key', requestId: 'teaching:original', payload: { cardId: 'card', revision: 2, ply: 3 }, endpoint: '/api/cards/card/teaching' } as Parameters<ReturnType<typeof createTeachingDelivery>['deliver']>[0];
+  let generation = 1, currentStore = true; let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(done => { release = done; }); const waiting = new Promise<void>(done => { entered = done; });
+  const store = { update: vi.fn(async (_key, change) => { if (phase === 'update' || phase === 'store') { entered(); await gate; } return change(record); }) } as unknown as Awaited<ReturnType<Parameters<typeof createTeachingDelivery>[1]>>;
+  const fetcher = vi.fn(async () => {
+    if (phase === 'response') { entered(); await gate; }
+    const response = Response.json({ cardId: 'card', revision: 2, ply: 3, taughtAt: 'saved' });
+    if (phase === 'body') response.json = async () => { entered(); await gate; return { cardId: 'card', revision: 2, ply: 3, taughtAt: 'saved' }; };
+    return response;
+  });
+  const client = { origin: 'https://a.example', get generation() { return generation; }, learningFetch: fetcher } as unknown as Parameters<typeof createTeachingDelivery>[0];
+  const operations = { confirmOriginalOperationResponse: async (response: Response) => response, readOperationResponse: vi.fn(), PendingOperationError: Error } as unknown as Parameters<typeof createTeachingDelivery>[2];
+  const delivery = createTeachingDelivery(client, async () => store, operations, () => currentStore);
+  const pending = delivery.deliver(record, new AbortController().signal); await waiting;
+  if (phase === 'store') currentStore = false; else generation++; release();
+  await expect(pending).rejects.toThrow('authority changed');
+  if (phase === 'update' || phase === 'store') expect(fetcher).not.toHaveBeenCalled();
+  else expect(fetcher).toHaveBeenCalledOnce();
 });

@@ -255,3 +255,25 @@ it('FE23 command delivery imports and constructs without storage or session regi
     expect(typeof factory.deliver).toBe('function'); expect(typeof factory.checkReceipt).toBe('function'); expect(touch).not.toHaveBeenCalled();
   } finally { vi.doUnmock('../../database/browser/study-intent-storage'); vi.doUnmock('../../app/lib/study-session-runtime'); vi.resetModules(); }
 });
+
+it('FE23 checks original command authority inside the delayed started journal update', async () => {
+  const { record, store } = fixture(); let release!: () => void, entered!: () => void;
+  const waiting = new Promise<void>(done => { entered = done; }); const gate = new Promise<void>(done => { release = done; });
+  const selected = client(vi.fn());
+  vi.mocked(store.update).mockImplementation(async (_key, change) => { entered(); await gate; return change(record); });
+  const delivery = createStudyCommandDelivery(selected, async () => store);
+  const pending = delivery.deliver(record, new AbortController().signal); await waiting;
+  Object.defineProperty(selected, 'generation', { value: 2 }); release();
+  await expect(pending).rejects.toThrow('authority changed');
+  expect(selected.learningFetch).not.toHaveBeenCalled();
+});
+
+it('FE23 does not classify a failed receipt after the original store becomes stale', async () => {
+  const { record, store } = fixture(true); let release!: () => void, entered!: () => void;
+  const waiting = new Promise<void>(done => { entered = done; }); const gate = new Promise<void>(done => { release = done; }); let current = true;
+  const selected = client(vi.fn(async () => { entered(); await gate; return Response.json({ operation_id: 'original', state: 'failed', error: { status_code: 422, message: 'invalid', retryable: false } }); }));
+  const delivery = createStudyCommandDelivery(selected, async () => store, () => current);
+  const pending = delivery.deliver(record, new AbortController().signal); await waiting; current = false; release();
+  await expect(pending).rejects.toThrow('storage changed');
+  expect(selected.learningFetch).toHaveBeenCalledOnce();
+});
