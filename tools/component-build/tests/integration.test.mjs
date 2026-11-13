@@ -129,6 +129,12 @@ test("T02 historical reduction tool guard discovers new files and parses without
   assert.deepEqual(validateReductionTools(registered,root,python),{files:4});
   newOwner.resourceRoles[newOwner.resourceRoles.length-1]=added+"#unsupported";
   assert.throws(()=>validateReductionTools(registered,root,python),/tooling role/);
+  newOwner.resourceRoles[newOwner.resourceRoles.length-1]=added+"#source-census";
+  const jsx="tools/reduction/new_view.jsx"; writeFileSync(join(root,jsx),"export default null;\n");
+  assert.equal(spawnSync("git",["-C",root,"add",jsx],{cwd:root}).status,0);
+  assert.throws(()=>validateReductionTools(registered,root,python),/missing, duplicate or stale/);
+  newOwner.ownedFiles.push(jsx);newOwner.resourceRoles.push(jsx+"#source-census");
+  assert.throws(()=>validateReductionTools(registered,root,python),/tooling role/);
 });
 test("T02 DDL source version rejects empty, missing, duplicate and mismatched history", () => {
   const files = Array.from({length:66}, (_,i) => String(i+1).padStart(3,"0") + "_example.sql");

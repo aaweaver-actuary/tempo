@@ -383,7 +383,7 @@ if not {'migration_source','validate_migration_history','apply_migrations','migr
 export function validateReductionTools(manifest, root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3") {
   const listed=spawnSync("git",["ls-files","-z","tools/reduction"],{cwd:root,encoding:"utf8"});
   if (listed.error || listed.status!==0) throw new Error("Cannot enumerate reduction tooling");
-  const tracked=listed.stdout.split("\0").filter(p=>/\.(?:py|sh|js|mjs|cjs|ts|tsx)$/.test(p));
+  const tracked=listed.stdout.split("\0").filter(p=>/\.(?:py|sh|js|jsx|mjs|cjs|ts|tsx)$/.test(p));
   const owner=manifest.components.find(c=>c.id==="historical-reduction-audit-tooling");
   const mapped=manifest.components.filter(c=>c.status==="mapped" && c.ownedFiles);
   if (!owner || owner.status!=="mapped" || !Array.isArray(owner.resourceRoles)) throw new Error("Missing reduction tooling owner");
