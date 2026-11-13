@@ -119,7 +119,11 @@ async function settleExistingReviewDelivery(store: Awaited<ReturnType<typeof stu
 
 /** Pending delivery keys are inspected only by the existing idle recovery hook. */
 export function pendingReviewDeliveryKeys(): string[] {
-  return studyIntentRecords("review-delivery").filter(record => record.state === "pending").map(record => record.key);
+  // The active projection omits committed parents. A live parent already owns
+  // its delivery, so do not let it compete with its own retry deadline.
+  const active = new Set(studyIntentRecords("review").map(record => record.key));
+  return studyIntentRecords("review-delivery").filter(record => record.state === "pending" &&
+    !active.has(`review:${record.attemptId}`)).map(record => record.key);
 }
 
 /** Recover one orphan from its own authority receipt; never infer a child result from its parent. */
@@ -175,7 +179,8 @@ export async function recoverCommittedReviewDelivery(key: string, signal: AbortS
   } catch (error) {
     requireCurrent();
     if (signal.aborted) return "hold";
-    if (error instanceof FailedOperationError && definitiveEvidenceFailure(error)) {
+    if (!delivery.requestId.endsWith(":aggregate-only") && review.openingEvidenceCompletion &&
+        error instanceof FailedOperationError && definitiveEvidenceFailure(error)) {
       await settleExistingReviewDelivery(store, delivery.requestId, attemptId,
         { state: "failed", error: { message: error.message, status_code: error.status, code: error.code,
           retryable: error.retryable, detail: error.detail } }, requireCurrent, "discarded");

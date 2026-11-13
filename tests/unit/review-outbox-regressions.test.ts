@@ -1726,8 +1726,8 @@ it.each(['unknown', 'foreign', 'unavailable', 'unproven failure', 'invalid body'
   expect(await (await studyIntentStore()).get(key)).toEqual(before);
 });
 
-it.each(["authoritative rejection", "retryable rejection", "unavailable"])(
-  "C11 committed-parent orphan %s preserves its exact evidence and disposition", async scenario => {
+it.each(["base", "reconcile"].flatMap(variant => ["authoritative rejection", "retryable rejection", "unavailable"].map(scenario => [variant, scenario])))(
+  "C11 committed-parent %s orphan %s preserves its exact evidence and disposition", async (variant, scenario) => {
     const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
     const { defaultStudyClient } = await import("../../app/lib/study-connection");
     const { recoverCommittedReviewDelivery } = await import("../../app/lib/review-outbox");
@@ -1736,13 +1736,14 @@ it.each(["authoritative rejection", "retryable rejection", "unavailable"])(
     const parentKey = `review:${original.attemptId}`;
     await store.update(parentKey, current => ({ ...current, state: "committed", receipt: { persisted: true, review_id: 19 } }));
     const parentBefore = await store.get(parentKey);
-    const id = `review-attempt:${original.attemptId}`, key = `review-delivery:${id}`;
+    const id = variant === "reconcile" ? `review-reconcile:${original.attemptId}:2` : `review-attempt:${original.attemptId}`;
+    const key = `review-delivery:${id}`;
     const payload = { parentKey, headers: { "Content-Type": "application/json", "Idempotency-Key": id }, body: {
       outcome: original.outcome, guided: original.guided, queue_entry_id: original.queueEntryId,
       attempt_id: original.attemptId, recorded_at: original.completedAt, opening_evidence_completion: original.openingEvidenceCompletion,
     } };
     await store.put({ key, kind: "review-delivery", attemptId: original.attemptId!, requestId: id,
-      endpoint: `${defaultStudyClient.origin}/api/cards/${original.backendId}/review`, createdAt: original.completedAt!, payload });
+      endpoint: `${defaultStudyClient.origin}/api/cards/${original.backendId}/review${variant === "reconcile" ? "/reconcile" : ""}`, createdAt: original.completedAt!, payload });
     const before = await store.get(key);
     const detail = { code: "opening_evidence_conflict", message: "Evidence was rejected", aggregate_review_allowed: true, retryable: false };
     const error = { message: "Evidence was rejected", status_code: 409, code: detail.code,
@@ -1765,3 +1766,28 @@ it.each(["authoritative rejection", "retryable rejection", "unavailable"])(
     closeStudyIntentStorage(); await initializeStudyIntentStorage();
     expect(await (await studyIntentStore()).get(key)).toEqual(after);
   });
+
+it.each(['aggregate', 'reconcile-aggregate', 'no-completion'])('C11 orphan %s retains definitive evidence failure without an evidence-bearing envelope', async variant => {
+  const { studyIntentStore } = await import('../../database/browser/study-intent-storage');
+  const { defaultStudyClient } = await import('../../app/lib/study-connection');
+  const { recoverCommittedReviewDelivery } = await import('../../app/lib/review-outbox');
+  const original = variant === 'no-completion' ? { ...auditReview(`no-evidence-${variant}`, 99119), completedAt: '2026-11-12T00:00:00Z' }
+    : await enqueueOpeningEvidenceReview(`no-evidence-${variant}`);
+  if (variant === 'no-completion') await enqueuePendingReview(original);
+  const store = await studyIntentStore();
+  await store.update(`review:${original.attemptId}`, current => ({ ...current, state: 'committed', receipt: { persisted: true } }));
+  const id = variant === 'reconcile-aggregate' ? `review-reconcile:${original.attemptId}:2:aggregate-only`
+    : `review-attempt:${original.attemptId}${variant === 'aggregate' ? ':aggregate-only' : ''}`;
+  const key = `review-delivery:${id}`;
+  await store.put({ key, kind: 'review-delivery', attemptId: original.attemptId!, requestId: id,
+    endpoint: `${defaultStudyClient.origin}/api/cards/${original.backendId}/review${variant === 'reconcile-aggregate' ? '/reconcile' : ''}`,
+    createdAt: original.completedAt!, payload: { parentKey: `review:${original.attemptId}`, headers: { 'Idempotency-Key': id }, body: {
+      outcome: original.outcome, guided: original.guided, queue_entry_id: original.queueEntryId,
+      attempt_id: original.attemptId, recorded_at: original.completedAt } } });
+  const before = await store.get(key);
+  const detail = { code: 'opening_evidence_conflict', message: 'Evidence was rejected', aggregate_review_allowed: true, retryable: false };
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ operation_id: id, state: 'failed', error: {
+    message: detail.message, status_code: 409, code: detail.code, retryable: false, detail } })));
+  expect(await recoverCommittedReviewDelivery(key, new AbortController().signal)).toBe('hold');
+  expect(await store.get(key)).toEqual(before);
+});

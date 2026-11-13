@@ -405,3 +405,31 @@ it('C11 idle orphan recovery yields between identities and respects the foregrou
   expect(await store.get('review-delivery:review-attempt:orphan-idle-second')).toMatchObject({ state: 'committed' });
   expect(confirmed).not.toHaveBeenCalled();
 });
+
+it('C11 deferred review retry does not starve an independent orphan receipt', async () => {
+  const { studyIntentStore, refreshStudyIntents } = await import('../../database/browser/study-intent-storage');
+  const { defaultStudyClient } = await import('../../app/lib/study-connection');
+  const orphan = { ...review, backendId: 'independent', attemptId: 'independent-orphan', completedAt: '2026-11-12T00:00:00Z' };
+  await enqueuePendingReview(orphan);
+  const store = await studyIntentStore();
+  await store.update(`review:${orphan.attemptId}`, current => ({ ...current, state: 'committed', receipt: { persisted: true } }));
+  const id = `review-attempt:${orphan.attemptId}`;
+  await store.put({ key: `review-delivery:${id}`, kind: 'review-delivery', attemptId: orphan.attemptId, requestId: id,
+    endpoint: `${defaultStudyClient.origin}/api/cards/${orphan.backendId}/review`, createdAt: orphan.completedAt,
+    payload: { parentKey: `review:${orphan.attemptId}`, headers: { 'Idempotency-Key': id }, body: {
+      outcome: orphan.outcome, guided: orphan.guided, queue_entry_id: orphan.queueEntryId,
+      attempt_id: orphan.attemptId, recorded_at: orphan.completedAt } } });
+  await enqueuePendingReview(review);
+  await refreshStudyIntents();
+  const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+    const operationId = decodeURIComponent(String(url)).split('/').pop()!;
+    return operationId === id ? Response.json({ operation_id: id, state: 'complete', response: { persisted: true } })
+      : Response.json({ operation_id: operationId, state: 'queued' });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  render(<Harness confirmed={vi.fn()} />);
+  await advance(1000); await advance(1000);
+  expect(await store.get(`review-delivery:${id}`)).toMatchObject({ state: 'committed' });
+  expect(pendingReviews().map(item => item.attemptId)).toContain(review.attemptId);
+  expect(fetcher.mock.calls.some(([url]) => decodeURIComponent(String(url)).includes(id))).toBe(true);
+});

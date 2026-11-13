@@ -40,38 +40,44 @@ export function usePendingReviewRecovery(enabled: boolean, ready: boolean, block
         review = retainedCandidates.filter((candidate, index) => Number.isFinite(deadlines.current.get(logicalAttemptId(candidate))?.retryAt) &&
           !retainedCandidates.slice(0, index).some(earlier => earlier.backendId === candidate.backendId))
           .sort((left, right) => deadlines.current.get(logicalAttemptId(left))!.retryAt - deadlines.current.get(logicalAttemptId(right))!.retryAt)[0];
-        if (!review) {
+        {
+          // Consider an orphan while reviews wait for their retry deadlines.
           // Only idle recovery inspects orphan deliveries; foreground saves and
           // queue loads never wait for these independent receipt reads.
           const keys = pendingReviewDeliveryKeys();
           const key = keys.filter(value => Number.isFinite(deliveryDeadlines.current.get(value)?.retryAt ?? 0))
             .sort((left, right) => (deliveryDeadlines.current.get(left)?.retryAt ?? 0) - (deliveryDeadlines.current.get(right)?.retryAt ?? 0))[0];
-          if (!key) return;
-          const delay = Math.max(1000, (deliveryDeadlines.current.get(key)?.retryAt ?? 0) - Date.now());
-          timer = setTimeout(() => {
-            const recover = () => {
-              idleId = undefined;
-              if (disposed || navigator.onLine === false || document.visibilityState === "hidden") return;
-              running.current = true;
-              void recoverCommittedReviewDelivery(key, AbortSignal.timeout(3000)).then(outcome => {
-                if (outcome === "settled") deliveryDeadlines.current.delete(key);
-                else if (outcome === "ineligible") deliveryDeadlines.current.set(key, { failures: 0, retryAt: Infinity });
-                else {
+          const reviewRetryAt = review ? deadlines.current.get(logicalAttemptId(review))!.retryAt : Infinity;
+          const deliveryRetryAt = key ? deliveryDeadlines.current.get(key)?.retryAt ?? 0 : Infinity;
+          if (!key || deliveryRetryAt > Math.max(Date.now(), reviewRetryAt)) {
+            if (!review) return;
+          } else {
+            const delay = Math.max(1000, (deliveryDeadlines.current.get(key)?.retryAt ?? 0) - Date.now());
+            timer = setTimeout(() => {
+              const recover = () => {
+                idleId = undefined;
+                if (disposed || navigator.onLine === false || document.visibilityState === "hidden") return;
+                running.current = true;
+                void recoverCommittedReviewDelivery(key, AbortSignal.timeout(3000)).then(outcome => {
+                  if (outcome === "settled") deliveryDeadlines.current.delete(key);
+                  else if (outcome === "ineligible") deliveryDeadlines.current.set(key, { failures: 0, retryAt: Infinity });
+                  else {
+                    const failures = (deliveryDeadlines.current.get(key)?.failures ?? 0) + 1;
+                    deliveryDeadlines.current.set(key, { failures, retryAt: Date.now() + Math.min(30000, 1000 * 2 ** (failures - 1)) });
+                  }
+                }).catch(error => {
                   const failures = (deliveryDeadlines.current.get(key)?.failures ?? 0) + 1;
                   deliveryDeadlines.current.set(key, { failures, retryAt: Date.now() + Math.min(30000, 1000 * 2 ** (failures - 1)) });
-                }
-              }).catch(error => {
-                const failures = (deliveryDeadlines.current.get(key)?.failures ?? 0) + 1;
-                deliveryDeadlines.current.set(key, { failures, retryAt: Date.now() + Math.min(30000, 1000 * 2 ** (failures - 1)) });
-                reportDebugError(error, { source: "training-review-replay", operation: "recover original delivery receipt", notify: false });
-              }).finally(() => { running.current = false; schedule(); });
-            };
-            if (typeof window.requestIdleCallback === "function") idleId = window.requestIdleCallback(recover);
-            else recover();
-          }, delay);
-          return;
+                  reportDebugError(error, { source: "training-review-replay", operation: "recover original delivery receipt", notify: false });
+                }).finally(() => { running.current = false; schedule(); });
+              };
+              if (typeof window.requestIdleCallback === "function") idleId = window.requestIdleCallback(recover);
+              else recover();
+            }, delay);
+            return;
+          }
         }
-        deferredAttemptIds.delete(logicalAttemptId(review));
+        deferredAttemptIds.delete(logicalAttemptId(review!));
       }
       const identity = logicalAttemptId(review);
       const delay = Math.max(1000, (deadlines.current.get(identity)?.retryAt ?? 0) - Date.now());
