@@ -133,9 +133,22 @@ async function readSplitIntent(pending: PendingDecision) {
     source_revision: status.source_revision, queue_entry_id: status.queue_entry_id, reason: status.reason }, pending);
 }
 
-/** Inspect an already accepted intent without replaying or inventing a command. */
-export async function pendingPrefixSplitStatus(cardId?: string, queueEntryId?: number) {
+/** Recover the original acceptance receipt and inspect its intent across card changes. */
+export async function pendingPrefixSplitStatus() {
   const pending = readPending();
-  if (pending && cardId !== undefined && (pending.cardId !== cardId || pending.queueEntryId !== queueEntryId)) return undefined;
-  return pending?.intentId ? readSplitIntent(pending) : undefined;
+  if (!pending || pending.decision !== "accept") return undefined;
+  if (pending.intentId) return readSplitIntent(pending);
+  const response = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`);
+  if (!response.ok) throw new PendingOperationError(pending.operationId);
+  const receipt = decodeOperationResult(await response.json(), pending.operationId, false);
+  if (receipt.kind === "failed") throw new Error(receipt.error.message ?? "The shortening request failed.");
+  if (receipt.kind !== "complete") throw new PendingOperationError(pending.operationId);
+  const result = validateAccept(receipt.response, pending);
+  if ("status" in result) {
+    if (!attachPrefixSplitIntentIfMatches(pending.operationId, result.intent_id))
+      throw new Error("The pending split changed while its intent was confirmed.");
+    return result;
+  }
+  clearPendingPrefixSplitIfMatches(pending.operationId);
+  return result;
 }

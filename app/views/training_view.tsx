@@ -120,17 +120,18 @@ function StandardTrainingView({
   useEffect(() => {
     let current = true;
     setPrefixSplitNotice("");
-    if (!usesLocalApi() || !card.backendId) return;
-    void pendingPrefixSplitStatus(card.backendId, card.queueEntryId).then(status => {
+    if (!usesLocalApi()) return;
+    const check = () => void pendingPrefixSplitStatus().then(status => {
       if (!current || !status) return;
-      if ("status" in status && status.card_id === card.backendId && status.queue_entry_id === card.queueEntryId)
+      if ("status" in status)
         setPrefixSplitNotice(status.status === "held"
           ? `The shortening request is held: ${status.reason ?? "check the original attempt"}.`
-          : status.reason ?? "Shortening is saved and will continue after this review is saved.");
-      else if (!("status" in status) && status.source_card_id === card.backendId)
-        setPrefixSplitNotice("Shortening completed. Refresh the queue to load the updated cards.");
+          : status.reason ?? "Shortening is saved and will continue after the original review is saved.");
+      else setPrefixSplitNotice("Shortening completed. Refresh the queue to load the updated cards.");
     }).catch(() => { if (current) setPrefixSplitNotice("Shortening status is unavailable; the saved request is retained."); });
-    return () => { current = false; };
+    check();
+    const timer = window.setInterval(check, 30000);
+    return () => { current = false; window.clearInterval(timer); };
   }, [card.backendId, card.queueEntryId]);
   const {
     boardAttempt,

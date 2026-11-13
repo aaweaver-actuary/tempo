@@ -37,18 +37,18 @@ def create_intent(database, intent_id, card_id, revision, entry_id):
     ).fetchone()
 
 
-def intent(database, intent_id, *, lock=False):
+def intent(database, intent_id, *, lock=False, skip_locked=False):
     return database.execute_native(
-        "SELECT * FROM study_deferred_prefix_splits WHERE intent_id=%s" + (" FOR UPDATE" if lock else ""),
+        "SELECT * FROM study_deferred_prefix_splits WHERE intent_id=%s" + (" FOR UPDATE" + (" SKIP LOCKED" if skip_locked else "") if lock else ""),
         (intent_id,),
     ).fetchone()
 
 
-def due_intent(database):
+def due_intent(database, after):
     return database.execute_native(
         """SELECT intent_id,card_id FROM study_deferred_prefix_splits
-           WHERE state IN ('waiting_review','ready') AND next_check_at<=NOW()
-           ORDER BY next_check_at,created_at,intent_id LIMIT 1""",
+           WHERE state IN ('waiting_review','ready') AND next_check_at<=NOW() AND intent_id>%s
+           ORDER BY intent_id LIMIT 1""", (after,),
     ).fetchone()
 
 

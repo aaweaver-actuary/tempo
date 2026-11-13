@@ -21,9 +21,9 @@ def harness(monkeypatch):
         yield database
 
     monkeypatch.setattr(recovery, "connection", connection)
-    monkeypatch.setattr(recovery.storage, "due_intent", lambda db: {"intent_id": "intent", "card_id": "source"})
+    monkeypatch.setattr(recovery.storage, "due_intent", lambda db, after: {"intent_id": "intent", "card_id": "source"})
     monkeypatch.setattr(recovery.storage, "try_lock_source", lambda db, card: ("locked", facts["card"]))
-    monkeypatch.setattr(recovery.storage, "intent", lambda db, key, *, lock: intent)
+    monkeypatch.setattr(recovery.storage, "intent", lambda db, key, *, lock, skip_locked: intent)
     monkeypatch.setattr(recovery.storage, "matching_reviews", lambda *args: facts["matches"])
     monkeypatch.setattr(recovery.split_storage, "has_active_issued_attempt", lambda *args: facts["active"])
     monkeypatch.setattr(recovery.storage, "delay_check", lambda db, key: events.append(("delay", key)))
@@ -139,3 +139,16 @@ def test_gateway_preserves_same_operation_when_prerequisite_is_pending(monkeypat
     assert gateway.execute_command("same-child", command, payload, attempt_token="token") is None
     assert events == [("lock", "same-child"), ("savepoint",), ("rollback",), ("release",),
                       ("defer", "same-child", "original attempt remains active")]
+
+
+def test_locked_first_intent_does_not_starve_later_due_intent(harness, monkeypatch):
+    facts, events, _ = harness
+    facts['matches'] = [review()]
+    candidates = {'': {'intent_id': 'a', 'card_id': 'busy'}, 'a': {'intent_id': 'intent', 'card_id': 'source'}}
+    monkeypatch.setattr(recovery, '_scan_cursor', '')
+    monkeypatch.setattr(recovery.storage, 'due_intent', lambda db, after: candidates.get(after))
+    monkeypatch.setattr(recovery.storage, 'try_lock_source', lambda db, card: ('busy', None) if card == 'busy' else ('locked', facts['card']))
+    monkeypatch.setattr(recovery.storage, 'delay_check_if_unlocked', lambda *args: None)
+    assert recovery.enqueue_one_ready_split() is False
+    assert recovery.enqueue_one_ready_split() is True
+    assert events[-1] == ('ready', 'intent', 'original', 41, 'prefix-split-intent:intent')

@@ -116,7 +116,7 @@ it("manual acceptance retains its displayed attempt identity across pending retr
   await expect(acceptPrefixSplitCommand("combined", 1, 17)).rejects.toBeInstanceOf(PendingOperationError);
   await expect(acceptPrefixSplitCommand("combined", 1, 18)).rejects.toBeInstanceOf(PendingOperationError);
   expect(bodies).toEqual([{ expected_revision: 1, queue_entry_id: 17 }]);
-  expect((await acceptPrefixSplitCommand("combined", 1, 17)).applied).toBe(true);
+  expect(await acceptPrefixSplitCommand("combined", 1, 17)).toMatchObject({ applied: true });
   expect(bodies).toHaveLength(1);
 });
 
@@ -125,7 +125,7 @@ it("legacy split callers keep their original request payload", async () => {
     expect(JSON.parse(String(init?.body))).toEqual({ expected_revision: 1 });
     return Response.json(accepted);
   }));
-  expect((await acceptPrefixSplitCommand("combined", 1)).applied).toBe(true);
+  expect(await acceptPrefixSplitCommand("combined", 1)).toMatchObject({ applied: true });
 });
 
 it.each([
@@ -173,4 +173,23 @@ it.each(["missing", "foreign"])("%s initial acknowledgment preserves original co
   expect(writes[1]).toEqual(writes[0]);
   expect(urls.some(url => url.includes("foreign"))).toBe(false);
   expect(localStorage.getItem("tempo-pending-prefix-split-v1")).toBeNull();
+});
+
+it("reload recovers a lost acceptance receipt across a successor card and later clears only that intent", async () => {
+  const original = { operationId: "original-op", decision: "accept", cardId: "combined", revision: 1, queueEntryId: 17 };
+  localStorage.setItem("tempo-pending-prefix-split-v1", JSON.stringify(original));
+  const waiting = { status: "waiting_review", intent_id: "intent-1", card_id: "combined", source_revision: 1, queue_entry_id: 17, reason: null };
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.method).not.toBe("POST");
+    const url = String(input); calls.push(url);
+    if (url.includes("/api/operations/")) return Response.json({ operation_id: "original-op", state: "complete", response: waiting });
+    return Response.json({ ...waiting, status: "applied", result: accepted });
+  }));
+  expect(await pendingPrefixSplitStatus()).toEqual(waiting);
+  expect(JSON.parse(localStorage.getItem("tempo-pending-prefix-split-v1")!)).toEqual({ ...original, intentId: "intent-1" });
+  expect(await pendingPrefixSplitStatus()).toEqual(accepted);
+  expect(localStorage.getItem("tempo-pending-prefix-split-v1")).toBeNull();
+  expect(calls[0]).toContain("/api/operations/original-op");
+  expect(calls[1]).toContain("/api/cards/combined/prefix-split/intents/intent-1");
 });

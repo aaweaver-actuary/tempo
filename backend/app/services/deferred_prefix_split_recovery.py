@@ -20,22 +20,30 @@ def valid_original_review_receipt(row):
     return isinstance(value, dict) and value.get("persisted") is True and value.get("review_id") == row["review_id"]
 
 
+# A bounded keyset cursor advances even when an earlier row is locked.
+_scan_cursor = ""
+
 def enqueue_one_ready_split() -> bool:
+    global _scan_cursor
     with connection(background=True) as database:
-        candidate = storage.due_intent(database)
+        candidate = storage.due_intent(database, _scan_cursor)
+        if candidate is None and _scan_cursor:
+            _scan_cursor = ""
+            candidate = storage.due_intent(database, _scan_cursor)
         if candidate is None:
             return False
+        _scan_cursor = candidate["intent_id"]
         disposition, card = storage.try_lock_source(database, candidate["card_id"])
         if disposition == "busy":
             storage.delay_check_if_unlocked(database, candidate["intent_id"])
             return False
         if disposition == "missing":
-            intent = storage.intent(database, candidate["intent_id"], lock=True)
+            intent = storage.intent(database, candidate["intent_id"], lock=True, skip_locked=True)
             if intent is not None and intent["state"] in ("waiting_review", "ready"):
                 storage.set_held(database, intent["intent_id"], "source_missing")
                 return True
             return False
-        intent = storage.intent(database, candidate["intent_id"], lock=True)
+        intent = storage.intent(database, candidate["intent_id"], lock=True, skip_locked=True)
         if intent is None or intent["state"] not in ("waiting_review", "ready"):
             return False
         if intent["state"] == "ready":
