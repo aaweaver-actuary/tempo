@@ -574,8 +574,15 @@ The selected PGN activity-scope fixture reports 24 failures (18 incompatible cla
 signatures, six missing storage attributes); a separate environment lacked sqlglot
 and could not collect it. These observations do not establish runtime behavior.
 
-At this base revision, 74 of 289 tracked Python files in those trees remain
-outside the combined 215-file selections. The registry alone assigns owners;
+A thirty-ninth selection maps bounded background metric labels, diagnostic types,
+aggregation and transaction-fenced storage. Existing runtime snapshot and fixed
+bucket/shard dependencies remain visible; this is not runtime or native proof. The
+24 PGN activity-scope, nineteen earlier and ten missing-adapter fixture gaps remain
+unresolved. The diagnostics suite also has two unresolved label/runbook snapshot
+failures; these source-test results do not establish runtime behavior.
+
+At this base revision, 70 of 289 tracked Python files in those trees remain
+outside the combined 219-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

@@ -189,7 +189,8 @@
               "chess_helpers",
               "scheduling_review",
               "repertoire_snapshot",
-              "background_activity"
+              "background_activity",
+              "background_metrics"
             ]
           }
         }

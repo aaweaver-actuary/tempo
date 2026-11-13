@@ -2,6 +2,102 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "background-diagnostic-types",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/background_diagnostic_types.py#_timestamp_with_timezone"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/background_metric_kinds.py",
+        "backend/app/services/background_diagnostic_types.py"
+      ],
+      "ownershipRole": "Define bounded background diagnostic primitives",
+      "dependencyNotes": [
+        "Finite work kind/state labels and Pydantic timezone validation support existing metrics/runtime response contracts."
+      ],
+      "censusScope": "background_metrics"
+    },
+    {
+      "id": "background-metrics-service",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/background_metrics.py#metric_shard",
+        "backend/app/services/background_metrics.py#increment",
+        "backend/app/services/background_metrics.py#record_event_counts",
+        "backend/app/services/background_metrics.py#BackgroundDiagnostics"
+      ],
+      "dependencies": [
+        "background-diagnostic-types",
+        "background-metrics-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/background_metrics.py"
+      ],
+      "ownershipRole": "Aggregate bounded background metrics",
+      "dependencyNotes": [
+        "Validates counters and finite labels, uses fixed buckets and shards, caller transaction and existing runtime snapshot; it does not expose raw payloads."
+      ],
+      "censusScope": "background_metrics"
+    },
+    {
+      "id": "background-metrics-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/lifecycle",
+      "publicExports": [
+        "database/tempo_storage/lifecycle/background_metrics.py#record_metric_delta",
+        "database/tempo_storage/lifecycle/background_metrics.py#write_metric_delta",
+        "database/tempo_storage/lifecycle/background_metrics.py#task_kind"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/lifecycle/background_metrics.py"
+      ],
+      "ownershipRole": "Buffer and persist background metric deltas",
+      "dependencyNotes": [
+        "Caller-owned transaction buffers validated metrics and flushes sharded SQL updates in deterministic lock order; task kind lookup stays in storage."
+      ],
+      "censusScope": "background_metrics"
+    },
+    {
       "id": "background-activity-service",
       "type": "integration",
       "maintainer": "Tempo",
