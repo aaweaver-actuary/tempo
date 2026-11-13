@@ -17,7 +17,7 @@ from app.repertoire.changes.ports import ChangeError
 from tempo_storage.authored_repertoires import (
     product_changes as change_storage,
 )
-from app.contracts.transport.authored_lines import BranchRequest, RemoveBranchRequest
+from app.contracts.transport.authored_lines import BranchRequest, RemoveBranchRequest, reject_retired_coverage
 from tempo_storage.postgres import PostgresConnection
 from tempo_storage.authored_repertoires import branches as storage
 from app.chess.cards import card_id
@@ -30,6 +30,7 @@ from .services.repertoire_integrity import integrity_summary
 def add_repertoire_branch(
     database: PostgresConnection, payload: dict[str, Any]
 ) -> dict[str, Any]:
+    reject_retired_coverage(payload.get("source_gap_id"))
     request = BranchRequest.model_validate(payload)
     try:
         board = chess.Board(request.starting_fen)
