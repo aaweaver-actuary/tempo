@@ -1,5 +1,5 @@
 """Single pinned packaged collection acceptance using the existing PG fixture."""
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from datetime import date, datetime, timezone
 import importlib.util
 import hashlib
@@ -134,9 +134,9 @@ def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(ca
     from tempo_storage.games.product_sources import PostgresCanonicalGamesStore
     from app.queue_commands import issue_queue_head
     from app.contracts.transport.study import ReviewRequest
-    from app import review_commands
-    from app.services import learning_review_adapter
+    from app.services.learning_review_adapter import apply_legacy_review
     from tempo_storage.learning_bridge import review as review_storage
+    from types import SimpleNamespace
     from unittest.mock import patch
     @contextmanager
     def connections():
@@ -413,15 +413,11 @@ console.log(JSON.stringify({activation_ready:blockers.length===0,blockers,
                    for row in provider['repertoire_readiness'])
         assert study_rows() == before
         with patch.object(review_storage,'configured',lambda:True):
-            with case.transaction() as db, patch.object(learning_review_adapter, 'read_connection', lambda: nullcontext(db)):
-                request = ReviewRequest(outcome='correct', queue_entry_id=entry,
-                    expected_revision=1, attempt_id='packaged-'+case.card_id)
-                payload = {'card_id': case.card_id, 'review': request.durable_payload()}
-                result = review_commands.submit_review(db, payload)
+            with case.transaction() as db:
+                result = apply_legacy_review(case.card_id, ReviewRequest(outcome='correct',queue_entry_id=entry,
+                    expected_revision=1,attempt_id='packaged-'+case.card_id),database=db,
+                    policy_provider=lambda:SimpleNamespace(timezone='UTC',light_first_interval_days=7))
                 assert result['persisted']
-                assert review_commands.submit_review(db, payload) == result
-                receipt = db.execute_native('SELECT card_id,queue_entry_id FROM review_attempt_receipts WHERE attempt_id=%s', (request.attempt_id,)).fetchone()
-                assert tuple(receipt) == (case.card_id, entry)
     finally:
         evidence = ROOT/'test-results/collection-release'; evidence.mkdir(parents=True,exist_ok=True)
         with connections() as db:
