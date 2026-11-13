@@ -238,6 +238,8 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
                 "ALTER TABLE cards ADD COLUMN fsrs_card_json text, ADD COLUMN state text"
             )
             raw.execute("""CREATE TABLE tempo_schema_migrations(version integer PRIMARY KEY);
+                CREATE TABLE settings(id integer PRIMARY KEY, timezone text NOT NULL);
+                INSERT INTO settings VALUES(1,'UTC');
                 CREATE TABLE repertoire_integrity_state(repertoire_id text PRIMARY KEY,
                     status text,scan_status text,scan_generation text,checked_at text,
                     scan_completed_sources bigint,scan_total_sources bigint,scan_error text);
@@ -288,6 +290,9 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
                     self.raw = raw
 
                 def execute_native(self, query, params=()):
+                    return self.raw.execute(query, params)
+
+                def execute(self, query, params=()):
                     return self.raw.execute(query, params)
 
             port = Port(raw)
@@ -367,6 +372,8 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
                 refresh, "_admit_one_prioritized_opening", lambda *a: False
             )
             raw.execute("BEGIN")
+            _, authoritative_day = refresh._queue_slice_current_day(port)
+            assert authoritative_day == task["payload"]["queue_date"]
             assert refresh.execute_postgres_queue_refresh_slice(task)
             raw.execute("COMMIT")
             assert (
