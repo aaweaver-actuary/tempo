@@ -65,8 +65,8 @@ if (process.env.TEMPO_RELEASE_CANDIDATE_MODE) {
 }
 
 if (stages.includes("deployment_lifecycle") || stages.includes("deployment_lifecycle_current")) {
-  process.env.TEMPO_LIFECYCLE_SCHEMA62_IMAGES ??= resolve("config/lifecycle-images/schema62-linux-arm64.json");
-  if (process.env.TEMPO_LIFECYCLE_P0_59_ONLY !== "1" && !process.env.TEMPO_LIFECYCLE_SCHEMA61_IMAGES
+  if (stages.includes("deployment_lifecycle")) process.env.TEMPO_LIFECYCLE_SCHEMA62_IMAGES ??= resolve("config/lifecycle-images/schema62-linux-arm64.json");
+  if (stages.includes("deployment_lifecycle") && process.env.TEMPO_LIFECYCLE_P0_59_ONLY !== "1" && !process.env.TEMPO_LIFECYCLE_SCHEMA61_IMAGES
       && ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"].some(name => process.env[name]))
     throw new Error("Automatic historical image preparation does not support inherited Docker host or TLS overrides; supply an explicit historical manifest or use a named context.");
   checkLifecycleSource({ profile: options.mode === "lifecycle-current" ? "current65" : "full" });

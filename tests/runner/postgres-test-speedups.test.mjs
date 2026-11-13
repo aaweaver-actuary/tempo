@@ -285,6 +285,23 @@ test("current lifecycle invokes the explicitly bounded current65 checker profile
   assert.equal(calls.length, 1); assert.equal(calls[0].profile, "current65");
 });
 
+test("current65 preflight does not inject the historical schema62 image default", () => {
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf('if (stages.includes("deployment_lifecycle") || stages.includes("deployment_lifecycle_current")) {');
+  const end = source.indexOf("\n// Docker Desktop only shares", start);
+  assert(start >= 0 && end > start);
+  for (const historical of [false, true]) {
+    const env = {}, seen = [];
+    runInNewContext(source.slice(start, end), { stages: [historical ? "deployment_lifecycle" : "deployment_lifecycle_current"],
+      process: { env }, resolve, options: { mode: historical ? "lifecycle" : "lifecycle-current" }, checkLifecycleSource: input => seen.push({ ...input, env: { ...env } }) });
+    assert.equal(seen[0].profile, historical ? "full" : "current65");
+    assert.equal(Boolean(env.TEMPO_LIFECYCLE_SCHEMA62_IMAGES), historical);
+  }
+  const env = { TEMPO_LIFECYCLE_SCHEMA62_IMAGES: "/explicit-override" };
+  assert.throws(() => runInNewContext(source.slice(start, end), { stages: ["deployment_lifecycle_current"], process: { env }, resolve,
+    options: { mode: "lifecycle-current" }, checkLifecycleSource: () => { if (env.TEMPO_LIFECYCLE_SCHEMA62_IMAGES) throw new Error("historical override refused"); } }), /historical override refused/);
+});
+
 test("current lifecycle rejects unsupported source and fixture overrides before admission", () => {
   const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const start = source.indexOf('if (options.mode === "lifecycle-current") {');
