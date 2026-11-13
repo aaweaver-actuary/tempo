@@ -1365,3 +1365,30 @@ it("pr285_discarded_review_race_never_reports_a_saved_grade_or_clears_failure_ev
   expect(fetcher).toHaveBeenCalledOnce();
   expect(await store.get("review:discard-race")).toMatchObject({ state: "discarded", receipt: { persisted: false } });
 });
+
+it.each(["missing", "foreign"])("%s advisory marker acknowledgment cannot stand in for the genuine guided review", async kind => {
+  const original = { backendId: "guided-marker", queueEntryId: 899, attemptId: "marker-original",
+    completedAt: "2026-10-08T12:00:00Z", outcome: "correct" as const, guided: true, expectedRevision: 3 };
+  await enqueuePendingReview(original);
+  const calls: { url: string; init?: RequestInit }[] = [];
+  let retry = false;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input); calls.push({ url, init });
+    if (url.endsWith("/fail")) {
+      expect(new Headers(init?.headers).get("Idempotency-Key")).toBe("queue-fail:marker-original");
+      if (retry) return Response.json({ detail: "stale marker" }, { status: 409 });
+      return Response.json(kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" }, { status: 202 });
+    }
+    if (url.endsWith("/review")) return Response.json({ persisted: true, review_id: 314 });
+    return Response.json({ state: "unknown" });
+  }));
+  await expect(flushPendingReviews()).rejects.toThrow();
+  expect(pendingReviews()).toContainEqual(expect.objectContaining({ attemptId: original.attemptId }));
+  expect(calls.filter(call => call.url.endsWith("/review"))).toHaveLength(0);
+  retry = true;
+  const result = await flushPendingReviews();
+  expect(result.persistedAttemptIds).toEqual([original.attemptId]);
+  expect(calls.filter(call => call.url.endsWith("/review"))).toHaveLength(1);
+  expect(calls.some(call => call.url.includes("foreign"))).toBe(false);
+  expect(pendingReviews()).toEqual([]);
+});

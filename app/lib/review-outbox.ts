@@ -7,7 +7,7 @@ import type { IntentRecord } from "@tempo/browser-intents";
 import { studyIntentRecords, studyIntentStore, isStudyIntentStoreCurrent, updateStudyIntent, refreshStudyIntents, immutableReviewPayload } from "../../database/browser/study-intent-storage";
 import { confirmReviewSaveNotice, reportReviewSaveStatus } from "./review-save-notice";
 import type { PreparedNextIdentity, PreparedContinuation } from "./prepared-review-continuation";
-import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
+import { confirmOriginalOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
 import { publishNotification, notifications, resolveNotification } from "./notifications";
 import { clearTrainingFailureAfterReview } from "./training-failure-outbox";
 
@@ -260,7 +260,7 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
               body: JSON.stringify({ card_id: review.backendId, expected_revision: review.expectedRevision }), signal,
             });
             requireCurrent();
-            const confirmed = await confirmOperationResponse(marker, { signal, client: transport.client });
+            const confirmed = await confirmOriginalOperationResponse(marker, `queue-fail:${attemptId}`, { signal, client: transport.client });
             requireCurrent();
             return confirmed;
           }, parentSignal);
