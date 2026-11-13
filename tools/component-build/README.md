@@ -439,8 +439,18 @@ facts. Assets, calendar, queue locks and task/main composition remain visible
 edges. This source map is not native or runtime qualification. The three PGN,
 three legacy and one retained mutation fixture failures remain unresolved.
 
-At this base revision, 168 of 291 tracked Python files in those trees remain
-outside the combined 123-file selections. The registry alone assigns owners;
+A twentieth selection maps Study queue commands, placement and foreground SQL,
+plus the queue-position lock. Issuance uses prepared-head and issued-origin
+identity, card/date locks and owner fences; placement retains existing protected
+order and promotion checks. Gateway, durable tasks, review, Tactics, split,
+availability and task/main composition remain external edges. These are source
+roles, not native proof. The three PGN, three legacy and one retained mutation
+fixture failures remain unresolved. The focused queue command boundary suite also
+has eight unresolved failures: missing `postgres_sql` (one), SQLite rejection of
+PostgreSQL placeholders (four), and missing `is_postgres_connection` (three).
+
+At this base revision, 164 of 291 tracked Python files in those trees remain
+outside the combined 127-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

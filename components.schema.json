@@ -170,7 +170,8 @@
               "repertoire_changes",
               "card_branch_edits",
               "repertoire_controls",
-              "tactics"
+              "tactics",
+              "queue_commands"
             ]
           }
         }

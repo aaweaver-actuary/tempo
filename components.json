@@ -2,6 +2,138 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "study-queue-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/queue_commands.py#validate_available_attempt",
+        "backend/app/queue_commands.py#issue_queue_head",
+        "backend/app/queue_commands.py#mark_attempt_failed",
+        "backend/app/queue_commands.py#bury_queue_entry",
+        "backend/app/queue_commands.py#ensure_current_queue",
+        "backend/app/queue_commands.py#request_queue_refresh_in_transaction"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "study-queue-command-storage",
+        "study-queue-position-lock",
+        "durable-task-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/queue_commands.py"
+      ],
+      "ownershipRole": "Register and apply Study queue commands",
+      "dependencyNotes": [
+        "Task composition registers issue_head, attempt_failed, bury and ensure_current. Uses prepared head, current Study day, card/date locks, issued origin and revision, position owner fences, queue ordering and durable refresh in caller transaction."
+      ],
+      "censusScope": "queue_commands"
+    },
+    {
+      "id": "study-queue-placement",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study",
+      "publicExports": [
+        "backend/app/study/queue_placement.py#ensure_card_queued_after"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/queue_placement.py"
+      ],
+      "ownershipRole": "Place cards in the Study queue",
+      "dependencyNotes": [
+        "Uses Study review storage, presentation and priority ordering, and previous-order preservation; validates prepared promotion identity and ownership before applying positions in caller transaction."
+      ],
+      "censusScope": "queue_commands"
+    },
+    {
+      "id": "study-queue-command-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/commands",
+      "publicExports": [
+        "database/tempo_storage/commands/queue.py#prepare_available_attempt",
+        "database/tempo_storage/commands/queue.py#prepare_queue_head",
+        "database/tempo_storage/commands/queue.py#issued_origin",
+        "database/tempo_storage/commands/queue.py#stamp_issued_head",
+        "database/tempo_storage/commands/queue.py#mark_attempt_failed",
+        "database/tempo_storage/commands/queue.py#bury_attempt_card",
+        "database/tempo_storage/commands/queue.py#current_projection"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/commands/queue.py"
+      ],
+      "ownershipRole": "Read and mutate foreground queue facts",
+      "dependencyNotes": [
+        "Caller-transaction SQL handles attempt/card locks, availability and issued-origin identity, issuance stamp, failure, burial and refresh projection; availability and queue refresh SQL remain external dependencies."
+      ],
+      "censusScope": "queue_commands"
+    },
+    {
+      "id": "study-queue-position-lock",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage",
+      "publicExports": [
+        "database/tempo_storage/queue_position_lock.py#lock_queue_date_for_position"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/queue_position_lock.py"
+      ],
+      "ownershipRole": "Serialize queue position allocation",
+      "dependencyNotes": [
+        "Caller-transaction native SQL acquires shared prefix-transition reservation before the per-day queue position advisory lock; foreground, background, Study and lifecycle consumers share it."
+      ],
+      "censusScope": "queue_commands"
+    },
+    {
       "id": "tactics-command",
       "type": "integration",
       "maintainer": "Tempo",
