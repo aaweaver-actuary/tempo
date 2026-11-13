@@ -185,7 +185,8 @@
               "position_grade_effect",
               "position_plan",
               "position_source",
-              "captured_tactic"
+              "captured_tactic",
+              "chess_helpers"
             ]
           }
         }

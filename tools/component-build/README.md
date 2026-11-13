@@ -543,8 +543,14 @@ queue placement; the Tactics capture owner retains the original receipt. Existin
 daily and queue locks and caller transaction remain visible. This source map is
 not native proof. Nineteen previously reported fixture failures remain unresolved.
 
-At this base revision, 97 of 291 tracked Python files in those trees remain
-outside the combined 194-file selections. The registry alone assigns owners;
+A thirty-fifth selection maps backend chess identity, opening segment and PGN
+helpers. The existing card ID facade imports chess-core; python-chess and graph,
+evidence, Tactics, Study and authoring consumers remain visible. This source map
+is not a standalone package or runtime qualification. Nineteen previously reported
+fixture failures remain unresolved.
+
+At this base revision, 92 of 291 tracked Python files in those trees remain
+outside the combined 199-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

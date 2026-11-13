@@ -2,6 +2,104 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "backend-chess-identity",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/chess",
+      "publicExports": [
+        "backend/app/chess/position_identity.py#position_key"
+      ],
+      "dependencies": [
+        "chess-core"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/chess/__init__.py",
+        "backend/app/chess/cards.py",
+        "backend/app/chess/position_identity.py"
+      ],
+      "ownershipRole": "Expose card and position identity helpers",
+      "dependencyNotes": [
+        "cards.py imports the existing chess-core card_id without wrapping it; position identity uses python-chess. Tactics, graph, Study and authoring are existing consumers."
+      ],
+      "censusScope": "chess_helpers"
+    },
+    {
+      "id": "backend-opening-segments",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/chess",
+      "publicExports": [
+        "backend/app/chess/opening_segments.py#stable_key",
+        "backend/app/chess/opening_segments.py#decision_identity",
+        "backend/app/chess/opening_segments.py#presentation_occurrences",
+        "backend/app/chess/opening_segments.py#segment_preview"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/chess/opening_segments.py"
+      ],
+      "ownershipRole": "Compute opening segment and decision facts",
+      "dependencyNotes": [
+        "Uses python-chess and stable serialized keys; graph and opening evidence consumers retain existing identities and semantics."
+      ],
+      "censusScope": "chess_helpers"
+    },
+    {
+      "id": "backend-pgn-helpers",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/chess",
+      "publicExports": [
+        "backend/app/chess/pgn.py#ParsedLine",
+        "backend/app/chess/pgn.py#ParsedAnnotation",
+        "backend/app/chess/pgn.py#parse_pgn",
+        "backend/app/chess/pgn.py#prefix_through_user_moves",
+        "backend/app/chess/pgn.py#ends_on_trained_move"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/chess/pgn.py"
+      ],
+      "ownershipRole": "Parse PGN and authored line facts",
+      "dependencyNotes": [
+        "Uses python-chess PGN and annotations; PGN import and queue/graph callers own source and persistence decisions."
+      ],
+      "censusScope": "chess_helpers"
+    },
+    {
       "id": "study-capture-interface",
       "type": "integration",
       "maintainer": "Tempo",
