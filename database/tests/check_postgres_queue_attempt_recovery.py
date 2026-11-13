@@ -7,6 +7,8 @@ _REPOSITORY = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPOSITORY))
 sys.path.insert(0, str(_REPOSITORY / "database"))
 sys.path.insert(0, str(_REPOSITORY / "backend"))
+
+from tempo_storage.redis_control import admission as admission_storage
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
@@ -451,8 +453,8 @@ def _owned_queue_refresh_admission():
     namespace = "tempo:test:queue-preparation:" + uuid.uuid4().hex
     owned_keys = namespace + ":foreground", namespace + ":background"
     try:
-        with patch.object(redis_admission_gate, "_FOREGROUND_KEY", owned_keys[0]), \
-                patch.object(redis_admission_gate, "_BACKGROUND_KEY", owned_keys[1]):
+        with patch.object(admission_storage, "_FOREGROUND_KEY", owned_keys[0]), \
+                patch.object(admission_storage, "_BACKGROUND_KEY", owned_keys[1]):
             yield
     finally:
         redis_admission_gate.client().delete(*owned_keys)

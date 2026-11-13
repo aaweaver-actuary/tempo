@@ -1,4 +1,8 @@
 import type * as z from "zod";
+import { parseData as parseValidation, validRecords as validValidationRecords,
+  type ValidationEffects } from "../domain/validation";
+import type { ValidationReporter } from "../domain/validation";
+export type { ValidationReportContext, ValidationReporter } from "../domain/validation";
 
 export type DataDiagnostic = {
   source: string;
@@ -7,19 +11,6 @@ export type DataDiagnostic = {
   raw: unknown;
   recordedAt: string;
 };
-
-export type ValidationReportContext = {
-  kind: "data-validation";
-  source: string;
-  operation: "schema validation";
-  endpoint?: string;
-  notify: boolean;
-};
-
-export type ValidationReporter = (
-  failure: Error,
-  context: ValidationReportContext,
-) => void;
 
 let diagnostics: readonly DataDiagnostic[] = [];
 const listeners = new Set<() => void>();
@@ -72,57 +63,26 @@ export function reportDataDiagnostic(
   notifyDiagnostics();
 }
 
-function recordIdentity(raw: unknown): string | undefined {
-  if (typeof raw !== "object" || raw === null) return undefined;
-  for (const key of ["id", "PuzzleId", "queue_entry_id", "key"]) {
-    const value = Reflect.get(raw, key);
-    if (typeof value === "string" || typeof value === "number")
-      return String(value);
-  }
+function collectorEffects(shouldPublishDiagnostics?: () => boolean, reporter?: ValidationReporter): ValidationEffects {
+  return {
+    shouldPublishDiagnostics,
+    reportError: reporter,
+    reportIssue: ({ source, raw, message, recordId }) => reportDataDiagnostic(source, raw, message, recordId),
+  };
 }
 
 export function parseData<T>(
-  schema: z.ZodType<T>,
-  raw: unknown,
-  source: string,
-  endpoint?: string,
-  debugSource = "validated-data",
-  shouldPublishDiagnostics?: () => boolean,
-  reporter?: ValidationReporter,
+  schema: z.ZodType<T>, raw: unknown, source: string, endpoint?: string,
+  debugSource = "validated-data", shouldPublishDiagnostics?: () => boolean, reporter?: ValidationReporter,
 ): T {
-  const result = schema.safeParse(raw);
-  if (result.success) return result.data;
-  const message = result.error.issues
-    .map((issue) => `${issue.path.join(".") || "record"}: ${issue.message}`)
-    .join("; ");
-  if (shouldPublishDiagnostics?.() !== false)
-    reportDataDiagnostic(source, raw, message, recordIdentity(raw));
-  const failure = new Error(`Invalid ${source} data: ${message}`);
-  reporter?.(failure, {
-    kind: "data-validation",
-    source: debugSource,
-    operation: "schema validation",
-    endpoint,
-    notify: shouldPublishDiagnostics?.() !== false,
+  return parseValidation(schema, raw, source, {
+    endpoint, debugSource, effects: collectorEffects(shouldPublishDiagnostics, reporter),
   });
-  throw failure;
 }
 
 export function validRecords<T>(
-  schema: z.ZodType<T>,
-  records: readonly unknown[],
-  source: string,
-  shouldPublishDiagnostics?: () => boolean,
-  reporter?: ValidationReporter,
+  schema: z.ZodType<T>, records: readonly unknown[], source: string,
+  shouldPublishDiagnostics?: () => boolean, reporter?: ValidationReporter,
 ): T[] {
-  return records.flatMap((raw) => {
-    try {
-      return [parseData(
-        schema, raw, source, undefined, undefined, shouldPublishDiagnostics,
-        reporter,
-      )];
-    } catch {
-      return [];
-    }
-  });
+  return validValidationRecords(schema, records, source, collectorEffects(shouldPublishDiagnostics, reporter));
 }

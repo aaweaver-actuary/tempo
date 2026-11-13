@@ -10,6 +10,7 @@ import redis
 
 from app.celery_app import celery_app
 from app.services import background_wakes
+from tempo_storage.redis_control.wake_runtime import wakes as wake_storage
 
 
 @pytest.fixture
@@ -420,13 +421,13 @@ def test_fast_wake_execution_preserves_newer_pending_ownership(
     def fast_publish(app, name, args=None, kwargs=None, **options):
         result = original(app, name, args, kwargs, **options)
         assert background_wakes.consume_wake(app.conf.broker_url, name, result.id)
-        values[background_wakes._KEY_PREFIX + name] = "newer-owner"
+        values[background_wakes.ownership_keys(name)[0]] = "newer-owner"
         return result
 
     monkeypatch.setattr(Celery, "send_task", fast_publish)
     result = celery_app.send_task(task_name)
     assert result.id == published[0][3]["task_id"]
-    assert values[background_wakes._KEY_PREFIX + task_name] == "newer-owner"
+    assert values[background_wakes.ownership_keys(task_name)[0]] == "newer-owner"
 
 
 def deliver_wake(token, monkeypatch, useful_executions):
@@ -447,7 +448,7 @@ def test_slow_publication_preserves_newer_owner_and_fences_obsolete_execution(
 ):
     published, values = wake_broker
     task_name = "app.tasks.poll_background_tasks"
-    ownership_key = background_wakes._KEY_PREFIX + task_name
+    ownership_key = background_wakes.ownership_keys(task_name)[0]
     original_publish = Celery.send_task
     useful_executions = []
 
@@ -478,7 +479,7 @@ def test_repeated_expired_publications_cannot_accumulate_unowned_deliveries(
 ):
     published, values = wake_broker
     task_name = "app.tasks.poll_background_tasks"
-    ownership_key = background_wakes._KEY_PREFIX + task_name
+    ownership_key = background_wakes.ownership_keys(task_name)[0]
     original_publish = Celery.send_task
 
     def expire_before_enqueue(app, name, args=None, kwargs=None, **options):
@@ -500,7 +501,7 @@ def test_late_publication_cannot_revive_after_successor_consumption(
 ):
     published, values = wake_broker
     task_name = "app.tasks.poll_background_tasks"
-    ownership_key = background_wakes._KEY_PREFIX + task_name
+    ownership_key = background_wakes.ownership_keys(task_name)[0]
     original_publish = Celery.send_task
     useful_executions = []
 
@@ -528,7 +529,7 @@ def test_stranded_persistent_wake_recovers_on_next_request(wake_broker, monkeypa
     replacement = celery_app.send_task(task_name, task_id="recovery")
     assert replacement.id != first.id
     assert len(published) == 1
-    assert values[background_wakes._KEY_PREFIX + task_name] == replacement.id
+    assert values[background_wakes.ownership_keys(task_name)[0]] == replacement.id
     useful_executions = []
     assert not deliver_wake(first.id, monkeypatch, useful_executions)
     assert deliver_wake(replacement.id, monkeypatch, useful_executions)
@@ -550,7 +551,7 @@ def test_committed_wake_survives_publication_response_failure(wake_broker, monke
     with pytest.raises(OperationalError, match="response lost"):
         celery_app.send_task(task_name, task_id="committed")
     assert len(published) == 1
-    assert values.get(background_wakes._KEY_PREFIX + task_name) == "committed"
+    assert values.get(background_wakes.ownership_keys(task_name)[0]) == "committed"
     useful_executions = []
     assert deliver_wake("committed", monkeypatch, useful_executions)
     assert useful_executions == ["committed"]
@@ -561,7 +562,7 @@ def test_failed_slow_publisher_cannot_cancel_newer_owner(wake_broker, monkeypatc
 
     published, values = wake_broker
     task_name = "app.tasks.poll_background_tasks"
-    ownership_key = background_wakes._KEY_PREFIX + task_name
+    ownership_key = background_wakes.ownership_keys(task_name)[0]
     original_publish = Celery.send_task
 
     def fail_after_successor(app, name, args=None, kwargs=None, **options):
@@ -591,7 +592,7 @@ def test_existing_unacked_wake_remains_authoritative(wake_broker):
     server.unacked[metadata["tag"]] = metadata["message"]
     assert celery_app.send_task(task_name).id == first.id
     assert len(published) == 1
-    assert values[background_wakes._KEY_PREFIX + task_name] == first.id
+    assert values[background_wakes.ownership_keys(task_name)[0]] == first.id
 
 
 def test_payload_kwargs_callbacks_and_unmarked_tokens_keep_standard_transport(
@@ -710,7 +711,7 @@ def test_marked_requirement_transfers_to_recovered_owner(wake_broker, lost_phase
     server = background_wakes.client(celery_app.conf.broker_url)
     keys = background_wakes.ownership_keys(task_name)
     if lost_phase == "reserved":
-        server.eval(background_wakes._RESERVE, 2, *keys, "crashed", "1")
+        wake_storage.reserve_wake(server, keys, "crashed", "1")
         del values[keys[0]]
     else:
         celery_app.send_task(

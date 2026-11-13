@@ -7,6 +7,8 @@ _REPOSITORY = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPOSITORY))
 sys.path.insert(0, str(_REPOSITORY / "database"))
 sys.path.insert(0, str(_REPOSITORY / "backend"))
+
+from tempo_storage.redis_control import admission as admission_storage
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
@@ -450,7 +452,7 @@ def test_postgres_opening_checkpoint_restart_recomputes_original_receipt():
     from database.tests.check_postgres_graph_retention import owned_admission_scope
     from app.services import redis_admission_gate
     server = redis_admission_gate.client()
-    parent_foreground_key = redis_admission_gate._FOREGROUND_KEY
+    parent_foreground_key = admission_storage._FOREGROUND_KEY
     parent_activity_token = uuid.uuid4().hex
     admission_namespace = 'checkpoint-restart-' + uuid.uuid4().hex
     # Restart/identity is the invariant; unrelated API health/study activity
@@ -506,9 +508,9 @@ def _assert_owned_admission_cleanup():
 
     def record_owned_lease(script, *arguments):
         result = original_eval(script, *arguments)
-        if script == redis_admission_gate._REGISTER_FOREGROUND:
+        if script == admission_storage._REGISTER_FOREGROUND:
             owned_leases.add((arguments[1], arguments[3]))
-        elif script == redis_admission_gate._CLAIM_BACKGROUND and result:
+        elif script == admission_storage._CLAIM_BACKGROUND and result:
             owned_leases.add((arguments[2], arguments[4]))
         return result
 
@@ -526,7 +528,7 @@ def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_repl
     from database.tests.check_postgres_graph_retention import owned_admission_scope
     from app.services import redis_admission_gate
     server = redis_admission_gate.client()
-    parent_foreground_key = redis_admission_gate._FOREGROUND_KEY
+    parent_foreground_key = admission_storage._FOREGROUND_KEY
     parent_activity_token = uuid.uuid4().hex
     # Unrelated activity outlives this bounded proof and makes accidental parent
     # admission fail at setup or recovery, independent of health-probe timing.
@@ -566,7 +568,7 @@ def _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay():
     original_eval = server.eval
     def observe_eval(script, *arguments):
         result = original_eval(script, *arguments)
-        if script == redis_admission_gate._CLAIM_BACKGROUND and result == 0 and get_ident() == preparing_worker_thread_id:
+        if script == admission_storage._CLAIM_BACKGROUND and result == 0 and get_ident() == preparing_worker_thread_id:
             admission_denied.set()
         return result
     def prepare(saved_payload):
@@ -705,7 +707,7 @@ def _prove_opening_attempt_http_admission_preserves_foreground_diagnostics():
         admission_denied, evidence_sql_started = Event(), Event()
         def observe_eval(script, *arguments):
             result = original_eval(script, *arguments)
-            if script == redis_admission_gate._CLAIM_BACKGROUND and result == 0:
+            if script == admission_storage._CLAIM_BACKGROUND and result == 0:
                 admission_denied.set()
             return result
         @contextmanager

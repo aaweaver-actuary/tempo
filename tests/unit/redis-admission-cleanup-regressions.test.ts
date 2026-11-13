@@ -1,3 +1,5 @@
+import { createRequire } from "node:module";
+import { writeEvidenceThenCleanup } from "../browser/support/redis-admission-evidence";
 // @vitest-environment node
 import { expect, it } from "vitest";
 import { RedisAdmissionCleanup } from "../browser/support/redis-admission-cleanup";
@@ -162,4 +164,23 @@ it.each(["evidence write", "evidence attachment"])("Redis admission %s failure i
   const { cleanup, calls } = harness();
   await expect(cleanup.run(async () => { throw evidenceFailure; })).rejects.toBe(evidenceFailure);
   expect(calls).toEqual(["page", "fixture"]);
+});
+
+
+it("Playwright serializer retains original and nested cleanup failures", async () => {
+  const original = new Error("original scenario failure");
+  const write = new Error("inventory evidence failure");
+  const fixtureFailure = new Error("fixture cleanup failure");
+  const pageFailure = new Error("page cleanup failure");
+  const cleanup = new RedisAdmissionCleanup({
+    stopRedis: async () => {}, pauseRedis: async () => {}, startRedis: async () => {}, unpauseRedis: async () => {},
+    closePage: async () => { throw pageFailure; },
+    cleanupFixture: async () => writeEvidenceThenCleanup(() => { throw write; }, async () => { throw fixtureFailure; }),
+  });
+  let failure: unknown;
+  try { await cleanup.run(async () => { throw original; }); } catch (error) { failure = error; }
+  const { serializeError } = createRequire(import.meta.url)("playwright/lib/util") as { serializeError: (error: unknown) => unknown };
+  const serialized = JSON.stringify(serializeError(failure));
+  for (const expected of ["original scenario failure", "inventory evidence failure", "fixture cleanup failure", "page cleanup failure"])
+    expect(serialized).toContain(expected);
 });

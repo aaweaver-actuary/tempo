@@ -1,5 +1,7 @@
 """A disposable admission proof must distinguish owned leases from API probes."""
 
+from tempo_storage.redis_control import admission as admission_storage
+
 import importlib.util
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
@@ -29,13 +31,13 @@ def admission_proof(monkeypatch):
     class AdmissionServer:
         def __init__(self):
             self.leases = {
-                (redis_admission_gate._FOREGROUND_KEY, "independent-api-probe"): 1
+                (admission_storage._FOREGROUND_KEY, "independent-api-probe"): 1
             }
 
         def eval(self, script, *arguments):
-            if script == redis_admission_gate._REGISTER_FOREGROUND:
+            if script == admission_storage._REGISTER_FOREGROUND:
                 self.leases[(arguments[1], arguments[3])] = 1
-            elif script == redis_admission_gate._CLAIM_BACKGROUND:
+            elif script == admission_storage._CLAIM_BACKGROUND:
                 self.leases[(arguments[2], arguments[4])] = 1
             return 1
 
@@ -62,7 +64,7 @@ def test_admission_proof_cleanup_ignores_independent_foreground_probe(admission_
             assert len(server.leases) == 2
         assert len(server.leases) == 1
     assert (
-        server.zscore(redis_admission_gate._FOREGROUND_KEY, "independent-api-probe")
+        server.zscore(admission_storage._FOREGROUND_KEY, "independent-api-probe")
         == 1
     )
 
@@ -74,25 +76,25 @@ def test_admission_proof_cleanup_rejects_owned_lease_leaks(admission_proof, work
         with proof._assert_owned_admission_cleanup():
             if work_class == "foreground":
                 server.eval(
-                    redis_admission_gate._REGISTER_FOREGROUND,
+                    admission_storage._REGISTER_FOREGROUND,
                     1,
-                    redis_admission_gate._FOREGROUND_KEY,
+                    admission_storage._FOREGROUND_KEY,
                     0,
                     "leaked-foreground",
                     30_000,
                 )
             else:
                 server.eval(
-                    redis_admission_gate._CLAIM_BACKGROUND,
+                    admission_storage._CLAIM_BACKGROUND,
                     2,
-                    redis_admission_gate._FOREGROUND_KEY,
-                    redis_admission_gate._BACKGROUND_KEY,
+                    admission_storage._FOREGROUND_KEY,
+                    admission_storage._BACKGROUND_KEY,
                     0,
                     "leaked-background",
                     5_000,
                 )
     assert (
-        server.zscore(redis_admission_gate._FOREGROUND_KEY, "independent-api-probe")
+        server.zscore(admission_storage._FOREGROUND_KEY, "independent-api-probe")
         == 1
     )
 
@@ -117,8 +119,8 @@ def test_checkpoint_http_proof_isolates_receipt_setup_from_parent_foreground(
 
     proof, _unused_server = admission_proof
     parent_keys = (
-        redis_admission_gate._FOREGROUND_KEY,
-        redis_admission_gate._BACKGROUND_KEY,
+        admission_storage._FOREGROUND_KEY,
+        admission_storage._BACKGROUND_KEY,
     )
     parent_lease = (parent_keys[0], "independent-api-probe")
     setup_events, writer_entries, proof_keys = [], [], []
@@ -129,9 +131,9 @@ def test_checkpoint_http_proof_isolates_receipt_setup_from_parent_foreground(
             self.deleted_keys = []
 
         def eval(self, script, *arguments):
-            if script == redis_admission_gate._REGISTER_FOREGROUND:
+            if script == admission_storage._REGISTER_FOREGROUND:
                 self.leases[(arguments[1], arguments[3])] = 1
-            elif script == redis_admission_gate._CLAIM_BACKGROUND:
+            elif script == admission_storage._CLAIM_BACKGROUND:
                 if any(key == arguments[1] for key, _token in self.leases):
                     return 0
                 self.leases[(arguments[2], arguments[4])] = 1
@@ -210,7 +212,7 @@ def test_checkpoint_http_proof_isolates_receipt_setup_from_parent_foreground(
             "checkpoint-setup", command_name, payload, background=True
         )[0]
         proof_keys.extend(
-            (redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY)
+            (admission_storage._FOREGROUND_KEY, admission_storage._BACKGROUND_KEY)
         )
         assert all(key not in parent_keys for key in proof_keys)
         assert len(writer_entries) == 1
@@ -256,8 +258,8 @@ def test_checkpoint_http_proof_isolates_receipt_setup_from_parent_foreground(
     ]
     assert len(writer_entries) == 3
     assert (
-        redis_admission_gate._FOREGROUND_KEY,
-        redis_admission_gate._BACKGROUND_KEY,
+        admission_storage._FOREGROUND_KEY,
+        admission_storage._BACKGROUND_KEY,
     ) == parent_keys
     assert server.deleted_keys == proof_keys
     assert server.leases == {parent_lease: 1}
@@ -289,8 +291,8 @@ def test_real_game_queue_proof_isolates_parent_admission_but_retains_own_foregro
     monkeypatch.setenv("TEMPO_TEST_INSTANCE", "disposable")
     monkeypatch.setattr(redis_admission_gate, "configured", lambda: True)
     parent_keys = (
-        redis_admission_gate._FOREGROUND_KEY,
-        redis_admission_gate._BACKGROUND_KEY,
+        admission_storage._FOREGROUND_KEY,
+        admission_storage._BACKGROUND_KEY,
     )
 
     class AdmissionServer:
@@ -299,9 +301,9 @@ def test_real_game_queue_proof_isolates_parent_admission_but_retains_own_foregro
             self.deleted_keys = []
 
         def eval(self, script, *arguments):
-            if script == redis_admission_gate._REGISTER_FOREGROUND:
+            if script == admission_storage._REGISTER_FOREGROUND:
                 self.leases[(arguments[1], arguments[3])] = 1
-            elif script == redis_admission_gate._CLAIM_BACKGROUND:
+            elif script == admission_storage._CLAIM_BACKGROUND:
                 if any(key == arguments[1] for key, _token in self.leases):
                     return 0
                 self.leases[(arguments[2], arguments[4])] = 1
@@ -328,8 +330,8 @@ def test_real_game_queue_proof_isolates_parent_admission_but_retains_own_foregro
     with expected_error:
         with getattr(proof, scope_name)():
             owned_keys = (
-                redis_admission_gate._FOREGROUND_KEY,
-                redis_admission_gate._BACKGROUND_KEY,
+                admission_storage._FOREGROUND_KEY,
+                admission_storage._BACKGROUND_KEY,
             )
             assert all(key not in parent_keys for key in owned_keys)
             with redis_admission_gate.background_lease():
@@ -343,8 +345,8 @@ def test_real_game_queue_proof_isolates_parent_admission_but_retains_own_foregro
             if fail_proof:
                 raise RuntimeError("Controlled proof failure")
     assert (
-        redis_admission_gate._FOREGROUND_KEY,
-        redis_admission_gate._BACKGROUND_KEY,
+        admission_storage._FOREGROUND_KEY,
+        admission_storage._BACKGROUND_KEY,
     ) == parent_keys
     assert server.deleted_keys == list(owned_keys)
     assert server.leases == {(parent_keys[0], "parent-request"): 1}
@@ -370,8 +372,8 @@ def test_checkpoint_parent_barrier_preserves_valid_redis_ttl_during_foreground_r
 
     proof, server = admission_proof
     parent_keys = (
-        redis_admission_gate._FOREGROUND_KEY,
-        redis_admission_gate._BACKGROUND_KEY,
+        admission_storage._FOREGROUND_KEY,
+        admission_storage._BACKGROUND_KEY,
     )
     original_leases = dict(server.leases)
 
@@ -379,10 +381,10 @@ def test_checkpoint_parent_barrier_preserves_valid_redis_ttl_during_foreground_r
     def private_scope(namespace):
         with monkeypatch.context() as isolated:
             isolated.setattr(
-                redis_admission_gate, "_FOREGROUND_KEY", namespace + ":foreground"
+                admission_storage, "_FOREGROUND_KEY", namespace + ":foreground"
             )
             isolated.setattr(
-                redis_admission_gate, "_BACKGROUND_KEY", namespace + ":background"
+                admission_storage, "_BACKGROUND_KEY", namespace + ":background"
             )
             yield
 
@@ -408,7 +410,7 @@ def test_checkpoint_parent_barrier_preserves_valid_redis_ttl_during_foreground_r
         assert lifetime > 120_000, "Parent barrier cannot cover the bounded proof"
         with monkeypatch.context() as external_worker:
             external_worker.setattr(
-                redis_admission_gate, "_FOREGROUND_KEY", parent_keys[0]
+                admission_storage, "_FOREGROUND_KEY", parent_keys[0]
             )
             with redis_admission_gate.foreground_lease():
                 assert all(
@@ -434,6 +436,6 @@ def test_checkpoint_parent_barrier_preserves_valid_redis_ttl_during_foreground_r
         getattr(proof, "test_postgres_opening_checkpoint_" + proof_name)()
     assert server.leases == original_leases
     assert (
-        redis_admission_gate._FOREGROUND_KEY,
-        redis_admission_gate._BACKGROUND_KEY,
+        admission_storage._FOREGROUND_KEY,
+        admission_storage._BACKGROUND_KEY,
     ) == parent_keys

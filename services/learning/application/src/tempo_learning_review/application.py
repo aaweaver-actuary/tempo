@@ -50,6 +50,11 @@ def _refresh_opening(store, context, card, result, *, priority_first=False):
 
 
 def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewContext, *, position=False) -> ReviewResult:
+    """Internal algorithm: caller owns transaction, locks and all submission fences.
+
+    This compatibility export is not a user submission boundary; use submit_review
+    for position ownership, evidence, receipt and continuation sequencing.
+    """
     original_request = {"outcome": command.outcome, "guided": command.guided}
     original_payload, request_json = _request_binding(command, context)
     completed_at = context.reviewed_at.isoformat() if command.recorded_at else None
@@ -101,7 +106,7 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
             reconciled = store.reconcile_completed(command, attempt, context, guided=command.guided,
                 revision=command.expected_revision, competing_review={
                     "outcome": recorded_request.get("outcome") if recorded_request else None,
-                    "completed_at": recorded_time})
+                    "completed_at": recorded_time}).as_dict()
             store.bind_receipt(command, request_json)
             _refresh_opening(store, context, card, reconciled, priority_first=True)
             return ReviewResult.from_dict(reconciled)
@@ -124,7 +129,7 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
             store.retain_introduction(command.card_id, attempt.queue_date)
         if store.has_later_review(command.card_id, context) or not command.recorded_at:
             reconciled = store.reconcile_completed(command, attempt, context,
-                guided=bool(command.guided or attempt.attempt_failed), revision=attempt.revision)
+                guided=bool(command.guided or attempt.attempt_failed), revision=attempt.revision).as_dict()
             store.bind_receipt(command, request_json, restore_original=True)
             store.retain_completion(command, attempt, json.dumps({**reconciled, "_request": original_request,
                 "_recorded_at": completed_at, "_attempt_id": command.attempt_id}), origin_only=True)
@@ -142,10 +147,10 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
     if not position and outcome == "correct" and not guided and not attempt.attempt_failed:
         store.mark_clean_tactic(command.card_id, context)
     repeated_entry_id = None
-    if scheduled["requeue_today"]:
-        repeated_entry_id = store.requeue(attempt, command.card_id, scheduled["requeue_after_cards"],
+    if scheduled.requeue_today:
+        repeated_entry_id = store.requeue(attempt, command.card_id, scheduled.requeue_after_cards,
                                           "guided" if outcome == "again" else "reinforcement")
-    result = {**scheduled, "queue_entry_id": attempt.id, "requeue_entry_id": repeated_entry_id,
+    result = {**scheduled.as_dict(), "queue_entry_id": attempt.id, "requeue_entry_id": repeated_entry_id,
               "review_id": store.latest_review_id(command.card_id, valid_only=False),
               "persisted": True, "idempotent": False,
               **({"reconciliation": "queue_origin"} if attempt.recovered else {})}

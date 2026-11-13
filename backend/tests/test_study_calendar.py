@@ -63,7 +63,7 @@ def test_adapter_captures_once_and_reconciliation_reuses_clock_zone_and_day(monk
     received = {}
     def reconcile(*args, **kwargs):
         received.update(kwargs)
-        return {"persisted":True}
+        return {"persisted": True, "review_id": None, "queue_entry_id": 4, "requeue_entry_id": None, "reconciliation": "history_only"}
     monkeypatch.setattr(adapter_module, "reconcile_completed_review", reconcile)
     adapter.reconcile_completed(command, SimpleNamespace(id=4), context, guided=False, revision=2)
     assert received["observed_at"] == observed
