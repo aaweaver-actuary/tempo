@@ -559,8 +559,14 @@ missing `real_game_feedback_adapter`. The initial interpreter lacked `grimp` and
 installed scheduling/chess-core metadata; a task-owned locked, non-editable Python
 environment subsequently passed 49 scheduling boundary and package metadata cases.
 
-At this base revision, 83 of 289 tracked Python files in those trees remain
-outside the combined 206-file selections. The registry alone assigns owners;
+A thirty-seventh selection maps supplied repertoire snapshot projection, position
+index and scheduling occurrence interface. Existing source identities, chess and
+contract dependencies remain visible. Prepared facts and physical bindings do not
+grant writer authority or issuance; consumers must retain source fences. The
+nineteen earlier fixture failures and ten missing-adapter errors remain unresolved.
+
+At this base revision, 77 of 289 tracked Python files in those trees remain
+outside the combined 212-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

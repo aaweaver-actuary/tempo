@@ -2,6 +2,115 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "repertoire-position-index",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/repertoire",
+      "publicExports": [
+        "backend/app/repertoire/position_index.py#PositionKey",
+        "backend/app/repertoire/position_index.py#PositionIndex",
+        "backend/app/repertoire/position_index.py#build_index",
+        "backend/app/repertoire/position_index.py#build_reentry_index"
+      ],
+      "dependencies": [
+        "backend-contracts",
+        "evidence-math"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/repertoire/__init__.py",
+        "backend/app/repertoire/position_index.py"
+      ],
+      "ownershipRole": "Index supplied authored repertoire positions",
+      "dependencyNotes": [
+        "Public package facade re-exports index and prepared snapshot. Uses python-chess and shared contracts; source and issuance authority remain external."
+      ],
+      "censusScope": "repertoire_snapshot"
+    },
+    {
+      "id": "repertoire-position-occurrences",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/repertoire",
+      "publicExports": [
+        "backend/app/repertoire/position_schedule_occurrences.py#PositionInventoryFacts",
+        "backend/app/repertoire/position_schedule_occurrences.py#inventory_from_snapshot",
+        "backend/app/repertoire/position_schedule_occurrences.py#routes_from_snapshot",
+        "backend/app/repertoire/position_schedule_occurrences.py#options_for_target"
+      ],
+      "dependencies": [
+        "repertoire-position-index",
+        "evidence-math"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/repertoire/interfaces/__init__.py",
+        "backend/app/repertoire/interfaces/position_schedule_occurrences.py",
+        "backend/app/repertoire/position_schedule_occurrences.py"
+      ],
+      "ownershipRole": "Project position scheduling occurrence facts",
+      "dependencyNotes": [
+        "Public interface re-exports supplied-snapshot projections; source certificates and physical bindings are detached facts, not source authority or route eligibility proof."
+      ],
+      "censusScope": "repertoire_snapshot"
+    },
+    {
+      "id": "repertoire-snapshot-projection",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/repertoire",
+      "publicExports": [
+        "backend/app/repertoire/snapshot.py#project_repertoire",
+        "backend/app/repertoire/snapshot.py#project_published_repertoire",
+        "backend/app/repertoire/snapshot.py#PreparedPublishedRepertoire"
+      ],
+      "dependencies": [
+        "backend-contracts",
+        "evidence-math",
+        "chess-core",
+        "game-review-contracts"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/repertoire/snapshot.py"
+      ],
+      "ownershipRole": "Project immutable repertoire publication",
+      "dependencyNotes": [
+        "Consumes detached bounded source facts and existing chess/evidence contracts; ephemeral prepared projection grants no current database authority and receiving writer must fence source."
+      ],
+      "censusScope": "repertoire_snapshot"
+    },
+    {
       "id": "scheduling-review-contract",
       "type": "integration",
       "maintainer": "Tempo",

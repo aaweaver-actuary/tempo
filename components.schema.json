@@ -187,7 +187,8 @@
               "position_source",
               "captured_tactic",
               "chess_helpers",
-              "scheduling_review"
+              "scheduling_review",
+              "repertoire_snapshot"
             ]
           }
         }
