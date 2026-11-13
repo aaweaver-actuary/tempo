@@ -67,8 +67,18 @@
               "type": "string"
             }
           },
-          "moduleAssignments": {"type": "array", "items": {"type": "string"}},
-          "lifecycleEdges": {"type": "array", "items": {"type": "string"}},
+          "moduleAssignments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lifecycleEdges": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "dependencies": {
             "type": "array",
             "items": {
@@ -207,6 +217,12 @@
               "opening_admission",
               "startup_composition"
             ]
+          },
+          "resourceRoles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

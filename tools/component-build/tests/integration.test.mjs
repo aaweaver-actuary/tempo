@@ -4,8 +4,9 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts } from "../check-components.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources } from "../check-components.mjs";
 import { validateOwnedPaths, selectComponents } from "../selection.mjs";
+import { validateMigrationInventory } from "../../../database/tooling/check-migration-inventory.mjs";
 
 const python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3.12";
 const original = JSON.parse(readFileSync(join(repository, "components.json")));
@@ -97,6 +98,44 @@ for (const [scope, path] of [["retained", "backend/app/contracts/new_contract.py
     assert.throws(() => validateCensusOwnership(original, scope, paths), /found 0/);
   });
 }
+test("T02 DDL source version rejects empty, missing, duplicate and mismatched history", () => {
+  const files = Array.from({length:66}, (_,i) => String(i+1).padStart(3,"0") + "_example.sql");
+  const schema = "POSTGRES_SCHEMA_VERSION = 66\n";
+  assert.equal(validateMigrationInventory(files,schema),66);
+  assert.throws(()=>validateMigrationInventory([],schema),/unique and contiguous/);
+  assert.throws(()=>validateMigrationInventory(files.filter(f=>!f.startsWith("032_")),schema),/unique and contiguous/);
+  assert.throws(()=>validateMigrationInventory([...files,"032_duplicate.sql"],schema),/unique and contiguous/);
+  assert.throws(()=>validateMigrationInventory(files,"POSTGRES_SCHEMA_VERSION = 65\n"),/disagrees/);
+});
+test("T02 DDL resource census rejects missing, duplicate, stale and wrong roles", () => {
+  assert.deepEqual(validateDdlResources(original, repository, python), {resources:73, version:66});
+  const missing=structuredClone(original), owner=missing.components.find(c=>c.id==="postgres-schema-source"); owner.ownedFiles.pop();
+  assert.throws(()=>validateDdlResources(missing,repository,python), /missing, duplicate or stale/);
+  const duplicate=structuredClone(original), d=duplicate.components.find(c=>c.id==="postgres-schema-source"); d.ownedFiles.push(d.ownedFiles[0]);
+  assert.throws(()=>validateDdlResources(duplicate,repository,python), /missing, duplicate or stale/);
+  const stale=structuredClone(original), st=stale.components.find(c=>c.id==="postgres-schema-source"); st.ownedFiles[0]="../foreign.sql";
+  assert.throws(()=>validateDdlResources(stale,repository,python), /missing, duplicate or stale/);
+  const wrong=structuredClone(original), w=wrong.components.find(c=>c.id==="postgres-schema-source"); w.resourceRoles[0]+="-wrong";
+  assert.throws(()=>validateDdlResources(wrong,repository,python), /resource role/);
+  const overlap=structuredClone(original); overlap.components.find(c=>c.id==="integration").ownedFiles.push(overlap.components.find(c=>c.id==="postgres-schema-source").ownedFiles[0]);
+  assert.throws(()=>validateDdlResources(overlap,repository,python), /overlapping DDL/);
+});
+test("T02 DDL resource guard detects changed history and newly tracked SQL", context => {
+  const root=mkdtempSync(join(tmpdir(),"tempo-ddl-source-")); context.after(()=>rmSync(root,{recursive:true,force:true}));
+  assert.equal(spawnSync("git",["-C",root,"init","-q"],{cwd:root}).status,0);
+  const files=original.components.filter(c=>["postgres-schema-source","postgres-migration-tooling"].includes(c.id)).flatMap(c=>c.ownedFiles);
+  for(const path of files){mkdirSync(join(root,path,".."),{recursive:true});cpSync(join(repository,path),join(root,path));}
+  assert.equal(spawnSync("git",["-C",root,"add","database"],{cwd:root}).status,0);
+  assert.deepEqual(validateDdlResources(original,root,python),{resources:73,version:66});
+  const history="database/tempo_storage/ddl/historical/050_remediation.sql"; writeFileSync(join(root,history),"changed");
+  assert.throws(()=>validateDdlResources(original,root,python),/Historical migration resource mismatch/); cpSync(join(repository,history),join(root,history));
+  const tool="database/tooling/apply_postgres_migrations.py", target=join(root,tool), source=readFileSync(target,"utf8");
+  writeFileSync(target,source.replace('"050_learning_remediation.sql": (','"051_foreign.sql": ('));
+  assert.throws(()=>validateDdlResources(original,root,python),/DDL source witness failed/); writeFileSync(target,source);
+  const added="database/tempo_storage/ddl/migrations/067_unlisted.sql"; writeFileSync(join(root,added),"");
+  assert.equal(spawnSync("git",["-C",root,"add",added],{cwd:root}).status,0);
+  assert.throws(()=>validateDdlResources(original,root,python),/missing, duplicate or stale/);
+});
 test("T02 startup census cannot disappear when all owner tags are removed", () => {
   const missing = structuredClone(original);
   for (const component of missing.components) if (component.censusScope === "startup_composition") delete component.censusScope;

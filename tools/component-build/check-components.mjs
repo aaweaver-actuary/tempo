@@ -1,4 +1,6 @@
 import ts from "typescript";
+import { createHash } from "node:crypto";
+import { validateMigrationInventory } from "../../database/tooling/check-migration-inventory.mjs";
 import { readFileSync, readdirSync, realpathSync, existsSync } from "node:fs";
 import { resolve, dirname, relative, sep } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -322,6 +324,53 @@ if not {'game_review_router', 'prefix_split_router', 'study_exercise_router'} <=
   if (result.error || result.status !== 0) throw new Error("Startup source witness failed: " + (result.error?.message ?? result.stderr));
 }
 
+export function validateDdlResources(manifest, root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3") {
+  const result = spawnSync("git", ["ls-files", "-z", "database/tempo_storage/ddl", "database/tooling/apply_postgres_migrations.py", "database/tooling/check-migration-inventory.mjs"], {cwd:root, encoding:"utf8"});
+  if (result.error || result.status !== 0) throw new Error("Cannot enumerate DDL resources");
+  const tracked = result.stdout.split("\0").filter(p => p.endsWith(".sql") || p.endsWith(".py") || p === "database/tooling/check-migration-inventory.mjs");
+  const owners = ["postgres-schema-source", "postgres-migration-tooling"].map(id => manifest.components.find(c => c.id === id));
+  if (owners.some(c => !c || c.status !== "mapped" || !Array.isArray(c.resourceRoles))) throw new Error("Missing DDL resource owner");
+  const mapped = manifest.components.filter(c => c.status === "mapped" && c.ownedFiles);
+  const roleFor = path => {
+    let match = path.match(/^database\/tempo_storage\/ddl\/migrations\/(\d{3})_[^/]+\.sql$/);
+    if (match) return Number(match[1]) <= 63 ? "forward-history" : "forward-recent";
+    return ({"database/tempo_storage/ddl/historical/050_remediation.sql":"checksum-history", "database/tempo_storage/ddl/rollbacks/049_study_priority_recovery.sql":"rollback-maintenance", "database/tempo_storage/ddl/study_conflicts.sql":"fixture-sql", "database/tempo_storage/ddl/schema_version.py":"source-readiness", "database/tempo_storage/ddl/__init__.py":"namespace-marker", "database/tooling/apply_postgres_migrations.py":"migration-operator", "database/tooling/check-migration-inventory.mjs":"source-inventory"})[path];
+  };
+  const listed = owners.flatMap(c => c.ownedFiles);
+  if (new Set(listed).size !== listed.length || listed.length !== tracked.length || listed.some(p => !tracked.includes(p))) throw new Error("DDL inventory missing, duplicate or stale source");
+  for (const owner of owners) {
+    const expected = owner.ownedFiles.map(path => path + "#" + roleFor(path));
+    if (owner.resourceRoles.length !== expected.length || new Set(owner.resourceRoles).size !== expected.length || expected.some(role => role.endsWith("#undefined") || !owner.resourceRoles.includes(role))) throw new Error("Invalid DDL resource role");
+    for (const path of owner.ownedFiles) {
+      if (path.split("/").some(p => !p || p === "." || p === "..") || !existsSync(resolve(root,path)) || !inside(realpathSync(root),realpathSync(resolve(root,path))) || mapped.filter(c => c.ownedFiles.includes(path)).length !== 1) throw new Error("Invalid or overlapping DDL source");
+      if ((path.startsWith("database/tempo_storage/ddl/") ? "postgres-schema-source" : "postgres-migration-tooling") !== owner.id) throw new Error("DDL owner boundary changed");
+    }
+  }
+  const migrationNames = tracked.filter(p => p.startsWith("database/tempo_storage/ddl/migrations/")).map(p => p.split("/").at(-1));
+  const schema = readFileSync(resolve(root,"database/tempo_storage/ddl/schema_version.py"),"utf8");
+  const version = validateMigrationInventory(migrationNames,schema);
+  const digest = createHash("sha256").update(readFileSync(resolve(root,"database/tempo_storage/ddl/historical/050_remediation.sql"))).digest("hex");
+  const expectedDigest = "96907361dc003e78703dc57182bd020f96e82532bcea6724083326171242da0d";
+  const wrapper = readFileSync(resolve(root,"database/tempo_storage/ddl/migrations/050_learning_remediation.sql"),"utf8");
+  if (digest !== expectedDigest || !wrapper.includes("-- tempo-module-schema: tempo_remediation_database/ddl/migrations/001_remediation.sql\n") || !wrapper.includes("-- sha256: " + expectedDigest + "\n")) throw new Error("Historical migration resource mismatch");
+  const code = `import ast,pathlib,sys
+root=pathlib.Path(sys.argv[1]); tree=ast.parse((root/'database/tempo_storage/ddl/schema_version.py').read_text())
+assign=[n for n in tree.body if isinstance(n,ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='POSTGRES_SCHEMA_VERSION']
+if len(assign)!=1 or not isinstance(assign[0].value,ast.Constant) or type(assign[0].value.value) is not int: raise ValueError('invalid source readiness')
+tool=ast.parse((root/'database/tooling/apply_postgres_migrations.py').read_text())
+names={n.name for n in tool.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+entries=[n.value for n in tool.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='MODULE_MIGRATIONS' for t in n.targets)]
+expected={'050_learning_remediation.sql': ('tempo_remediation_database/ddl/migrations/001_remediation.sql','96907361dc003e78703dc57182bd020f96e82532bcea6724083326171242da0d','050_remediation.sql')}
+if len(entries)!=1 or ast.literal_eval(entries[0])!=expected: raise ValueError('unregistered historical migration')
+if not {'migration_source','validate_migration_history','apply_migrations','migration_status'}<=names: raise ValueError('missing migration tool interface')
+`;
+  const check = spawnSync(python,["-c",code,resolve(root)],{encoding:"utf8"});
+  if (check.error || check.status !== 0) throw new Error("DDL source witness failed: " + (check.error?.message ?? check.stderr));
+  const checker = readFileSync(resolve(root,"database/tooling/check-migration-inventory.mjs"),"utf8");
+  if (!/export function validateMigrationInventory\s*\(/.test(checker)) throw new Error("Missing migration inventory interface");
+  return {resources: tracked.length, version};
+}
+
 export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", options = {}) {
   const manifest = readManifest(root);
   const selected = selectComponents(manifest, options.componentIds);
@@ -332,7 +381,7 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
       validateCensusInterfaces(manifest, scope, root, python);
     }
   }
-  if (root === repository && options.componentIds === undefined) validateStartupFacts(manifest, root);
+  if (root === repository && options.componentIds === undefined) validateStartupFacts(manifest, root); validateDdlResources(manifest, root, python);
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
   const results = [];
   for (const component of selected) {
@@ -367,7 +416,7 @@ if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pat
     if (options.list) {
       const manifest = readManifest(root);
       const selected = options.suiteIds ? selectSuites(manifest, options.suiteIds) : selectComponents(manifest, options.componentIds);
-      if (root === repository && options.componentIds === undefined) validateStartupFacts(manifest, root);
+      if (root === repository && options.componentIds === undefined) validateStartupFacts(manifest, root); validateDdlResources(manifest, root, python);
   validateManifest(manifest, root, { componentIds: options.suiteIds ? [] : selected.map(component => component.id), suiteIds: options.suiteIds });
       console.log(JSON.stringify({ selected }, null, 2));
     } else {
