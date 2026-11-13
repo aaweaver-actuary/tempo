@@ -277,6 +277,8 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
             raw.execute(DDL)
             raw.execute("ALTER TABLE cards ADD COLUMN fsrs_card_json text")
             raw.execute("""CREATE TABLE tempo_schema_migrations(version integer PRIMARY KEY);
+                CREATE TABLE settings(id integer PRIMARY KEY, timezone text NOT NULL);
+                INSERT INTO settings VALUES(1,'UTC');
                 CREATE TABLE repertoire_integrity_state(repertoire_id text PRIMARY KEY,
                     status text,scan_status text,scan_generation text,checked_at text,
                     scan_completed_sources bigint,scan_total_sources bigint,scan_error text);
@@ -393,6 +395,8 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
                 lambda db, task, **kw: saved.append(kw) or True,
             )
             raw.execute("BEGIN")
+            _, authoritative_day = refresh._queue_slice_current_day(port)
+            assert authoritative_day == day
             assert refresh.execute_postgres_queue_refresh_slice(
                 {"payload": {"queue_date": day, "_queue_phase": "admit_position_due",
                              "_refresh_cycle_epoch": 1}}
