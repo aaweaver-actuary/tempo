@@ -1,4 +1,4 @@
-import { beforeEach, expect, it } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import * as z from "zod";
 import { Chess } from "chess.js";
 import { queueCardsFromPayload } from "../../app/domain/adapters/practice-card-adapters";
@@ -352,4 +352,15 @@ it("backup snapshots require all version, timestamp, checksum, table, and count 
       counts: {},
     }).success,
   ).toBe(false);
+});
+
+it("validation collector preserves independent publication and reporter decisions", () => {
+  const source = "decision-order";
+  const decisions = [true, false];
+  const reporter = vi.fn();
+  expect(() => pureValidation.parseData(z.object({ value: z.number() }), { id: "card", value: "bad" },
+    source, "/api/cards", "worker", () => decisions.shift()!, reporter)).toThrow("Invalid decision-order data");
+  expect(dataDiagnostics()).toHaveLength(1);
+  expect(reporter).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ notify: false, endpoint: "/api/cards" }));
+  expect(decisions).toEqual([]);
 });
