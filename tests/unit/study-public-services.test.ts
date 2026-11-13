@@ -46,7 +46,10 @@ it('browser mapping retains the supplied identity and invalidates an old authori
     expect(services.reviews.pending()).toEqual([intent]);
     const stored = await (await storage.studyIntentStore()).get('review:original');
     expect(stored).toMatchObject({ attemptId: 'original', requestId: 'review-attempt:original', payload: intent, state: 'pending' });
-    expect(lease.isCurrent()).toBe(true); storage.closeStudyIntentStorage(); expect(lease.isCurrent()).toBe(false);
+    expect(lease.isCurrent()).toBe(true);
+    const { defaultStudyClient } = await import('../../app/lib/study-connection'); defaultStudyClient.disconnectStudy();
+    expect(lease.isCurrent()).toBe(false);
     await expect(services.progression.startReview('original', lease)).rejects.toThrow('authority changed');
+    const replacement = await services.authority.capture(); storage.closeStudyIntentStorage(); expect(replacement.isCurrent()).toBe(false);
   } finally { storage.closeStudyIntentStorage(); vi.unstubAllGlobals(); vi.resetModules(); }
 });

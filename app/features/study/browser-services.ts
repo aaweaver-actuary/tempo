@@ -1,5 +1,5 @@
 /** Browser wiring for semantic review ports; the controller still owns presentation. */
-import { studyWorkspace } from '../../lib/study-connection';
+import { defaultStudyClient, studyWorkspace } from '../../lib/study-connection';
 import { studyIntentStore, isStudyIntentStoreCurrent } from '../../../database/browser/study-intent-storage';
 import { enqueuePendingReview, flushPendingReviews, pendingReviews, recoverableReviews, conflictedReviews, logicalAttemptId, reviewStudySession, ReviewReplayError } from '../../lib/review-outbox';
 import { PendingOperationError } from '../../lib/operation-status';
@@ -29,8 +29,10 @@ export function createBrowserReviewServices(): ReviewServices {
       flush: options => flushPendingReviews(options?.maximum, options?.verifyReceiptFirst, options?.explicitRetryAttemptId, options?.deferredAttemptIds, options?.stopAfterAttemptId),
       recover: attemptId => flushPendingReviews(Infinity, true, attemptId) },
     authority: { async capture() {
-      const authority = studyWorkspace(); const store = await studyIntentStore();
-      const isCurrent = () => { try { return studyWorkspace() === authority && isStudyIntentStoreCurrent(store); } catch { return false; } };
+      const authority = studyWorkspace(), origin = defaultStudyClient.origin, generation = defaultStudyClient.generation;
+      const store = await studyIntentStore();
+      const isCurrent = () => { try { return studyWorkspace() === authority && defaultStudyClient.origin === origin &&
+        defaultStudyClient.generation === generation && isStudyIntentStoreCurrent(store); } catch { return false; } };
       if (!isCurrent()) throw new Error('Study authority changed. Recover the original review with its original service.');
       return { authority, isCurrent };
     } },
