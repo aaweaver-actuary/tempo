@@ -28,7 +28,7 @@ def test_position_preparation_timing_preserves_proposal_and_source_hold(
     from tempo_storage import connections
     from tempo_storage.study import position_due_candidates
     from app.study.position_learning import issuance as position_issued_plans
-    from app.services import position_queue_admission
+    from app.study.position_learning import position_carrier
     from app.study.position_learning import issued_plan_service, route_planner
 
     payload = {
@@ -111,7 +111,7 @@ def test_position_preparation_timing_preserves_proposal_and_source_hold(
         position_due_candidates, "PositionDueCandidateReader", DueReader
     )
     monkeypatch.setattr(
-        position_queue_admission,
+        position_carrier,
         "select_carrier",
         lambda *a, **kw: calls.append("carrier") or NS(presentation_revision=4),
     )

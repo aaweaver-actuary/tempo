@@ -69,7 +69,7 @@
       "imports": [
         "app.repertoire.position_study_source",
         "app.services.background_runtime",
-        "app.services.position_queue_admission",
+        "app.study.position_learning.position_carrier",
         "app.study.position_learning.issuance",
         "app.study.position_learning.issued_plan_contracts",
         "app.study.position_learning.issued_plan_service",
@@ -88,6 +88,13 @@
         "uuid"
       ],
       "pure": false
+    },
+    {
+      "path": "backend/app/study/position_learning/position_carrier.py",
+      "imports": [
+        "tempo_evidence_math.position_learning"
+      ],
+      "pure": true
     },
     {
       "path": "database/tempo_storage/study/next_exercise_reads.py",
