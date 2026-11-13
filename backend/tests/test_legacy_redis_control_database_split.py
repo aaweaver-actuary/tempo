@@ -1,5 +1,7 @@
 """Redis control persistence preserves patched identities and async timing."""
 
+from tempo_storage.redis_control import admission as admission_storage
+
 import ast
 import asyncio
 from pathlib import Path
@@ -30,6 +32,15 @@ def test_two_redis_control_compositions_delegate_all_storage_mechanics_to_databa
             if isinstance(node, ast.Attribute) and node.attr in operations
         ]
         assert not direct_operations, f"{name} retains Redis or SQL mechanics"
+        private_admission = {
+            "_FOREGROUND_KEY", "_BACKGROUND_KEY", "_FOREGROUND_LEASE_MS",
+            "_BACKGROUND_LEASE_MS", "_REGISTER_FOREGROUND", "_CLAIM_BACKGROUND",
+        }
+        assert not any(
+            isinstance(node, ast.Attribute) and node.attr in private_admission
+            or isinstance(node, ast.alias) and node.name in private_admission
+            for node in ast.walk(tree)
+        ), f"{name} depends on admission storage internals"
         assert not any(
             isinstance(node, ast.Constant)
             and isinstance(node.value, str)
@@ -49,7 +60,7 @@ def test_async_foreground_lease_creates_client_and_samples_clock_before_worker_i
     class Server:
         def eval(self, script, count, actual_key, now, token, lease):
             assert threading.get_ident() != owner
-            assert script == redis_admission_gate._REGISTER_FOREGROUND
+            assert script == admission_storage._REGISTER_FOREGROUND
             assert (count, actual_key, now, lease) == (1, key, 123000, 30000)
             lease_tokens.append(token)
             events.append("register")
@@ -74,7 +85,7 @@ def test_async_foreground_lease_creates_client_and_samples_clock_before_worker_i
 
     monkeypatch.setattr(redis_admission_gate, "client", client)
     monkeypatch.setattr(redis_admission_gate.time, "time", clock)
-    monkeypatch.setattr(redis_admission_gate, "_FOREGROUND_KEY", key)
+    monkeypatch.setattr(admission_storage, "_FOREGROUND_KEY", key)
 
     async def work():
         async with redis_admission_gate.async_foreground_lease():
@@ -116,7 +127,7 @@ def test_foreground_projection_prunes_before_count_with_patched_key_and_existing
 
     monkeypatch.setattr(redis_admission_gate, "client", client)
     monkeypatch.setattr(redis_admission_gate.time, "time", clock)
-    monkeypatch.setattr(redis_admission_gate, "_FOREGROUND_KEY", key)
+    monkeypatch.setattr(admission_storage, "_FOREGROUND_KEY", key)
     assert redis_admission_gate.foreground_present() is True
     assert events == [
         ("clock",),

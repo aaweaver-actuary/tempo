@@ -1,5 +1,7 @@
 """Real PostgreSQL quota proof, run only inside the disposable durability stack."""
 
+from tempo_storage.redis_control import admission as admission_storage
+
 from datetime import date
 import json
 
@@ -27,11 +29,11 @@ def owned_admission_scope():
     assert marker == "tempo-disposable-postgres-test", "A disposable database marker is required"
     namespace = "tempo:test:study-burial:" + uuid.uuid4().hex
     foreground_key, background_key = namespace + ":foreground", namespace + ":background"
-    parent_key = redis_admission_gate._FOREGROUND_KEY
+    parent_key = admission_storage._FOREGROUND_KEY
     server = redis_admission_gate.client()
     token = uuid.uuid4().hex
     try:
-        with patch.object(redis_admission_gate, "_FOREGROUND_KEY", foreground_key), patch.object(redis_admission_gate, "_BACKGROUND_KEY", background_key):
+        with patch.object(admission_storage, "_FOREGROUND_KEY", foreground_key), patch.object(admission_storage, "_BACKGROUND_KEY", background_key):
             server.zadd(parent_key, {token: int(time.time() * 1000) + 30_000})
             assert not redis_admission_gate.foreground_present()
             with redis_admission_gate.background_lease():
