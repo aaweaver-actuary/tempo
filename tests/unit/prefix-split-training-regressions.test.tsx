@@ -37,7 +37,7 @@ beforeEach(() => {
 });
 
 function showPrefixOffer(overrides: Record<string, unknown> = {}) {
-  const onAcceptPrefixSplit = vi.fn(async (): Promise<void> => undefined);
+  const onAcceptPrefixSplit = vi.fn(async (): Promise<"waiting" | void> => undefined);
   const onRejectPrefixSplit = vi.fn(async (): Promise<void> => undefined);
   const view = render(
     <TrainingView
@@ -97,4 +97,13 @@ it("failed prefix split save keeps the offer and shows a retryable error", async
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("The card changed"));
   expect((screen.getByRole("button", { name: "Accept" }) as HTMLButtonElement).disabled).toBe(false);
   expect(screen.getByTestId("board")).toBeTruthy();
+});
+
+it("an accepted waiting split preserves the current playable review", async () => {
+  const view = showPrefixOffer({ queueEntryId: 17 });
+  view.onAcceptPrefixSplit.mockResolvedValueOnce("waiting");
+  fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+  await screen.findByText("Shortening is saved and will continue after this review is saved.");
+  expect(screen.getByTestId("board")).toBeTruthy();
+  expect((screen.getByRole("button", { name: /Again/ }) as HTMLButtonElement).disabled).toBe(false);
 });

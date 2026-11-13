@@ -7,6 +7,7 @@ import manifest from "../fixtures/opening-evidence-manifest.json";
 import { openingEvidenceCheckpointSchema } from "../../app/domain/opening-evidence";
 import * as notificationModule from "../../app/lib/notifications";
 import * as openingEvidenceJournal from "../../app/lib/opening-evidence-journal";
+import { saveEvidenceAwareReview } from "../../app/lib/opening-evidence-review";
 
 function auditDeferred<T>() {
   let resolve!: (value: T) => void;
@@ -18,6 +19,44 @@ const auditReview = (attemptId: string, queueEntryId: number, backendId = attemp
   backendId, queueEntryId, attemptId, outcome: "correct" as const, guided: false,
 });
 const auditSuccessor = { card_id: "audit-successor", queue_entry_id: 9999, revision: 1, cycle: 0, local_date: "2026-10-11" };
+
+it("foreign initial review acknowledgment cannot settle the original attempt or poll the foreign receipt", async () => {
+  const original = { ...auditReview("deep-original", 99101, "original-card"), outcome: "again" as const,
+    expectedRevision: 3, completedAt: "2026-11-12T21:00:00Z" };
+  await enqueuePendingReview(original);
+  const requests: { method: string; url: string; key: string | null; body: BodyInit | null | undefined }[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    requests.push({ method, url: String(input), key: new Headers(init?.headers).get("Idempotency-Key"), body: init?.body });
+    if (method === "POST") return Response.json({ operation_id: "review-attempt:foreign", state: "queued" }, { status: 202 });
+    return Response.json({ operation_id: "review-attempt:deep-original", state: "unknown" });
+  }));
+  await expect(flushPendingReviews()).rejects.toThrow();
+  expect(pendingReviews()).toContainEqual(expect.objectContaining({ attemptId: original.attemptId }));
+  const post = requests.find(request => request.method === "POST")!;
+  expect(post.key).toBe("review-attempt:deep-original");
+  expect(JSON.parse(post.body as string)).toMatchObject({ attempt_id: original.attemptId, outcome: "again" });
+  expect(requests.some(request => decodeURIComponent(request.url).includes("review-attempt:foreign"))).toBe(false);
+});
+
+it.each([
+  ["review-attempt:aggregate", true, "review-attempt:aggregate:aggregate-only"],
+  ["review-reconcile:attempt:2", false, "review-reconcile:attempt:2"],
+])("confirmation uses the actual sent key %s", async (operationKey, aggregateOnly, expected) => {
+  const receipt = vi.fn(async (url: RequestInfo | URL) => {
+    expect(decodeURIComponent(String(url))).toContain(`/api/operations/${expected}`);
+    return Response.json({ operation_id: expected, state: "complete", response: { persisted: true } });
+  });
+  vi.stubGlobal("fetch", receipt);
+  const request = vi.fn(async (_url: string, init: RequestInit) => {
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBe(expected);
+    return Response.json({ operation_id: expected, state: "queued" }, { status: 202 });
+  });
+  const result = await saveEvidenceAwareReview({ endpoint: "/review", operationKey, aggregateOnly, body: {},
+    onEvidenceRejected: () => {}, request });
+  await expect(result.json()).resolves.toEqual({ persisted: true });
+  expect(request).toHaveBeenCalledOnce(); expect(receipt).toHaveBeenCalledOnce();
+});
 
 it("flush_settlement_audit reentrant submitted owner cannot reject after concurrent authoritative recovery", async () => {
   await enqueuePendingReview({ ...auditReview("startup-predecessor", 10001, "startup-conflict-card"), state: "conflicted",
@@ -611,7 +650,8 @@ describe("optimistic training review outbox", () => {
 
   it("review timeout also bounds deferred operation receipt polling", async () => {
     await enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: false });
-    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ operation_id: "pending-a" }, { status: 202 }))
+    const operationId = `review-attempt:${pendingReviews()[0].attemptId}`;
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ operation_id: operationId, state: "pending" }, { status: 202 }))
       .mockImplementationOnce((_input, options) => new Promise<Response>((_resolve, reject) => {
         options.signal.addEventListener("abort", () => reject(options.signal.reason));
       }));
@@ -702,7 +742,7 @@ describe("optimistic training review outbox", () => {
     await enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: false });
     const attemptId = pendingReviews()[0].attemptId;
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(Response.json({ operation_id: "old-save" }, { status: 202 }))
+      .mockResolvedValueOnce(Response.json({ operation_id: `review-attempt:${attemptId}`, state: "pending" }, { status: 202 }))
       .mockResolvedValueOnce(Response.json({ state: "failed", error: { status_code: 409, code: "queue_attempt_retired", retryable: false, detail: "Retired attempt" } }))
       .mockResolvedValueOnce(Response.json({ persisted: true }));
     vi.stubGlobal("fetch", fetchMock);

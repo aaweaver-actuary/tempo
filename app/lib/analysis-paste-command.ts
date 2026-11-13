@@ -2,7 +2,7 @@ import { decodeOperationResult } from "../domain/adapters/operation-result-adapt
 import { readPendingAnalysisPasteRecord, writePendingAnalysisPasteRecord, clearPendingAnalysisPasteRecord } from "../../database/browser/adapters/authoring/analysis-paste";
 import { API_URL } from "../const";
 import { analysisPasteCommitSchema } from "../domain/schemas";
-import { confirmOperationResponse, PendingOperationError } from "./operation-status";
+import { confirmOriginalOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
 type AnalysisPasteCommand = {
@@ -57,7 +57,7 @@ export async function saveAnalysisPasteCommand(payload: AnalysisPasteCommand) {
     headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
     body,
   });
-  response = await confirmOperationResponse(response);
+  response = await confirmOriginalOperationResponse(response, pending.operationId);
   const result = await readJsonResponse(response, analysisPasteCommitSchema, "saved pasted analysis");
   clearPendingAnalysisPasteRecord();
   return result;

@@ -26,3 +26,9 @@ def publish_refresh_epoch_if_current(database, queue_date, cycle_epoch):
     or completion fails. This operation never changes readiness by itself.
     """
     return database.execute('UPDATE queue_projections SET published_refresh_epoch=%s\n           WHERE queue_date=%s AND requested_refresh_epoch=%s\n             AND published_refresh_epoch<=%s', (cycle_epoch, queue_date, cycle_epoch, cycle_epoch)).rowcount == 1
+
+
+def lock_study_timezone(database):
+    """Fence the current Study calendar before locking any queue task."""
+    row = database.execute("SELECT timezone FROM settings WHERE id=1 FOR SHARE").fetchone()
+    return row[0] if row else None

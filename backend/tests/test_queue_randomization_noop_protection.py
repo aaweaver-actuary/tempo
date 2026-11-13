@@ -95,6 +95,19 @@ def test_native_position_only_does_not_touch_kind_or_issued_origin(case):
     assert protected_hash(db.raw, facts.issued_ids) == protected
 
 
+def test_native_plan_preserves_full_issued_row_while_reclassifying_unissued(case):
+    db, facts = case
+    issued, unissued = facts.issued_ids[0], facts.queued_ids[2]
+    protected = protected_hash(db.raw, (issued,))
+    # A stale/derived plan proposes both a different kind and bucket for the
+    # issued member. Its original row and origin must remain byte-for-byte.
+    assert _plan(db, facts.queue_date, [issued, unissued],
+                 buckets=["tactic", "opening"], kinds=["review", "new"]) == 2
+    assert protected_hash(db.raw, (issued,)) == protected
+    assert [row[0] for row in db.execute_native("SELECT id FROM kind_updates ORDER BY id").fetchall()] == [unissued]
+    assert db.execute_native("SELECT admission_kind FROM daily_queue WHERE id=%s", (unissued,)).fetchone()[0] == "new"
+
+
 def test_native_kind_change_and_null_preserve_origin_trigger(case):
     db, facts = case
     ids = facts.queued_ids[2:5]

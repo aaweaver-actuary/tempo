@@ -116,6 +116,8 @@ from .services.background_runtime import StudyResponseTiming
 app.add_middleware(StudyResponseTiming)
 from .games.review import router as game_review_router
 app.include_router(game_review_router)
+from .prefix_split_routes import router as prefix_split_router
+app.include_router(prefix_split_router)
 from .contracts.opening_evidence import OpeningEvidenceCheckpoint
 
 @app.get("/api/opening-evidence/attempts/{attempt_id}")
@@ -332,6 +334,13 @@ async def prioritize_foreground_requests(request: Request, call_next):
         card_validation = (
             path_parts == ["api", "cards", "validate"] and request.method == "POST"
         )
+        prefix_split_command = (
+            len(path_parts) in {4, 5}
+            and path_parts[:2] == ["api", "cards"]
+            and path_parts[3] == "prefix-split"
+            and (len(path_parts) == 4 or path_parts[4] == "reject")
+            and request.method == "POST"
+        )
         if not read_only_post and not any(
             (
                 queue_entry_command,
@@ -358,6 +367,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                 analysis_paste_command,
                 integrity_resolution_command,
                 card_validation,
+                prefix_split_command,
             )
         ):
             return JSONResponse(
