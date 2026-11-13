@@ -71,6 +71,10 @@ export async function inspectRetainedStudyAuthority(registeredOfflineDatabases: 
     facts.push({ authority: typeof intent?.workspace === "string" ? intent.workspace : null,
       disposition: (intent?.state === "committed" || intent?.state === "discarded") ? "terminal" : "unresolved" });
   }
+  const intentStores = new Set(["intents", "teaching", "metadata"]);
+  for (const [store, values] of Object.entries(retained.databases["tempo-study-intents"]))
+    if (!intentStores.has(store) && values.length) facts.push({ authority: null, disposition: "unknown" });
+  const offlineStores = new Set(["training", "opening_attempts", "opening_events"]);
   for (const [name, stores] of Object.entries(retained.databases)) {
     if (!name.startsWith("tempo-offline-training")) continue;
     let authority: string | null = null;
@@ -81,6 +85,8 @@ export async function inspectRetainedStudyAuthority(registeredOfflineDatabases: 
         if (decoded && encodeURIComponent(decoded) === encoded) authority = decoded;
       } catch { /* Unrecognized authority remains unconfirmed, not empty. */ }
     }
+    for (const [store, values] of Object.entries(stores))
+      if (!offlineStores.has(store) && values.length) facts.push({ authority, disposition: "unknown" });
     for (const value of stores.opening_attempts ?? []) {
       const attempt = record(value);
       facts.push({ authority, disposition: (attempt?.delivery_state === "complete" || attempt?.delivery_state === "rejected")

@@ -579,3 +579,66 @@ it.each([
   else await expect(result).resolves.toEqual(before);
   expect(await client.retainedStudyData()).toEqual(before);
 });
+
+async function createUnknownStore(databaseName: string, nonempty: boolean) {
+  await new Promise<void>((resolve, reject) => {
+    const open = indexedDB.open(databaseName, databaseName === "tempo-study-intents" ? 1 : 2);
+    open.onupgradeneeded = () => {
+      if (databaseName === "tempo-study-intents") {
+        const intents = open.result.createObjectStore("intents", { keyPath: ["workspace", "key"] });
+        intents.createIndex("workspace", "workspace"); intents.createIndex("state", "state");
+        const teaching = open.result.createObjectStore("teaching", { keyPath: ["workspace", "key"] });
+        teaching.createIndex("workspace", "workspace"); teaching.createIndex("card", "cardId");
+        open.result.createObjectStore("metadata", { keyPath: ["workspace", "key"] });
+      } else for (const name of ["training", "opening_attempts", "opening_events"]) open.result.createObjectStore(name);
+      open.result.createObjectStore("future_store");
+    };
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      if (!nonempty) { db.close(); resolve(); return; }
+      const transaction = db.transaction("future_store", "readwrite");
+      transaction.objectStore("future_store").put({ requestId: "original-id", body: "original bytes", workspace: "untrusted" }, "original-key");
+      transaction.oncomplete = () => { db.close(); resolve(); };
+      transaction.onabort = () => { db.close(); reject(transaction.error); };
+    };
+  });
+}
+
+it.each(["foreign", "current", "global", "intents", "empty"])("FE05 %s unknown store preserves its key and value and applies authority scope", async scenario => {
+  const { client } = await connected();
+  const origin = scenario === "current" ? "http://learning.test:8001" : "http://foreign.test";
+  const authority = `${origin}:study:workspace-a`;
+  const name = scenario === "intents" ? "tempo-study-intents" : scenario === "global" ? "tempo-offline-training" : `tempo-offline-training:${encodeURIComponent(authority)}`;
+  await createUnknownStore(name, scenario !== "empty");
+  const before = await client.retainedStudyData();
+  const { inspectRetainedStudyAuthority } = await import("../../database/browser/study-connection-storage");
+  const inspection = await inspectRetainedStudyAuthority(() => []);
+  const unknown = inspection.facts.filter(fact => fact.disposition === "unknown");
+  if (scenario === "empty") expect(unknown).toEqual([]);
+  else expect(unknown).toContainEqual({ authority: ["global", "intents"].includes(scenario) ? null : authority, disposition: "unknown" });
+  const own = client.assertStudyAuthority("http://learning.test:8001", "workspace-a", "resume");
+  if (["global", "intents", "foreign"].includes(scenario)) await expect(own).rejects.toMatchObject({ kind: "authority" });
+  else await expect(own).resolves.toEqual(before);
+  if (scenario !== "empty") {
+    await expect(client.assertStudyAuthority("http://target.test", "workspace-a")).rejects.toMatchObject({ kind: "authority" });
+    const read = await new Promise<unknown>((resolve, reject) => {
+      const open = indexedDB.open(name); open.onerror = () => reject(open.error);
+      open.onsuccess = () => { const db = open.result; const req = db.transaction("future_store").objectStore("future_store").get("original-key");
+        req.onsuccess = () => { db.close(); resolve(req.result); }; req.onerror = () => reject(req.error); };
+    });
+    expect(read).toEqual({ requestId: "original-id", body: "original bytes", workspace: "untrusted" });
+  }
+  expect(await client.retainedStudyData()).toEqual(before);
+});
+
+it("FE05 registered foreign unknown store permits recovery but holds a new cutover", async () => {
+  const { client } = await connected();
+  await client.connectStudy("http://b.test", "workspace-a", credential);
+  const name = `tempo-offline-training:${encodeURIComponent("http://b.test:study:workspace-a")}`;
+  await createUnknownStore(name, true);
+  const before = await client.retainedStudyData();
+  await expect(client.assertStudyAuthority("http://learning.test:8001", "workspace-a", "recover")).resolves.toEqual(before);
+  await expect(client.assertStudyAuthority("http://target.test", "workspace-a")).rejects.toMatchObject({ kind: "authority" });
+  expect(await client.retainedStudyData()).toEqual(before);
+});
