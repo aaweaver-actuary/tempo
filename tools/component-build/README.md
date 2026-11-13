@@ -729,3 +729,12 @@ functions query databases when invoked; this static census parses source only.
 It does not run or qualify backup, restore, native or installed behavior. The
 CLI-state verifier and other database tooling remain separately unclassified, as
 do the previously recorded fixture and test-selection gaps.
+
+## Managed migration witness source roles
+
+The CLI-state verifier and managed-isolation helper retain consequential historical
+cut and private-witness capabilities as well as read-only checks. Existing callers
+own target selection, exclusive writer/DDL and Docker/admission fences, transaction
+and recovery. This source census parses only; it does not execute or qualify a cut,
+backup, native, runtime or installed behavior. Other database tooling and existing
+fixture and test-selection gaps remain open.

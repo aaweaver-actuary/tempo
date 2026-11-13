@@ -6051,7 +6051,9 @@
         "postgres-migration-tooling",
         "database-cli-backup-operations",
         "database-cli-probes",
-        "postgres-backup-verification"
+        "postgres-backup-verification",
+        "postgres-cli-state-guard",
+        "postgres-managed-isolation"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -9189,6 +9191,105 @@
       ],
       "resourceRoles": [
         "database/tooling/verify_postgres_backup.py#backup-verification"
+      ]
+    },
+    {
+      "id": "postgres-cli-state-guard",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tooling",
+      "publicExports": [
+        "database/tooling/verify_postgres_cli_state.py#study_fingerprints",
+        "database/tooling/verify_postgres_cli_state.py#load_cut62_defense_selection",
+        "database/tooling/verify_postgres_cli_state.py#validate_cut62_history_selection",
+        "database/tooling/verify_postgres_cli_state.py#load_cut62_history_selection",
+        "database/tooling/verify_postgres_cli_state.py#load_cut62_attempt_binding",
+        "database/tooling/verify_postgres_cli_state.py#authenticate_cut62_history_v2",
+        "database/tooling/verify_postgres_cli_state.py#save_cut62_history_v2",
+        "database/tooling/verify_postgres_cli_state.py#load_cut62_history_v2",
+        "database/tooling/verify_postgres_cli_state.py#check_captured_cut62_history_v2",
+        "database/tooling/verify_postgres_cli_state.py#verify_cut62_history_v2",
+        "database/tooling/verify_postgres_cli_state.py#apply_cut62_history_v2",
+        "database/tooling/verify_postgres_cli_state.py#capture_cut62",
+        "database/tooling/verify_postgres_cli_state.py#cut62_witness_id",
+        "database/tooling/verify_postgres_cli_state.py#check_captured_cut62",
+        "database/tooling/verify_postgres_cli_state.py#verify_cut62",
+        "database/tooling/verify_postgres_cli_state.py#save_cut62_witness",
+        "database/tooling/verify_postgres_cli_state.py#load_cut62_witness",
+        "database/tooling/verify_postgres_cli_state.py#capture_pre62_59",
+        "database/tooling/verify_postgres_cli_state.py#authenticate_pre62_59",
+        "database/tooling/verify_postgres_cli_state.py#verify_pre62_59",
+        "database/tooling/verify_postgres_cli_state.py#save_pre62_59",
+        "database/tooling/verify_postgres_cli_state.py#load_pre62_59",
+        "database/tooling/verify_postgres_cli_state.py#main"
+      ],
+      "dependencies": [
+        "postgres-fingerprint-tool",
+        "postgres-backup-verification",
+        "postgres-migration-tooling"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tooling/verify_postgres_cli_state.py"
+      ],
+      "ownershipRole": "migration-state-witness",
+      "dependencyNotes": [
+        "Captures/verifies retained-state witnesses; also supports historical 062 writes inside a caller-owned fenced transaction/savepoint and private witness files. Ordinary CLI reads use read-only sessions.",
+        "Existing CLI orchestration owns authorization, target, lifecycle and recovery; source census performs no operation."
+      ],
+      "resourceRoles": [
+        "database/tooling/verify_postgres_cli_state.py#migration-state-witness"
+      ]
+    },
+    {
+      "id": "postgres-managed-isolation",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tooling",
+      "publicExports": [
+        "database/tooling/managed_isolation.py#assert_fenced_pinned_session",
+        "database/tooling/managed_isolation.py#verify_originals_in_fenced_transaction",
+        "database/tooling/managed_isolation.py#verify_committed_in_fenced_transaction",
+        "database/tooling/managed_isolation.py#execute_managed_history_cut",
+        "database/tooling/managed_isolation.py#managed_pinned_child",
+        "database/tooling/managed_isolation.py#authenticate_managed_completion",
+        "database/tooling/managed_isolation.py#write_private_json_once",
+        "database/tooling/managed_isolation.py#resync_private_json"
+      ],
+      "dependencies": [
+        "postgres-cli-state-guard"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tooling/managed_isolation.py"
+      ],
+      "ownershipRole": "managed-cut-fence",
+      "dependencyNotes": [
+        "Checks pinned transaction and source identity, authenticates witnesses and can perform fenced historical 61-to-62 cut; launcher owns exclusive target and Docker/admission fences. Private JSON operations are effects.",
+        "Existing CLI orchestration owns authorization, target, lifecycle and recovery; source census performs no operation."
+      ],
+      "resourceRoles": [
+        "database/tooling/managed_isolation.py#managed-cut-fence"
       ]
     }
   ],
