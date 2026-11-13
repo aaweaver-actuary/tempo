@@ -220,3 +220,32 @@ def test_queue_recovery_paused_feedback_selection_is_exact(capsys):
     assert events == ["test_postgres_paused_feedback_history_preserves_ordinary_study"]
     receipt = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert receipt["scope"] == "paused-feedback-only" and receipt["executed_count"] == 1
+
+
+def test_paused_feedback_waits_for_the_exact_post_review_generation_and_publication():
+    import ast
+    from pathlib import Path
+    import pytest
+
+    source = Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_background_workloads.py'
+    tree = ast.parse(source.read_text())
+    node = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == '_await_queue_generation')
+    namespace = {}
+    exec(compile(ast.Module(body=[node], type_ignores=[]), str(source), 'exec'), namespace)
+    wait = namespace['_await_queue_generation']
+    values = iter([
+        ({'id': 'task', 'generation': 8, 'state': 'queued'}, {'published_refresh_epoch': 6}),
+        ({'id': 'task', 'generation': 8, 'state': 'complete'}, {'published_refresh_epoch': 6}),
+        ({'id': 'task', 'generation': 8, 'state': 'complete'}, {'published_refresh_epoch': 7}),
+    ])
+    wakes, pauses = [], []
+    row = wait(lambda: next(values), lambda: wakes.append(1), lambda: 0, pauses.append, 'task', 8, 7)
+    assert row == {'id': 'task', 'generation': 8, 'state': 'complete'}
+    assert len(wakes) == 2 and pauses == [0.25, 0.25]
+    with pytest.raises(AssertionError, match='generation changed'):
+        wait(lambda: ({'id': 'task', 'generation': 9, 'state': 'complete'}, {'published_refresh_epoch': 7}),
+             lambda: None, lambda: 0, lambda _: None, 'task', 8, 7)
+    ticks = iter([0, 91])
+    with pytest.raises(AssertionError, match='did not complete'):
+        wait(lambda: ({'id': 'task', 'generation': 8, 'state': 'queued'}, {'published_refresh_epoch': 6}),
+             lambda: None, lambda: next(ticks), lambda _: None, 'task', 8, 7)

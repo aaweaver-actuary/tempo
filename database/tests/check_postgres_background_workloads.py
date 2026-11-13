@@ -20,6 +20,22 @@ if __name__ == '__main__' and len(sys.argv) == 1:
     main()
 
 
+def _await_queue_generation(read, wake, now, pause, task_id, generation, epoch):
+    """Wait for the captured review generation and its durable projection."""
+    deadline = now() + 90
+    while True:
+        task, projection = read()
+        assert task and task['id'] == task_id and task['generation'] == generation, (
+            f'queue generation changed after review: {task}'
+        )
+        if (task['state'] == 'complete' and projection and
+                projection['published_refresh_epoch'] >= epoch):
+            return task
+        assert now() < deadline, f'post-review queue generation did not complete: {task}, {projection}'
+        wake()
+        pause(0.25)
+
+
 def stale_delivery_witness(phase, project):
     """Real broker deliveries retain retired identities while Study progresses."""
     import json
@@ -175,6 +191,18 @@ def stale_delivery_witness(phase, project):
         def assert_feedback_history():
             assert snapshot() == initial
         _exercise_ordinary_study_with_paused_history(assert_feedback_history)
+        # The review has committed its own refresh request. Record the current
+        # generation only after that request, then wait for its publication.
+        def read_queue():
+            with psycopg.connect(dsn, row_factory=dict_row) as db:
+                current = db.execute("SELECT id,generation,state FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()
+                projection = db.execute("SELECT requested_refresh_epoch,published_refresh_epoch FROM queue_projections WHERE queue_date=%s", (date.today().isoformat(),)).fetchone()
+                return current, projection
+        current, projection = read_queue()
+        assert current and projection and projection['requested_refresh_epoch'] > 0, (current, projection)
+        row = _await_queue_generation(read_queue,
+            lambda: celery_app.send_task('app.tasks.progress_study_queue', queue='foreground'),
+            time.monotonic, time.sleep, current['id'], current['generation'], projection['requested_refresh_epoch'])
     final = snapshot()
     assert final == initial, 'retired delivery changed the original durable state or recreated retired tables'
     print('STALE_DELIVERY_WITNESS ' + json.dumps({'phase': phase, 'snapshot': final, 'queue': dict(row), 'deliveries': deliveries}, sort_keys=True))
