@@ -10,9 +10,10 @@ import { studySnapshotSchema } from "../study-exercises";
 import {
   parseData,
   validRecords,
-  reportDataDiagnostic,
+  type ValidationIssue,
   type ValidationReporter,
-} from "../../lib/data-validation";
+  type ValidationEffects,
+} from "../validation";
 import { Chess, Square } from "chess.js";
 import {
   BackendQueueCard,
@@ -27,23 +28,32 @@ import {
 import { movesToSanFormat } from "../../utils/chess";
 import { canonicalizeMoves } from "../../utils/canonical-line";
 
-export function queueRecordWithCompatibleOpeningEvidence(raw: unknown): unknown {
+type ValidationInput = ValidationReporter | ValidationEffects;
+function effectsFor(input?: ValidationInput): ValidationEffects | undefined {
+  return typeof input === "function" ? { reportError: input } : input;
+}
+function reportIssue(effects: ValidationEffects | undefined, issue: ValidationIssue): void {
+  if (effects?.shouldPublishDiagnostics?.() !== false) effects?.reportIssue?.(issue);
+}
+
+export function queueRecordWithCompatibleOpeningEvidence(raw: unknown, effects?: ValidationEffects): unknown {
   if (!raw || typeof raw !== "object" || !("opening_decision_manifest" in raw) || raw.opening_decision_manifest === undefined) return raw;
   const parsed = openingDecisionManifestSchema.safeParse(raw.opening_decision_manifest);
   if (parsed.success) return raw;
   const record = { ...raw } as Record<string, unknown>;
   delete record.opening_decision_manifest;
   record.opening_evidence_diagnostic = "Opening evidence omitted: invalid manifest. Refresh the queue or inspect service diagnostics.";
-  reportDataDiagnostic("opening evidence", raw, String(record.opening_evidence_diagnostic));
+  reportIssue(effects, { source: "opening evidence", raw, message: String(record.opening_evidence_diagnostic) });
   return record;
 }
 
 // Maps queue transport records from the backend into domain practice cards.
 export function mapQueueCardToPracticeCard(
   raw: BackendQueueCard | unknown,
-  reporter?: ValidationReporter,
+  input?: ValidationInput,
 ): PracticeCard {
-  const card = parseData(queueCardSchema, queueRecordWithCompatibleOpeningEvidence(raw), "queue card", undefined, undefined, undefined, reporter);
+  const effects = effectsFor(input);
+  const card = parseData(queueCardSchema, queueRecordWithCompatibleOpeningEvidence(raw, effects), "queue card", { effects });
   const startingFen = asFenString(card.start_fen);
   const validatedLine = canonicalizeMoves(startingFen, card.moves);
   if (validatedLine.diagnostics.length) {
@@ -182,7 +192,7 @@ export function mapQueueCardToPracticeCard(
       suggestShorterPrefix: false,
     };
   } catch (error) {
-    reportDataDiagnostic("position presentation", card, String(error), card.id);
+    reportIssue(effects, { source: "position presentation", raw: card, message: String(error), recordId: card.id });
     return held("The issued position plan is unavailable. Refresh training while connected.");
   }
 }
@@ -190,10 +200,10 @@ export function mapQueueCardToPracticeCard(
 // Converts packaged puzzle records into domain practice cards.
 export function mapPackagedPuzzleToPracticeCard(
   record: PackagedPuzzle,
-  reporter?: ValidationReporter,
+  input?: ValidationInput,
 ): PracticeCard | null {
   try {
-    record = parseData(packagedPuzzleSchema, record, "packaged puzzle", undefined, undefined, undefined, reporter);
+    record = parseData(packagedPuzzleSchema, record, "packaged puzzle", { effects: effectsFor(input) });
     const board = new Chess(asFenString(record.FEN));
     const uciMoves = record.Moves.split(/\s+/).filter(Boolean);
     const setup = uciMoves.shift()!;
@@ -228,21 +238,17 @@ export function mapPackagedPuzzleToPracticeCard(
   }
 }
 
-export function queueCardsFromPayload(raw: unknown, reporter?: ValidationReporter): PracticeCard[] {
-  const body = parseData(queueEnvelopeSchema, raw, "daily queue", undefined, undefined, undefined, reporter);
+export function queueCardsFromPayload(raw: unknown, input?: ValidationInput): PracticeCard[] {
+  const effects = effectsFor(input);
+  const body = parseData(queueEnvelopeSchema, raw, "daily queue", { effects });
   for (const diagnostic of body.diagnostics ?? [])
-    reportDataDiagnostic(
-      "daily queue",
-      diagnostic,
-      diagnostic.message,
-      diagnostic.card_id,
-    );
-  return validRecords(queueCardSchema, body.cards.map(queueRecordWithCompatibleOpeningEvidence), "queue card", undefined, reporter).flatMap(
+    reportIssue(effects, { source: "daily queue", raw: diagnostic, message: diagnostic.message, recordId: diagnostic.card_id });
+  return validRecords(queueCardSchema, body.cards.map((card) => queueRecordWithCompatibleOpeningEvidence(card, effects)), "queue card", effects).flatMap(
     (record) => {
       try {
-        return [mapQueueCardToPracticeCard(record, reporter)];
+        return [mapQueueCardToPracticeCard(record, effects)];
       } catch (error) {
-        reportDataDiagnostic("queue card", record, String(error), record.id);
+        reportIssue(effects, { source: "queue card", raw: record, message: String(error), recordId: record.id });
         return [];
       }
     },

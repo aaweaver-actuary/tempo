@@ -151,3 +151,15 @@ it("phone worker message decoding failure releases every caller and permits a fr
   workers[1].onmessage!({ data: { id, result: [] } } as MessageEvent);
   await expect(retry).resolves.toEqual([]);
 });
+
+it('FE10 worker returns validation diagnostics on error and clears them before the next task', async () => {
+  const { installStudyWorker } = await import('../../app/lib/study-worker-handler');
+  const { computeEssentialStudyTask } = await import('../../app/lib/essential-study-computation');
+  const replies: Array<Record<string, unknown>> = [];
+  const scope = { onmessage: undefined as ((event: MessageEvent) => void) | undefined, postMessage: (value: Record<string, unknown>) => replies.push(value) };
+  vi.stubGlobal('self', scope); installStudyWorker(computeEssentialStudyTask);
+  scope.onmessage!({ data: { id: 1, task: { kind: 'workspace', url: '/api/settings', payload: {} } } } as MessageEvent);
+  scope.onmessage!({ data: { id: 2, task: { kind: 'queue', payload: { cards: [], count: 0 } } } } as MessageEvent);
+  expect(replies[1]).toMatchObject({ id: 1, error: expect.stringContaining('Invalid settings data'), diagnostics: [expect.objectContaining({ source: 'settings' })] });
+  expect(replies[3]).toMatchObject({ id: 2, result: [], diagnostics: [] });
+});
