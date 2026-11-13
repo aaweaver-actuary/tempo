@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources, validateReductionTools, validateContractTooling, validateDatabaseCliTools, validateBackupVerificationSources, validateManagedCutSources } from "../check-components.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources, validateReductionTools, validateContractTooling, validateDatabaseCliTools, validateBackupVerificationSources, validateManagedCutSources, validatePostgresQualificationSources } from "../check-components.mjs";
 import { validateOwnedPaths, selectComponents } from "../selection.mjs";
 import { validateMigrationInventory } from "../../../database/tooling/check-migration-inventory.mjs";
 
@@ -98,6 +98,59 @@ for (const [scope, path] of [["retained", "backend/app/contracts/new_contract.py
     assert.throws(() => validateCensusOwnership(original, scope, paths), /found 0/);
   });
 }
+test("T02 PostgreSQL qualification owners reject missing, duplicate, stale, role, export, dependency and overlap", () => {
+  assert.deepEqual(validatePostgresQualificationSources(original,repository,python),{sources:2});
+  const change=(fn)=>{const bad=structuredClone(original),owner=bad.components.find(c=>c.id==="postgres-read-route-audit");fn(bad,owner);return bad;};
+  assert.throws(()=>validatePostgresQualificationSources(change((_,o)=>o.ownedFiles.pop()),repository,python),/missing, duplicate or stale/);
+  assert.throws(()=>validatePostgresQualificationSources(change((_,o)=>o.ownedFiles.push(o.ownedFiles[0])),repository,python),/missing, duplicate or stale/);
+  assert.throws(()=>validatePostgresQualificationSources(change((_,o)=>o.ownedFiles[0]="../foreign.py"),repository,python),/missing, duplicate or stale/);
+  assert.throws(()=>validatePostgresQualificationSources(change((_,o)=>o.resourceRoles[0]+="-wrong"),repository,python),/PostgreSQL qualification role/);
+  assert.throws(()=>validatePostgresQualificationSources(change((_,o)=>o.publicExports[0]=o.ownedFiles[0]+"#missing"),repository,python),/source parse failed/);
+  assert.throws(()=>validatePostgresQualificationSources(change((_,o)=>o.dependencies=[]),repository,python),/dependency/);
+  assert.throws(()=>validatePostgresQualificationSources(change((b,o)=>b.components.find(c=>c.id==="integration").ownedFiles.push(o.ownedFiles[0])),repository,python),/overlapping/);
+  const revised=change((_,o)=>{const [p]=o.resourceRoles[0].split("#");o.resourceRoles[0]=p+"#rehearsal-admission";});
+  assert.throws(()=>validatePostgresQualificationSources(revised,repository,python),/PostgreSQL qualification role/);
+});
+test("T02 PostgreSQL qualification witnesses retain each consequential capability and owner", () => {
+  for(const [id,symbol] of [["postgres-rehearsal-admission-tool","#admitted_call"],["postgres-read-route-audit","#main"]]) {
+    const missing=structuredClone(original),owner=missing.components.find(c=>c.id===id);
+    owner.publicExports=owner.publicExports.filter(value=>!value.endsWith(symbol));
+    assert.throws(()=>validatePostgresQualificationSources(missing,repository,python),/Missing consequential PostgreSQL qualification capability|Invalid PostgreSQL qualification exports/);
+  }
+  const swapped=structuredClone(original),a=swapped.components.find(c=>c.id==="postgres-rehearsal-admission-tool"),b=swapped.components.find(c=>c.id==="postgres-read-route-audit");
+  [a.ownedFiles,b.ownedFiles]=[b.ownedFiles,a.ownedFiles];
+  [a.publicExports,b.publicExports]=[b.publicExports,a.publicExports];
+  [a.resourceRoles,b.resourceRoles]=[b.resourceRoles,a.resourceRoles];
+  assert.throws(()=>validatePostgresQualificationSources(swapped,repository,python),/PostgreSQL qualification role|Missing consequential/);
+  a.resourceRoles=a.ownedFiles.map(path=>path+"#rehearsal-admission"); b.resourceRoles=b.ownedFiles.map(path=>path+"#reader-route-audit");
+  assert.throws(()=>validatePostgresQualificationSources(swapped,repository,python),/Missing consequential PostgreSQL qualification capability|Invalid PostgreSQL qualification exports/);
+});
+test("T02 PostgreSQL qualification sources parse without execution and discover new siblings", context => {
+  const root=mkdtempSync(join(tmpdir(),"tempo-pg-qualification-source-"));context.after(()=>rmSync(root,{recursive:true,force:true}));
+  assert.equal(spawnSync("git",["-C",root,"init","-q"],{cwd:root}).status,0);
+  const files=original.components.filter(c=>["postgres-rehearsal-admission-tool","postgres-read-route-audit"].includes(c.id)).flatMap(c=>c.ownedFiles);
+  for(const file of files){mkdirSync(join(root,file,".."),{recursive:true});cpSync(join(repository,file),join(root,file));}
+  assert.equal(spawnSync("git",["-C",root,"add","database/tooling"],{cwd:root}).status,0);
+  assert.deepEqual(validatePostgresQualificationSources(original,root,python),{sources:2});
+  const target=join(root,files[0]),sentinel=join(root,"executed"),source=readFileSync(target,"utf8");
+  writeFileSync(target,source+`\nfrom pathlib import Path\nPath(${JSON.stringify(sentinel)}).write_text("unsafe")\n`);
+  assert.deepEqual(validatePostgresQualificationSources(original,root,python),{sources:2});assert.equal(existsSync(sentinel),false);
+  writeFileSync(target,"def invalid(:\n");assert.throws(()=>validatePostgresQualificationSources(original,root,python),/source parse failed/);writeFileSync(target,source);
+  for(const [path,name] of [["database/tooling/postgres_rehearsal_admission.py","admitted_call"],["database/tooling/audit_postgres_reads.py","main"]]) {
+    const file=join(root,path),before=readFileSync(file,"utf8");
+    assert.ok(before.includes("def "+name+"("));writeFileSync(file,before.replace("def "+name+"(","def removed_capability("));
+    assert.throws(()=>validatePostgresQualificationSources(original,root,python),/source parse failed/);writeFileSync(file,before);
+  }
+  const added="database/tooling/postgres_rehearsal_admission_extra.py";writeFileSync(join(root,added),"def extra(): pass\n");
+  assert.equal(spawnSync("git",["-C",root,"add",added],{cwd:root}).status,0);
+  assert.throws(()=>validatePostgresQualificationSources(original,root,python),/missing, duplicate or stale/);
+  const registered=structuredClone(original),owner=registered.components.find(c=>c.id==="postgres-rehearsal-admission-tool");owner.ownedFiles.push(added);owner.resourceRoles.push(added+"#rehearsal-admission");owner.publicExports.push(added+"#extra");
+  assert.deepEqual(validatePostgresQualificationSources(registered,root,python),{sources:3});
+  const jsx="database/tooling/postgres_rehearsal_admission_extra.jsx";writeFileSync(join(root,jsx),"export default null;\n");
+  assert.equal(spawnSync("git",["-C",root,"add",jsx],{cwd:root}).status,0);assert.throws(()=>validatePostgresQualificationSources(registered,root,python),/missing, duplicate or stale/);
+  owner.ownedFiles.push(jsx);owner.resourceRoles.push(jsx+"#rehearsal-admission");owner.publicExports.push(jsx+"#default");
+  assert.throws(()=>validatePostgresQualificationSources(registered,root,python),/Invalid or overlapping PostgreSQL qualification source/);
+});
 test("T02 managed cut owners reject missing, duplicate, stale, role, export, dependency and overlap", () => {
   assert.deepEqual(validateManagedCutSources(original,repository,python),{sources:2});
   const change=(fn)=>{const bad=structuredClone(original),owner=bad.components.find(c=>c.id==="postgres-managed-isolation");fn(bad,owner);return bad;};

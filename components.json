@@ -9291,6 +9291,77 @@
       "resourceRoles": [
         "database/tooling/managed_isolation.py#managed-cut-fence"
       ]
+    },
+    {
+      "id": "postgres-rehearsal-admission-tool",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tooling",
+      "publicExports": [
+        "database/tooling/postgres_rehearsal_admission.py#admitted_call"
+      ],
+      "dependencies": [
+        "redis-admission-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tooling/postgres_rehearsal_admission.py"
+      ],
+      "ownershipRole": "rehearsal-admission",
+      "dependencyNotes": [
+        "Qualification helper retries expected admission denial within 10 seconds while preserving the operation; outages propagate. It is not product retry policy.",
+        "Source census parses only and grants no permission to invoke the tool or contact a database."
+      ],
+      "resourceRoles": [
+        "database/tooling/postgres_rehearsal_admission.py#rehearsal-admission"
+      ]
+    },
+    {
+      "id": "postgres-read-route-audit",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tooling",
+      "publicExports": [
+        "database/tooling/audit_postgres_reads.py#representative_values",
+        "database/tooling/audit_postgres_reads.py#route_url",
+        "database/tooling/audit_postgres_reads.py#main"
+      ],
+      "dependencies": [
+        "api-startup-composition"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tooling/audit_postgres_reads.py"
+      ],
+      "ownershipRole": "reader-route-audit",
+      "dependencyNotes": [
+        "Operator audit opens a supplied reader database, imports the real application, invokes its GET routes and may write output; it can have application effects and is intended for a restored copy. The source expects 59 results; older regression documentation says 58 and remains unverified.",
+        "Source census parses only and grants no permission to invoke the tool or contact a database.",
+        "Reads docs/postgres-route-contract.json as route input; that resource remains outside this source selection."
+      ],
+      "resourceRoles": [
+        "database/tooling/audit_postgres_reads.py#reader-route-audit"
+      ]
     }
   ],
   "suites": [
