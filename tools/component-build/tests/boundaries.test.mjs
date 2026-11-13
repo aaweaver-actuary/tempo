@@ -27,10 +27,31 @@ test("T02 rejects unknown, missing and skipped owner qualification", t => {
   writeFileSync(join(dir, "qualification.json"), JSON.stringify({ outcome: "passed", stagingRemoved: true, receipts: labels.map(label => ({ label, exitCode: 0 })) }));
   writeFileSync(join(dir, "artifact.tgz"), "artifact");
   writeFileSync(join(dir, "artifact.json"), JSON.stringify({ filename: "artifact.tgz", sha256: createHash("sha256").update("artifact").digest("hex") }));
-  writeFileSync(join(dir, "unit-results.json"), JSON.stringify({ success: true, numTotalTests: 2, numPassedTests: 2, numFailedTests: 0, numPendingTests: 0, numTodoTests: 0 }));
+  const cases = [{ name: "board.test.ts", assertionResults: ["one", "two"].map(title => ({ title, ancestorTitles: [], status: "passed" })) }];
+  writeFileSync(join(dir, "unit-results.json"), JSON.stringify({ success: true, numTotalTests: 2, numPassedTests: 2, numFailedTests: 0, numPendingTests: 0, numTodoTests: 0, testResults: cases }));
   assert.deepEqual(validateOwnerQualification("board-ui", dir), ["artifact.tgz"]);
-  writeFileSync(join(dir, "unit-results.json"), JSON.stringify({ success: true, numTotalTests: 2, numPassedTests: 1, numFailedTests: 0, numPendingTests: 1, numTodoTests: 0 }));
+  const receipts = labels.map(label => ({ label, exitCode: 0 }));
+  for (const extra of [{ label: "producer-tests", exitCode: 1 }, { label: "unknown", exitCode: 0 }, { label: "producer-tests", exitCode: 0 }]) {
+    writeFileSync(join(dir, "qualification.json"), JSON.stringify({ outcome: "passed", stagingRemoved: true, receipts: [...receipts, extra] }));
+    assert.throws(() => validateOwnerQualification("board-ui", dir), /Incomplete/);
+  }
+  writeFileSync(join(dir, "qualification.json"), JSON.stringify({ outcome: "passed", stagingRemoved: true, receipts }));
+  cases[0].assertionResults[1] = cases[0].assertionResults[0];
+  writeFileSync(join(dir, "unit-results.json"), JSON.stringify({ success: true, numTotalTests: 2, numPassedTests: 2, numFailedTests: 0, numPendingTests: 0, numTodoTests: 0, testResults: cases }));
   assert.throws(() => validateOwnerQualification("board-ui", dir), /Incomplete/);
+  writeFileSync(join(dir, "unit-results.json"), JSON.stringify({ success: true, numTotalTests: 2, numPassedTests: 1, numFailedTests: 0, numPendingTests: 1, numTodoTests: 0, testResults: cases }));
+  assert.throws(() => validateOwnerQualification("board-ui", dir), /Incomplete/);
+});
+test("T02 rejects duplicated evidence case identities even if counts agree", t => {
+  const dir = mkdtempSync(join(tmpdir(), "tempo-t02-evidence-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "artifact.whl"), "artifact");
+  const matrix = ["3.12", "3.14"].flatMap(version => ["wheel", "sdist-wheel"].map(artifact => ({ interpreter: `Python ${version}.1`, artifact, passed: 2 })));
+  writeFileSync(join(dir, "qualification.json"), JSON.stringify({ complete: true, matrix, artifacts: [{ file: "artifact.whl", sha256: createHash("sha256").update("artifact").digest("hex") }] }));
+  for (let index = 0; index < 2; index++) for (const kind of ["wheel", "sdist-wheel"]) writeFileSync(join(dir, `cases-${index}-${kind}.json`), JSON.stringify({ selected: ["case-a", "case-b"], passed: ["case-a", "case-b"], failed: [], skipped: [] }));
+  assert.deepEqual(validateOwnerQualification("evidence-math", dir), ["artifact.whl"]);
+  writeFileSync(join(dir, "cases-0-wheel.json"), JSON.stringify({ selected: ["case-a", "case-a"], passed: ["case-a", "case-a"], failed: [], skipped: [] }));
+  assert.throws(() => validateOwnerQualification("evidence-math", dir), /duplicate/);
 });
 // Node marks test children internally; independent CLI fixtures must not inherit it.
 function spawnIsolatedNode(args, options = {}) {

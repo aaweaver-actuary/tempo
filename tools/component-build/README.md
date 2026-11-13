@@ -255,7 +255,9 @@ provider or runtime lifecycle.
 
 `board-ui` declares its package exports, React peer and published asset subpaths;
 `evidence-math` declares its root exports and the public
-`tempo_evidence_math.position_learning` module. Their tests select through
+`tempo_evidence_math.position_learning` module. The module declaration checks
+existence; it does not yet enforce Python consumer imports. Backend consumer
+boundary enforcement belongs to the later backend/storage ownership batch. Their tests select through
 `test-lane.mjs --component <id>`. Evidence-math's suite expects its wheel and
 locked test dependencies installed in the interpreter selected by
 `TEMPO_COMPONENT_PYTHON`.

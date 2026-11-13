@@ -18,7 +18,9 @@ export function validateOwnerQualification(kind, directory) {
   if (kind === "board-ui") {
     const result = read("qualification.json"), tests = read("unit-results.json"), artifact = read("artifact.json");
     const required = ["producer-install", "producer-typecheck", "producer-tests", "producer-build", "producer-pack", "consumer-install", "consumer-typecheck", "consumer-smoke", "consumer-build"];
-    if (result.outcome !== "passed" || !result.stagingRemoved || !Array.isArray(result.receipts) || required.some(label => result.receipts.filter(receipt => receipt.label === label && receipt.exitCode === 0).length !== 1) || !tests.success || !tests.numTotalTests || tests.numPassedTests !== tests.numTotalTests || tests.numFailedTests !== 0 || tests.numPendingTests !== 0 || tests.numTodoTests !== 0 || hash(artifact.filename) !== artifact.sha256) throw new Error("Incomplete board-ui qualification");
+    const receipts = result.receipts;
+    const cases = Array.isArray(tests.testResults) ? tests.testResults.flatMap(file => (file.assertionResults ?? []).map(item => ({ id: JSON.stringify([file.name, item.ancestorTitles, item.title]), status: item.status, file: file.name, title: item.title }))) : [];
+    if (result.outcome !== "passed" || !result.stagingRemoved || !Array.isArray(receipts) || receipts.length !== required.length || receipts.some(receipt => receipt.exitCode !== 0 || !required.includes(receipt.label)) || required.some(label => receipts.filter(receipt => receipt.label === label).length !== 1) || !tests.success || !tests.numTotalTests || tests.numPassedTests !== tests.numTotalTests || tests.numFailedTests !== 0 || tests.numPendingTests !== 0 || tests.numTodoTests !== 0 || cases.length !== tests.numTotalTests || cases.some(item => !item.file || !item.title || item.status !== "passed") || new Set(cases.map(item => item.id)).size !== cases.length || hash(artifact.filename) !== artifact.sha256) throw new Error("Incomplete board-ui qualification");
     return [artifact.filename];
   }
   if (kind === "evidence-math") {
@@ -29,7 +31,7 @@ export function validateOwnerQualification(kind, directory) {
     for (let index = 0; index < 2; index++) for (const kind of ["wheel", "sdist-wheel"]) {
       const cases = read(`cases-${index}-${kind}.json`);
       const cell = result.matrix[index * 2 + (kind === "wheel" ? 0 : 1)];
-      if (!cases.selected?.length || !Array.isArray(cases.passed) || !Array.isArray(cases.failed) || !Array.isArray(cases.skipped) || cases.selected.length !== cell.passed || JSON.stringify([...cases.selected].sort()) !== JSON.stringify([...cases.passed].sort()) || cases.failed.length || cases.skipped.length) throw new Error("Missing or skipped owner cases");
+      if (!Array.isArray(cases.selected) || !cases.selected.length || !Array.isArray(cases.passed) || !Array.isArray(cases.failed) || !Array.isArray(cases.skipped) || cases.selected.some(id => typeof id !== "string" || !id) || new Set(cases.selected).size !== cases.selected.length || new Set(cases.passed).size !== cases.passed.length || cases.selected.length !== cell.passed || JSON.stringify([...cases.selected].sort()) !== JSON.stringify([...cases.passed].sort()) || cases.failed.length || cases.skipped.length) throw new Error("Missing, duplicate or skipped owner cases");
     }
     return result.artifacts.map(item => item.file);
   }

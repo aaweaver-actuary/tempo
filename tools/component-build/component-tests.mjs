@@ -59,11 +59,12 @@ export function runComponentSelection(argumentsList, root = process.env.TEMPO_CO
       } else if (suite.kind === "vitest") {
         const result = JSON.parse(readFileSync(join(reports, "vitest.json"), "utf8"));
         if (!result.success || !result.numTotalTests || result.numPassedTests !== result.numTotalTests || result.numFailedTests !== 0 || result.numPendingTests !== 0 || result.numTodoTests !== 0) throw new Error("Missing/zero/failed/skipped Vitest cases: " + suite.id);
-        report = { passed: result.numPassedTests, executedIdentities: result.testResults.flatMap(file => file.assertionResults.map(item => [...item.ancestorTitles, item.title].join(" > "))) };
-        if (report.executedIdentities.length !== report.passed) throw new Error("Vitest identity mismatch: " + suite.id);
+        const cases = result.testResults.flatMap(file => file.assertionResults.map(item => ({ id: JSON.stringify([file.name, item.ancestorTitles, item.title]), status: item.status, file: file.name, title: item.title })));
+        report = { passed: result.numPassedTests, executedIdentities: cases.map(item => item.id) };
+        if (cases.length !== report.passed || cases.some(item => !item.file || !item.title || item.status !== "passed") || new Set(report.executedIdentities).size !== report.passed) throw new Error("Vitest identity mismatch: " + suite.id);
       } else if (suite.kind === "evidence-suite") {
         const result = JSON.parse(readFileSync(join(reports, "evidence.json"), "utf8"));
-        if (!result.complete || !result.cases?.selected?.length || JSON.stringify([...result.cases.selected].sort()) !== JSON.stringify([...result.cases.passed].sort()) || result.cases.failed.length || result.cases.skipped.length) throw new Error("Missing/zero/failed/skipped evidence cases: " + suite.id);
+        if (!result.complete || !Array.isArray(result.cases?.selected) || !result.cases.selected.length || !Array.isArray(result.cases.passed) || !Array.isArray(result.cases.failed) || !Array.isArray(result.cases.skipped) || result.cases.selected.some(id => typeof id !== "string" || !id) || new Set(result.cases.selected).size !== result.cases.selected.length || new Set(result.cases.passed).size !== result.cases.passed.length || JSON.stringify([...result.cases.selected].sort()) !== JSON.stringify([...result.cases.passed].sort()) || result.cases.failed.length || result.cases.skipped.length) throw new Error("Missing/zero/duplicate/failed/skipped evidence cases: " + suite.id);
         report = { passed: result.cases.passed.length, executedIdentities: result.cases.passed };
       } else {
         const parsed = spawnSync(python, [resolve(repository, "tools/component-build/case-results.py"), reports], { encoding: "utf8", env: environment });
