@@ -4,35 +4,39 @@ import { validateFen } from "chess.js";
 import { studySpecificationSchema } from "./study-exercises";
 
 const id = z.string().min(1);
+// The command owner bounds Python characters, and permits an existing empty ID.
+const length = (value: string) => Array.from(value).length;
+const boundedText = (maximum: number, minimum = 0) => z.string().refine(value => length(value) >= minimum && length(value) <= maximum, "Text exceeds owner bounds");
+const attemptId = boundedText(100);
 const revision = z.number().int().positive();
 const square = z.string().regex(/^[a-h][1-8]$/);
 const fen = z.string().refine(value => validateFen(value).ok, "Invalid exercise FEN");
-const common = { id, revision, prompt: z.string().min(1).max(2000), hint: z.string().max(2000), fen };
+const common = { id, revision, prompt: boundedText(2000, 1), hint: boundedText(2000), fen };
 const presentation = z.discriminatedUnion("type", [
   z.strictObject({ ...common, type: z.literal("move_line"), mode: z.enum(["single", "stepwise_line"]), grading_policy: z.enum(["reference", "open_judgment"]) }),
-  z.strictObject({ ...common, type: z.literal("square_set"), criterion: z.string().min(1).max(2000), candidate_region: z.array(square).max(64).nullable() }),
+  z.strictObject({ ...common, type: z.literal("square_set"), criterion: boundedText(2000, 1), candidate_region: z.array(square).max(64).nullable() }),
   z.strictObject({ ...common, type: z.literal("knight_path"), start_square: square, target_squares: z.array(square).min(1).max(8), minimum_hops: z.number().int().min(0).max(3), maximum_hops: z.number().int().min(0).max(3), hop_rule: z.enum(["at_most", "exact"]), occupancy_rule: z.literal("static_non_capturing") }),
-  z.strictObject({ ...common, type: z.literal("choice"), options: z.array(z.strictObject({ id: z.string().min(1).max(80), text: z.string().min(1).max(1000) })).min(2).max(12) }),
+  z.strictObject({ ...common, type: z.literal("choice"), options: z.array(z.strictObject({ id: boundedText(80, 1), text: boundedText(1000, 1) })).min(2).max(12) }),
   z.strictObject({ ...common, type: z.literal("explanation") }),
 ]);
 const assessment = z.object({
   outcome: z.enum(["correct", "incorrect", "unrecognized", "needs_self_assessment"]), feedback: z.string(),
   omitted: z.array(square).max(64).optional(), extra: z.array(square).max(64).optional(), outside_region: z.array(square).max(64).optional(),
 }).strict();
-const pending = z.strictObject({ attempt_id: id, assessment, pending_self_assessment: z.literal(true) })
+const pending = z.strictObject({ attempt_id: attemptId, assessment, pending_self_assessment: z.literal(true) })
   .refine(value => ["unrecognized", "needs_self_assessment"].includes(value.assessment.outcome));
-const completed = z.strictObject({ attempt_id: id, assessment, rating: z.enum(["correct", "again"]),
+const completed = z.strictObject({ attempt_id: attemptId, assessment, rating: z.enum(["correct", "again"]),
   requested_rating: z.enum(["correct", "again"]), persisted: z.literal(true),
   review: z.object({ review_id: z.number().int().positive(), requeue_entry_id: z.number().int().positive().nullable() }).passthrough().nullable(),
 });
 const specification = studySpecificationSchema.superRefine((value, ctx) => {
   const invalid = (message: string) => ctx.addIssue({ code: "custom", message });
-  if (value.prompt.length > 2000 || value.hint.length > 2000 || value.explanation.length > 10000 || (value.further_analysis?.length ?? 0) > 10000) invalid("Exercise text exceeds owner bounds");
-  if (value.type === "move_line" && (value.accepted_lines.length < 1 || value.accepted_lines.length > 20 || value.accepted_lines.some(line => line.length < 1 || line.length > 40 || line.some(move => !/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(move))))) invalid("Invalid accepted lines");
-  if (value.type === "square_set" && (value.required.length > 64 || value.optional.length > 64 || (value.candidate_region?.length ?? 0) > 64 || value.criterion.length > 2000)) invalid("Invalid square projection");
+  if (length(value.prompt) > 2000 || length(value.hint) > 2000 || length(value.explanation) > 10000 || length(value.further_analysis ?? "") > 10000) invalid("Exercise text exceeds owner bounds");
+  if (value.type === "move_line" && (value.accepted_lines.length < 1 || value.accepted_lines.length > 20 || value.accepted_lines.some(line => line.length < 1 || line.some(move => !/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(move))))) invalid("Invalid accepted lines");
+  if (value.type === "square_set" && (value.required.length > 64 || value.optional.length > 64 || (value.candidate_region?.length ?? 0) > 64 || length(value.criterion) > 2000)) invalid("Invalid square projection");
   if (value.type === "knight_path" && (value.target_squares.length < 1 || value.target_squares.length > 8 || value.minimum_hops > value.maximum_hops)) invalid("Invalid knight projection");
-  if (value.type === "choice" && (value.options.length < 2 || value.options.length > 12 || value.options.some(option => !option.id.length || option.id.length > 80 || !option.text.length || option.text.length > 1000) || !value.correct_option_ids.length)) invalid("Invalid choices");
-  if (value.type === "explanation" && value.rubric.length > 10000) invalid("Invalid rubric");
+  if (value.type === "choice" && (value.options.length < 2 || value.options.length > 12 || value.options.some(option => !length(option.id) || length(option.id) > 80 || !length(option.text) || length(option.text) > 1000) || !value.correct_option_ids.length)) invalid("Invalid choices");
+  if (value.type === "explanation" && length(value.rubric) > 10000) invalid("Invalid rubric");
 });
 const feedback = z.strictObject({ specification });
 
