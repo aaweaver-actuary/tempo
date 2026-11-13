@@ -1,11 +1,13 @@
 """Invocation-owned frozen Study browser facts, never an issued plan or receipt."""
 import hashlib
+import io
 import json
 import os
 import re
 import sys
 from datetime import date
 import psycopg
+import chess.pgn
 
 if os.environ.get('TEMPO_TEST_INSTANCE') != 'disposable':
     raise RuntimeError('Owned disposable PostgreSQL is required')
@@ -37,7 +39,6 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
             displaced.append([entry, position, updated])
         db.execute("INSERT INTO studies(id,title,created_at,updated_at) VALUES(%s,'P12 frozen Study','2000-01-01','2000-01-01')", (prefix,))
         db.execute("INSERT INTO study_chapters(id,study_id,title,position) VALUES(%s,%s,'Owned chapter',1)", (prefix+'-chapter',prefix))
-        db.execute("INSERT INTO study_sources(id,chapter_id,source_group_id,version,raw_pgn,sha256,filename,record_index,headers_json,diagnostics_json,valid,created_at) VALUES(%s,%s,%s,1,'','p12','fixture',0,'{}','{}',1,'2000-01-01')", (prefix+'-source',prefix+'-chapter',prefix+'-group'))
         base = {'hint':'', 'explanation':'P12 original feedback'}
         definitions = [dict(base, type='move_line', prompt='P12 first move', mode='single', grading_policy='reference', accepted_lines=[['e2e4']]),
             dict(base, type='explanation', prompt='P12 explain the move', rubric='The pawn claims the centre.'),
@@ -46,8 +47,13 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
         entries = []
         for index, specification in enumerate(definitions):
             exercise, card = f'{prefix}-exercise-{index}', f'{prefix}-card-{index}'
-            position = f'{prefix}-position-{index}'
-            db.execute("INSERT INTO study_positions(id,source_id,child_index,fen,history_json,node_path,valid) VALUES(%s,%s,%s,%s,'[]',%s,1)", (position,prefix+'-source',index,fen,f'fixture-{index}'))
+            position, source = f'{prefix}-position-{index}', f'{prefix}-source-{index}'
+            pgn = f'[Event "P12 fixture {index}"]\n[Result "*"]\n\n1. e4 *\n'
+            game = chess.pgn.read_game(io.StringIO(pgn))
+            if game is None or game.errors or game.board().fen() != fen or [move.uci() for move in game.mainline_moves()] != ['e2e4']:
+                raise RuntimeError('Invalid authored frozen fixture source')
+            db.execute("INSERT INTO study_sources(id,chapter_id,source_group_id,version,raw_pgn,sha256,filename,record_index,headers_json,diagnostics_json,valid,created_at) VALUES(%s,%s,%s,1,%s,%s,%s,0,%s,'[]',1,'2000-01-01')", (source,prefix+'-chapter',f'{prefix}-group-{index}',pgn,hashlib.sha256(pgn.encode()).hexdigest(),f'fixture-{index}.pgn',json.dumps(dict(game.headers))))
+            db.execute("INSERT INTO study_positions(id,source_id,child_index,fen,history_json,node_path,valid) VALUES(%s,%s,0,%s,'[]','root',1)", (position,source,fen))
             encoded = json.dumps(specification, sort_keys=True, separators=(',', ':'))
             digest = hashlib.sha256(encoded.encode()).hexdigest()
             db.execute("INSERT INTO study_exercises(id,study_id,position_id,current_revision,status,created_at,updated_at) VALUES(%s,%s,%s,1,'published','2000-01-01','2000-01-01')", (exercise,prefix,position))
@@ -91,7 +97,8 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
         db.execute('DELETE FROM cards WHERE id LIKE %s', (prefix+'-card-%',))
         db.execute('DELETE FROM study_exercise_revisions WHERE exercise_id LIKE %s', (prefix+'-exercise-%',))
         db.execute('DELETE FROM study_exercises WHERE study_id=%s', (prefix,))
-        db.execute('DELETE FROM study_positions WHERE source_id=%s', (prefix+'-source',))
+        owned_sources = [f'{prefix}-source-{i}' for i in range(3)]
+        db.execute('DELETE FROM study_positions WHERE source_id = ANY(%s)', (owned_sources,))
         db.execute('DELETE FROM study_sources WHERE chapter_id=%s', (prefix+'-chapter',))
         db.execute('DELETE FROM study_chapters WHERE study_id=%s', (prefix,))
         db.execute('DELETE FROM studies WHERE id=%s', (prefix,))
@@ -104,12 +111,13 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
                 restored += db.execute('UPDATE daily_queue SET position=%s WHERE id=%s AND position=%s', (original,entry,expected)).rowcount
         remaining = {}
         for table, column, value in [('studies','id',prefix), ('study_chapters','study_id',prefix),
-          ('study_exercises','study_id',prefix), ('study_positions','source_id',prefix+'-source'), ('study_attempts','exercise_id',prefix+'-exercise-%'),
+          ('study_exercises','study_id',prefix), ('study_attempts','exercise_id',prefix+'-exercise-%'),
           ('cards','id',prefix+'-card-%'), ('reviews','card_id',prefix+'-card-%'),
           ('daily_queue','card_id',prefix+'-card-%'), ('queue_attempt_origins','card_id',prefix+'-card-%'),
           ('review_attempt_receipts','card_id',prefix+'-card-%')]:
             op = 'LIKE' if value.endswith('%') else '='
             remaining[table] = db.execute(f'SELECT count(*) FROM {table} WHERE {column} {op} %s', (value,)).fetchone()[0]
+        remaining['study_positions'] = db.execute('SELECT count(*) FROM study_positions WHERE source_id = ANY(%s)', (owned_sources,)).fetchone()[0]
         remaining['operations'] = db.execute('SELECT count(*) FROM operation_receipts WHERE operation_id = ANY(%s)', (list(owned_ids),)).fetchone()[0]
         if any(remaining.values()) or restored + reordered + removed != len(displaced):
             raise RuntimeError(f'Owned frozen fixture cleanup incomplete: {remaining}')
