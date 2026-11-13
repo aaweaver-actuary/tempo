@@ -97,7 +97,8 @@ test('real Study worker publishes deliberately malformed optional manifest diagn
     try {
       const cleanup = fixture('cleanup', JSON.stringify(displaced), JSON.stringify([]));
       expect(cleanup.cleaned).toBe(true);
-      expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
+      expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(cleanup.displaced_count);
+      if (displaced.length) expect(cleanup.displaced_count).toBe(displaced.length);
       expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
     } catch (error) {
       if (originalFailure === undefined) throw error;

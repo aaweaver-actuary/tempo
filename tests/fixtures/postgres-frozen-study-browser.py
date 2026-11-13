@@ -9,6 +9,20 @@ from datetime import date
 import psycopg
 import chess.pgn
 
+def validate_displacement_receipt(encoded, prefix, day, supplied):
+    try:
+        receipt = json.loads(encoded)
+        rows = receipt['rows']
+        if (receipt['kind'] != 'p12-frozen-displacement-v1' or receipt['prefix'] != prefix or receipt['day'] != day
+            or not isinstance(rows, list) or any(not isinstance(row, list) or len(row) != 3
+                or any(type(value) is not int for value in row) for row in rows)
+            or len({row[0] for row in rows}) != len(rows) or (supplied and supplied != rows)):
+            raise ValueError('receipt mismatch')
+        return rows
+    except (ValueError, TypeError, KeyError) as error:
+        raise RuntimeError('Invalid owned displacement receipt; preserve fixture') from error
+
+
 if os.environ.get('TEMPO_TEST_INSTANCE') != 'disposable':
     raise RuntimeError('Owned disposable PostgreSQL is required')
 action, prefix, day = sys.argv[1:4]
@@ -37,7 +51,8 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
             updated = position + shift
             db.execute('UPDATE daily_queue SET position=%s WHERE id=%s', (updated, entry))
             displaced.append([entry, position, updated])
-        db.execute("INSERT INTO studies(id,title,created_at,updated_at) VALUES(%s,'P12 frozen Study','2000-01-01','2000-01-01')", (prefix,))
+        receipt = {'kind': 'p12-frozen-displacement-v1', 'prefix': prefix, 'day': day, 'rows': displaced}
+        db.execute("INSERT INTO studies(id,title,source_json,created_at,updated_at) VALUES(%s,'P12 frozen Study',%s,'2000-01-01','2000-01-01')", (prefix, json.dumps(receipt)))
         db.execute("INSERT INTO study_chapters(id,study_id,title,position) VALUES(%s,%s,'Owned chapter',1)", (prefix+'-chapter',prefix))
         base = {'hint':'', 'explanation':'P12 original feedback'}
         definitions = [dict(base, type='move_line', prompt='P12 first move', mode='single', grading_policy='reference', accepted_lines=[['e2e4']]),
@@ -75,7 +90,20 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
         origins = db.execute('SELECT queue_entry_id,card_id,revision,issued_as_head FROM queue_attempt_origins WHERE card_id LIKE %s ORDER BY queue_entry_id', (prefix+'-card-%',)).fetchall()
         print(json.dumps({'attempts':attempts, 'reviews':reviews, 'origins':origins},default=str))
     elif action == 'cleanup':
-        displaced, operations = json.loads(sys.argv[4]), json.loads(sys.argv[5])
+        supplied, operations = json.loads(sys.argv[4]), json.loads(sys.argv[5])
+        if not isinstance(supplied, list):
+            raise RuntimeError('Invalid supplied displacement receipt')
+        saved = db.execute('SELECT source_json FROM studies WHERE id=%s FOR UPDATE', (prefix,)).fetchone()
+        if saved is None:
+            orphan = db.execute("""SELECT 1 FROM cards WHERE id LIKE %s
+                UNION ALL SELECT 1 FROM study_chapters WHERE study_id=%s
+                UNION ALL SELECT 1 FROM study_exercises WHERE study_id=%s LIMIT 1""",
+                (prefix+'-card-%', prefix, prefix)).fetchone()
+            if supplied or operations or orphan:
+                raise RuntimeError('Missing owned displacement receipt; preserve fixture')
+            print(json.dumps({'cleaned': True, 'remaining': {}, 'restored': 0, 'reordered': 0, 'removed': 0, 'displaced_count': 0}))
+            sys.exit(0)
+        displaced = validate_displacement_receipt(saved[0], prefix, day, supplied)
         if not isinstance(operations, list) or any(not isinstance(value, str) or not value for value in operations):
             raise RuntimeError('Invalid original operation identities')
         owner_cards = [f'{prefix}-card-{i}' for i in range(3)]
@@ -104,9 +132,9 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
         db.execute('DELETE FROM studies WHERE id=%s', (prefix,))
         restored = reordered = removed = 0
         for entry, original, expected in displaced:
-            row = db.execute('SELECT position FROM daily_queue WHERE id=%s FOR UPDATE', (entry,)).fetchone()
+            row = db.execute('SELECT position,queue_date FROM daily_queue WHERE id=%s FOR UPDATE', (entry,)).fetchone()
             if row is None: removed += 1
-            elif row[0] != expected: reordered += 1
+            elif row[0] != expected or str(row[1]) != day: reordered += 1
             else:
                 restored += db.execute('UPDATE daily_queue SET position=%s WHERE id=%s AND position=%s', (original,entry,expected)).rowcount
         remaining = {}
@@ -121,6 +149,6 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
         remaining['operations'] = db.execute('SELECT count(*) FROM operation_receipts WHERE operation_id = ANY(%s)', (list(owned_ids),)).fetchone()[0]
         if any(remaining.values()) or restored + reordered + removed != len(displaced):
             raise RuntimeError(f'Owned frozen fixture cleanup incomplete: {remaining}')
-        print(json.dumps({'cleaned':True, 'remaining':remaining, 'restored':restored, 'reordered':reordered, 'removed':removed}))
+        print(json.dumps({'cleaned':True, 'remaining':remaining, 'restored':restored, 'reordered':reordered, 'removed':removed, 'displaced_count':len(displaced)}))
     else:
         raise ValueError('Unknown fixture action')
