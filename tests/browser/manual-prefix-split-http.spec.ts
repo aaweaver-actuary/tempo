@@ -118,7 +118,7 @@ test('real manual split accepts original issued review and replays its exact rec
     const replay = await request.post(`${api}/cards/${card}/prefix-split`, {headers:{'Idempotency-Key':operationId},data:body});
     expect(await confirmed(request,replay,operationId)).toEqual(acceptance);
     expect(snapshot()).toEqual(after);
-    let successor: {queue_entry_id:number; moves:string[]} | undefined;
+    let successor: {queue_entry_id:number; start_fen:string; moves:string[]; trained_color:string} | undefined;
     await expect.poll(async () => {
       const queue = await request.get(`${api}/queue/window?limit=20`);
       if (!queue.ok() || queue.status() === 202) return false;
@@ -128,12 +128,23 @@ test('real manual split accepts original issued review and replays its exact rec
     await expect(page.locator('#train')).toHaveAttribute('data-queue-entry-id', String(successor!.queue_entry_id));
     const boardFrame = page.locator('.board-frame').first();
     await expect(boardFrame).toHaveAttribute('data-input-enabled','true');
-    const initialFen = await boardFrame.getAttribute('data-fen');
-    if (!initialFen) throw new Error('Successor has no rendered position');
-    const expectedMove = successor!.moves?.[0];
-    if (!expectedMove || !/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(expectedMove)) throw new Error('Successor has no supported original move');
-    const chess = new Chess(initialFen);
-    if (!chess.move({from:expectedMove.slice(0,2), to:expectedMove.slice(2,4), ...(expectedMove[4] ? {promotion:expectedMove[4]} : {})})) throw new Error('Successor move is not legal');
+    // The UI may already have played an opponent move from the original line.
+    // Match its exact rendered position before selecting the next player move.
+    let initialFen = ''; let expectedMove = '';
+    await expect.poll(async () => {
+      const rendered = await boardFrame.getAttribute('data-fen');
+      if (!rendered) return false;
+      const chess = new Chess(successor!.start_fen);
+      for (const uci of successor!.moves) {
+        if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(uci)) throw new Error('Successor has an invalid original move');
+        if (chess.fen() === rendered && chess.turn() === (successor!.trained_color === 'white' ? 'w' : 'b')) {
+          if (!chess.move({from:uci.slice(0,2), to:uci.slice(2,4), ...(uci[4] ? {promotion:uci[4]} : {})})) throw new Error('Successor move is not legal');
+          initialFen = rendered; expectedMove = uci; return true;
+        }
+        chess.move({from:uci.slice(0,2), to:uci.slice(2,4), ...(uci[4] ? {promotion:uci[4]} : {})});
+      }
+      return false;
+    }, {timeout:10_000, message:'Rendered successor must match its original line and offer a legal player move'}).toBe(true);
     await move(page, expectedMove.slice(0,2), expectedMove.slice(2,4));
     await expect(boardFrame).not.toHaveAttribute('data-fen', initialFen);
   });

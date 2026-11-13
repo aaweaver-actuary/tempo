@@ -90,5 +90,6 @@ export function buildPostgresPlaywrightArguments(options) {
   const browserArguments = ["playwright", "test"];
   if (options.browserFile) browserArguments.push(join("tests", "browser", options.browserFile));
   if (options.browserGrep) browserArguments.push("--grep", options.browserGrep);
+  if (options.p14Checkpoint1) browserArguments.push("--max-failures=1");
   return browserArguments;
 }
