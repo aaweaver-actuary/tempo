@@ -160,7 +160,8 @@
               "readiness",
               "settings",
               "teaching",
-              "annotation"
+              "annotation",
+              "activity"
             ]
           }
         }

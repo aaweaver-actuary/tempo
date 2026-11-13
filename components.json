@@ -2,6 +2,73 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "activity-control-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/activity_commands.py#control_activity",
+        "backend/app/activity_commands.py#retry_failed_task"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "activity-retry-storage",
+        "durable-task-application",
+        "queue-refresh-wakeup"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/activity_commands.py"
+      ],
+      "ownershipRole": "Register and apply activity controls",
+      "dependencyNotes": [
+        "Registers activity.control and activity.task.retry at import; task composition imports the module. Uses background activity control, retired task kinds, UTC clock and caller-provided PostgreSQL connection."
+      ],
+      "censusScope": "activity"
+    },
+    {
+      "id": "activity-retry-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/commands",
+      "publicExports": [
+        "database/tempo_storage/commands/activity.py#failed_task_for_update",
+        "database/tempo_storage/commands/activity.py#reset_failed_task",
+        "database/tempo_storage/commands/activity.py#record_retry_activity",
+        "database/tempo_storage/commands/activity.py#record_manual_retry"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/commands/activity.py"
+      ],
+      "ownershipRole": "Persist caller-transaction manual task retry",
+      "dependencyNotes": [
+        "Native SQL locks the failed task, resets retry state and writes activity and generation event rows on the caller transaction; policy and transaction ownership remain outside."
+      ],
+      "censusScope": "activity"
+    },
+    {
       "id": "position-annotation-command",
       "type": "integration",
       "maintainer": "Tempo",

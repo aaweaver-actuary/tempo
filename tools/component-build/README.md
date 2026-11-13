@@ -366,8 +366,14 @@ annotations in the caller transaction. Gateway, transport and task composition
 remain external. The inherited legacy command fixture remains unresolved; this
 map does not qualify runtime behavior.
 
-At this base revision, 215 of 291 tracked Python files in those trees remain
-outside the combined 76-file selections. The registry alone assigns owners;
+A tenth selection maps the existing activity control and manual retry command and
+its SQL adapter. Task composition imports the registered commands; background
+activity, durable task, queue wake and retired-kind policy remain external edges.
+The adapter locks and resets a failed task and records activity and generation
+events in the caller transaction. The inherited legacy fixture remains unresolved.
+
+At this base revision, 213 of 291 tracked Python files in those trees remain
+outside the combined 78-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
