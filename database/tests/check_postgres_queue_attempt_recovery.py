@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 import json
+import hashlib
 import os
 from pathlib import Path
 import sys
@@ -467,8 +468,15 @@ def test_postgres_paused_feedback_history_preserves_ordinary_study():
     os.environ["TEMPO_DATABASE_READ_URL"] = os.environ["TEMPO_DATABASE_WRITE_URL"]
     postgres.close_pools()
     prefix = f"paused-feedback-{uuid.uuid4()}"
-    effect, operation, delivery, task = (prefix + suffix for suffix in ("-effect", "-operation", "-delivery", "-task"))
-    payload = '{ "effect": "original", "sequence": 7 }\n'
+    operation, delivery, task = (prefix + suffix for suffix in ("-operation", "-delivery", "-task"))
+    identity = {"workspace_id": "local", "provider": "lichess", "game_id": prefix, "decision_id": "decision", "occurrence_ply": 1}
+    logical_id = json.dumps(list(identity.values()), separators=(",", ":"))
+    effect = "game-effect:" + hashlib.sha256(logical_id.encode()).hexdigest()
+    selection = {"repertoire_id": prefix, "game_id": prefix, "occurrence_ply": 1}
+    payload = json.dumps(selection, indent=1) + "\n"
+    task_payload = json.dumps({"after": effect}, separators=(",", ":"))
+    delivery_payload = json.dumps({"key": identity, "source_key": prefix})
+    digest = request_digest("game_evidence.product_accept", selection)
     now = "2026-01-01T00:00:00+00:00"
     rows = (("study_game_feedback", "effect_key", effect), ("operation_receipts", "operation_id", operation),
             ("product_feedback_deliveries", "operation_id", delivery), ("background_tasks", "id", task))
@@ -483,11 +491,17 @@ def test_postgres_paused_feedback_history_preserves_ordinary_study():
             result.append((source[0], retired[0]))
         source = database.execute("SELECT row_to_json(r)::text FROM product_feedback_sources r WHERE source_key=%s", (prefix,)).fetchone()
         assert source
+        effect_row = database.execute("SELECT identity_json FROM study_game_feedback WHERE effect_key=%s", (effect,)).fetchone()
+        delivery_row = database.execute("SELECT effect_key,payload FROM product_feedback_deliveries WHERE operation_id=%s", (delivery,)).fetchone()
+        command_row = database.execute("SELECT request_hash,payload_json FROM operation_receipts WHERE operation_id=%s", (operation,)).fetchone()
+        task_row = database.execute("SELECT payload_json FROM background_tasks WHERE id=%s", (task,)).fetchone()
+        assert json.loads(effect_row[0]) == identity and delivery_row[0] == logical_id and delivery_row[1]["key"] == identity
+        assert command_row[0] == digest and command_row[1] == payload and json.loads(task_row[0])["after"] == effect
         grades = database.execute("SELECT row_to_json(r)::text FROM reviews r WHERE card_id=%s ORDER BY id", (prefix,)).fetchall()
         assert len(grades) == 1
         scoped = {
-            "effects": database.execute("SELECT effect_key FROM study_game_feedback WHERE card_id=%s OR effect_key LIKE %s ORDER BY effect_key", (prefix, prefix + "%")).fetchall(),
-            "deliveries": database.execute("SELECT operation_id FROM product_feedback_deliveries WHERE source_key=%s OR effect_key LIKE %s ORDER BY operation_id", (prefix, prefix + "%")).fetchall(),
+            "effects": database.execute("SELECT effect_key FROM study_game_feedback WHERE card_id=%s OR effect_key=%s ORDER BY effect_key", (prefix, effect)).fetchall(),
+            "deliveries": database.execute("SELECT operation_id FROM product_feedback_deliveries WHERE source_key=%s OR effect_key=%s ORDER BY operation_id", (prefix, logical_id)).fetchall(),
             "operations": database.execute("SELECT operation_id FROM operation_receipts WHERE operation_id LIKE %s OR payload_json LIKE %s ORDER BY operation_id", (prefix + "%", "%" + prefix + "%")).fetchall(),
             "tasks": database.execute("SELECT id FROM background_tasks WHERE id LIKE %s OR deduplication_key LIKE %s OR payload_json LIKE %s ORDER BY id", (prefix + "%", prefix + "%", "%" + prefix + "%")).fetchall(),
             "review_receipts": database.execute("SELECT attempt_id FROM review_attempt_receipts WHERE card_id=%s ORDER BY attempt_id", (prefix,)).fetchall(),
@@ -502,11 +516,11 @@ def test_postgres_paused_feedback_history_preserves_ordinary_study():
             database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(%s,%s,'prefix','synthetic','[]',%s)", (prefix, prefix, now))
             database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(%s,'correct',%s,0,7,'study')", (prefix, now))
             database.execute("INSERT INTO product_feedback_sources(source_key,version,payload) VALUES(%s,7,%s::jsonb)", (prefix, payload))
-            database.execute("INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,payload_json,payload_hash,card_id,decision_id,received_at,status,reason,updated_at) VALUES(%s,%s,'original-source',%s,'original-digest',%s,'decision',%s,'held','original-hold',%s)", (effect, payload, payload, prefix, now, now))
-            database.execute("INSERT INTO product_feedback_deliveries(operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload) VALUES(%s,%s,%s,'encounter','pending',123,%s::jsonb)", (delivery, prefix, effect, payload))
-            database.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,attempt_count,retry_cycle,cycle_attempt_count,last_error_json) VALUES(%s,'game_evidence.product_accept','original-digest','pending',%s,3,2,1,%s)", (operation, payload, '{"original":"error"}'))
+            database.execute("INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,payload_json,payload_hash,card_id,decision_id,received_at,status,reason,updated_at) VALUES(%s,%s,'original-source',%s,'original-digest',%s,'decision',%s,'held','original-hold',%s)", (effect, json.dumps(identity), delivery_payload, prefix, now, now))
+            database.execute("INSERT INTO product_feedback_deliveries(operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload) VALUES(%s,%s,%s,'encounter','pending',123,%s::jsonb)", (delivery, prefix, logical_id, delivery_payload))
+            database.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,attempt_count,retry_cycle,cycle_attempt_count,last_error_json) VALUES(%s,'game_evidence.product_accept',%s,'pending',%s,3,2,1,%s)", (operation, digest, payload, '{"original":"error"}'))
             database.execute("""INSERT INTO background_tasks(id,kind,deduplication_key,generation,priority,state,phase,payload_json,attempt_count,max_attempts,next_attempt_at,lease_token,lease_expires_at,created_at,updated_at)
-                VALUES(%s,'study_game_feedback',%s,7,100,'leased','original',%s,2,5,%s,'original-lease','2099-01-01T00:00:00Z',%s,%s)""", (task, task, payload, now, now, now))
+                VALUES(%s,'study_game_feedback',%s,7,100,'leased','original',%s,2,5,%s,'original-lease','2099-01-01T00:00:00Z',%s,%s)""", (task, task, task_payload, now, now, now))
             for table, key, value in rows:
                 database.execute(f"INSERT INTO tempo_retired_work(source_table,source_key,disposition,reason,source_record) SELECT %s,%s,'paused','fixture schema 64 disposition',to_jsonb(r) FROM {table} r WHERE {key}=%s", (table, value, value))
             before = snapshot(database)
