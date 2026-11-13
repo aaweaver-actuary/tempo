@@ -381,7 +381,10 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
       validateCensusInterfaces(manifest, scope, root, python);
     }
   }
-  if (root === repository && options.componentIds === undefined) validateStartupFacts(manifest, root); validateDdlResources(manifest, root, python);
+  if (root === repository && options.componentIds === undefined) {
+    validateStartupFacts(manifest, root);
+    validateDdlResources(manifest, root, python);
+  }
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
   const results = [];
   for (const component of selected) {
@@ -416,8 +419,11 @@ if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pat
     if (options.list) {
       const manifest = readManifest(root);
       const selected = options.suiteIds ? selectSuites(manifest, options.suiteIds) : selectComponents(manifest, options.componentIds);
-      if (root === repository && options.componentIds === undefined) validateStartupFacts(manifest, root); validateDdlResources(manifest, root, python);
-  validateManifest(manifest, root, { componentIds: options.suiteIds ? [] : selected.map(component => component.id), suiteIds: options.suiteIds });
+      if (root === repository && options.componentIds === undefined) {
+        validateStartupFacts(manifest, root);
+        validateDdlResources(manifest, root);
+      }
+      validateManifest(manifest, root, { componentIds: options.suiteIds ? [] : selected.map(component => component.id), suiteIds: options.suiteIds });
       console.log(JSON.stringify({ selected }, null, 2));
     } else {
       if (options.suiteIds) throw new Error("Use test-lane.mjs to execute shared suites");
