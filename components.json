@@ -8280,6 +8280,35 @@
         "Uses external python-chess for legal setup and solution moves; reads supplied packaged deck path. Existing consumers include tactical catalog, queue refresh and unmapped main composition. It does not own Study scheduling."
       ],
       "censusScope": "puzzle_helpers"
+    },
+    {
+      "id": "lifecycle-queue-projection-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/lifecycle",
+      "publicExports": [
+        "database/tempo_storage/lifecycle/refresh_requests.py#daily_queue_projection"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/lifecycle/refresh_requests.py"
+      ],
+      "ownershipRole": "Read daily queue readiness projection",
+      "dependencyNotes": [
+        "Caller-transaction query returns projection state, pending refresh, daily membership hash and existence of queued entries; current consumer is unmapped task composition."
+      ],
+      "censusScope": "lifecycle_projection"
     }
   ],
   "suites": [
