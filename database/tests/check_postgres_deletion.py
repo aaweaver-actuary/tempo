@@ -160,7 +160,7 @@ def main_check():
         print("PASS test_postgres_tactical_deletion_batches_and_publication_race; unrelated exclusions, real deletion after prepare, no spent allowance and next eligible admission")
 
     def prove_shared_admission_history_and_review_fallback():
-        from app.services.postgres_opening_evidence import queue_manifests
+        from app.study.position_checkpoint import queue_manifests
 
         for policy in ("keep", "delete"):
             for deleted_owner in (True, False):

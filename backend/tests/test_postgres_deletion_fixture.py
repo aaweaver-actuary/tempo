@@ -89,3 +89,40 @@ def test_tactical_cleanup_failure_retains_original_proof_failure():
     with pytest.raises(ValueError, match='controlled tactical cleanup failure') as caught_cleanup:
         fixture.preserve_tactical_cleanup_failure(fail_cleanup)
     assert caught_cleanup.value is cleanup
+
+
+def test_deletion_fixture_manifest_owner_reads_bound_snapshot_without_writes(monkeypatch):
+    import ast
+    import chess
+    from app.study import position_checkpoint
+
+    tree = ast.parse(fixture.__loader__.get_source(fixture.__name__))
+    imports = [node for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+               and any(alias.name == 'queue_manifests' for alias in node.names)]
+    assert len(imports) == 1 and imports[0].module == 'app.study.position_checkpoint'
+    calls = []
+    fen = chess.STARTING_FEN
+    row = {'queue_entry_id': 11, 'id': 42, 'repertoire_id': 'original-repertoire',
+           'card_id': 'original-card', 'revision': 1, 'start_fen': fen,
+           'moves_json': '["e2e4"]', 'trained_color': 'white', 'effective_trained_color': 'white'}
+    class Cursor:
+        def fetchall(self): return [row]
+    class ReadOnlyDatabase:
+        def execute_native(self, statement, parameters):
+            assert statement.lstrip().startswith('SELECT ')
+            calls.append((statement, parameters))
+            return Cursor()
+    @contextmanager
+    def connection():
+        yield ReadOnlyDatabase()
+    monkeypatch.setattr(position_checkpoint, 'read_connection', connection)
+    card = {'id': 'original-card', 'queue_entry_id': 11, 'content_type': 'opening',
+            'revision': 1, 'start_fen': fen, 'moves': ['e2e4'], 'trained_color': 'white'}
+    mismatched = {**card, 'queue_entry_id': 12}
+    position_checkpoint.queue_manifests([card, mismatched])
+    assert len(calls) == 1 and calls[0][1] == ([11, 12],)
+    assert card['opening_decision_manifest']['presentation_snapshot_id'] == 42
+    assert card['opening_decision_manifest']['repertoire_id'] == 'original-repertoire'
+    assert card['opening_decision_manifest']['card_id'] == 'original-card'
+    assert 'opening_decision_manifest' not in mismatched
+    assert 'Normal review remains available' in mismatched['opening_evidence_diagnostic']
