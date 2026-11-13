@@ -517,12 +517,13 @@ export function validateManagedCutSources(manifest, root = repository, python = 
   const references=[];
   for(const owner of owners) {
     const roles=new Map();
-    for(const value of owner.resourceRoles) {const parts=typeof value==="string" ? value.split("#") : [];if(parts.length!==2 || !owner.ownedFiles.includes(parts[0]) || !allowed.has(parts[1]) || roles.has(parts[0])) throw new Error("Invalid managed cut role");roles.set(parts[0],parts[1]);}
+    for(const value of owner.resourceRoles) {const parts=typeof value==="string" ? value.split("#") : [];if(parts.length!==2 || !owner.ownedFiles.includes(parts[0]) || !allowed.has(parts[1]) || parts[1] !== (owner.id === "postgres-cli-state-guard" ? "migration-state-witness" : "managed-cut-fence") || roles.has(parts[0])) throw new Error("Invalid managed cut role");roles.set(parts[0],parts[1]);}
     if(roles.size!==owner.ownedFiles.length) throw new Error("Invalid managed cut role");
     for(const path of owner.ownedFiles) if(!path.endsWith(".py") || path.split("/").some(x=>!x || x==="." || x==="..") || !existsSync(resolve(root,path)) || !inside(realpathSync(root),realpathSync(resolve(root,path))) || mapped.filter(c=>c.ownedFiles.includes(path)).length!==1) throw new Error("Invalid or overlapping managed cut source");
     if(!owner.publicExports.length || new Set(owner.publicExports).size!==owner.publicExports.length) throw new Error("Invalid managed cut exports");
     for(const value of owner.publicExports){const parts=value.split("#");if(parts.length!==2 || !owner.ownedFiles.includes(parts[0]) || !/^[A-Za-z_][A-Za-z_0-9]*$/.test(parts[1])) throw new Error("Invalid managed cut export");references.push({path:parts[0],symbol:parts[1]});}
   }
+  if(!owners[0].publicExports.includes("database/tooling/verify_postgres_cli_state.py#apply_cut62_history_v2") || !owners[1].publicExports.includes("database/tooling/managed_isolation.py#execute_managed_history_cut")) throw new Error("Missing consequential managed cut capability");
   if(!owners[1].dependencies.includes("postgres-cli-state-guard") || !["postgres-fingerprint-tool","postgres-backup-verification","postgres-migration-tooling"].every(id=>owners[0].dependencies.includes(id)) || !["postgres-cli-state-guard","postgres-managed-isolation"].every(id=>manifest.components.find(c=>c.id==="tempo-cli")?.dependencies.includes(id))) throw new Error("Missing managed cut dependency");
   const code=`import ast,json,pathlib,sys
 root=pathlib.Path(sys.argv[1])

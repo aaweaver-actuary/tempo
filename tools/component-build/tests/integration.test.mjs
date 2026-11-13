@@ -109,7 +109,21 @@ test("T02 managed cut owners reject missing, duplicate, stale, role, export, dep
   assert.throws(()=>validateManagedCutSources(change((_,o)=>o.dependencies=[]),repository,python),/dependency/);
   assert.throws(()=>validateManagedCutSources(change((b,o)=>b.components.find(c=>c.id==="integration").ownedFiles.push(o.ownedFiles[0])),repository,python),/overlapping/);
   const revised=change((_,o)=>{const [p]=o.resourceRoles[0].split("#");o.resourceRoles[0]=p+"#migration-state-witness";});
-  assert.deepEqual(validateManagedCutSources(revised,repository,python),{sources:2});
+  assert.throws(()=>validateManagedCutSources(revised,repository,python),/managed cut role/);
+});
+test("T02 managed cut witnesses retain each consequential capability and owner", () => {
+  for(const [id,symbol] of [["postgres-cli-state-guard","#apply_cut62_history_v2"],["postgres-managed-isolation","#execute_managed_history_cut"]]) {
+    const missing=structuredClone(original),owner=missing.components.find(c=>c.id===id);
+    owner.publicExports=owner.publicExports.filter(value=>!value.endsWith(symbol));
+    assert.throws(()=>validateManagedCutSources(missing,repository,python),/Missing consequential managed cut capability/);
+  }
+  const swapped=structuredClone(original),a=swapped.components.find(c=>c.id==="postgres-cli-state-guard"),b=swapped.components.find(c=>c.id==="postgres-managed-isolation");
+  [a.ownedFiles,b.ownedFiles]=[b.ownedFiles,a.ownedFiles];
+  [a.publicExports,b.publicExports]=[b.publicExports,a.publicExports];
+  [a.resourceRoles,b.resourceRoles]=[b.resourceRoles,a.resourceRoles];
+  assert.throws(()=>validateManagedCutSources(swapped,repository,python),/managed cut role|Missing consequential/);
+  a.resourceRoles=a.ownedFiles.map(path=>path+"#migration-state-witness"); b.resourceRoles=b.ownedFiles.map(path=>path+"#managed-cut-fence");
+  assert.throws(()=>validateManagedCutSources(swapped,repository,python),/Missing consequential managed cut capability/);
 });
 test("T02 managed cut sources parse without execution and discover new siblings", context => {
   const root=mkdtempSync(join(tmpdir(),"tempo-managed-cut-source-"));context.after(()=>rmSync(root,{recursive:true,force:true}));
@@ -122,6 +136,11 @@ test("T02 managed cut sources parse without execution and discover new siblings"
   writeFileSync(target,source+`\nfrom pathlib import Path\nPath(${JSON.stringify(sentinel)}).write_text("unsafe")\n`);
   assert.deepEqual(validateManagedCutSources(original,root,python),{sources:2});assert.equal(existsSync(sentinel),false);
   writeFileSync(target,"def invalid(:\n");assert.throws(()=>validateManagedCutSources(original,root,python),/source parse failed/);writeFileSync(target,source);
+  for(const [path,name] of [["database/tooling/verify_postgres_cli_state.py","apply_cut62_history_v2"],["database/tooling/managed_isolation.py","execute_managed_history_cut"]]) {
+    const file=join(root,path),before=readFileSync(file,"utf8");
+    assert.ok(before.includes("def "+name+"("));writeFileSync(file,before.replace("def "+name+"(","def removed_capability("));
+    assert.throws(()=>validateManagedCutSources(original,root,python),/source parse failed/);writeFileSync(file,before);
+  }
   const added="database/tooling/verify_postgres_cli_state_extra.py";writeFileSync(join(root,added),"def extra(): pass\n");
   assert.equal(spawnSync("git",["-C",root,"add",added],{cwd:root}).status,0);
   assert.throws(()=>validateManagedCutSources(original,root,python),/missing, duplicate or stale/);
