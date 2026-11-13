@@ -13,7 +13,6 @@ def test_due_consumers_apply_position_ownership_only_when_schema_present(monkeyp
         admission,
         seeding,
     )
-    from tempo_storage.study import conflicts
 
     class Connection:
         pass
@@ -45,7 +44,6 @@ def test_due_consumers_apply_position_ownership_only_when_schema_present(monkeyp
             return Result([])
 
     monkeypatch.setattr(psycopg, "Connection", Connection)
-    monkeypatch.setattr(conflicts, "held_unscoped_card_sql", lambda db: "FALSE")
     for present in (False, True):
         database = Database(present)
         assert not admission.has_missing_due_card(database, "2026-11-02")
@@ -134,7 +132,6 @@ def test_refresh_consumes_prepared_due_before_advancing(monkeypatch):
     prepared = {
         "cursor": {"position_repertoire": "r", "position_after": ["t", "standard", "p"]}
     }
-    monkeypatch.setattr(refresh.read_storage, "native_configured", lambda: True)
     monkeypatch.setattr(refresh, "background_read_connection", borrowed)
     monkeypatch.setattr(refresh, "read_connection", borrowed)
     monkeypatch.setattr(refresh, "connection", borrowed)
@@ -628,7 +625,7 @@ def test_new_position_issue_fences_source_before_existing_queue_locks_and_rolls_
         queue_commands, "_lock_attempt_card", lambda *a: calls.append("card")
     )
     monkeypatch.setattr(
-        queue_commands.queue_storage, "is_postgres_connection", lambda db: False
+        queue_commands, "lock_queue_date_for_position", lambda *a: calls.append("date")
     )
     monkeypatch.setattr(queue_commands.queue_storage, "retired_issuance_target", lambda *a: False)
     monkeypatch.setattr(queue_commands.queue_storage, "issued_origin", lambda *a: True)
@@ -642,7 +639,7 @@ def test_new_position_issue_fences_source_before_existing_queue_locks_and_rolls_
     assert failure.value.status_code == 409
     assert failure.value.code == "position_head_changed"
     assert failure.value.retryable is True
-    assert calls == ["source", "plan", "card"]
+    assert calls == ["source", "plan", "card", "date"]
 
 
 def test_source_preparation_cache_invalidates_on_source_revision(monkeypatch):
@@ -710,176 +707,25 @@ def test_http_issued_head_returns_original_plan_without_dispatch(monkeypatch):
     }
 
 
-def test_urgent_game_target_is_selected_when_natural_due_is_false(monkeypatch):
-    from contextlib import contextmanager
-    from app.services import queue_next_card, position_queue_admission
-    from app.study.position_learning.issued_plan_contracts import SelectionRequest
-    from tempo_storage import connections
-    from tempo_storage.study import game_feedback, position_due_candidates
-    from app.study.position_learning import issuance as position_issued_plans
-    from tests.test_position_issued_plan_contracts import option, request_for
-
-    request = request_for(option("italian-knight-attack"), target_ply=2, due=False)
-    route, target = request.routes[0], request.target
-
-    class Token:
-        repertoire_id = target.key.repertoire_id
-        authored_digest = "authored-digest"
-
-        def as_dict(self):
-            return {
-                "original_snapshot_id": route.certificate.snapshot_id,
-                "original_source_revision": route.certificate.source_revision,
-                "original_source_digest": route.certificate.source_digest,
-                "repertoire_id": self.repertoire_id,
-                "authored_digest": self.authored_digest,
-                "header": {"id": self.repertoire_id},
-                "integrity": {"status": "clean"},
-            }
-
-    source = NS(routes=(route,), authored_token=Token())
-    urgency = game_feedback.PositionUrgency(
-        target, request.dues[0].owner_epoch, "authored-digest", 7, "effect", "grade"
-    )
-
-    class Result:
-        def __init__(self, value):
-            self.value = value
-
-        def fetchall(self):
-            return self.value
-
-        def fetchone(self):
-            return self.value
-
-    class Reader:
-        def execute_native(self, sql, params=()):
-            if "SELECT p.attempt_id" in sql:
-                return Result([])
-            if "FROM queue_attempt_origins o JOIN cards" in sql:
-                return Result(
-                    {
-                        "admission_repertoire_id": target.key.repertoire_id,
-                        "issued_as_head": 0,
-                        "content_type": "opening",
-                    }
-                )
-            if "FROM study_position_owners o" in sql:
-                return Result(
-                    {
-                        "mode": "active",
-                        "epoch": request.dues[0].owner_epoch,
-                        "source_digest": "authored-digest",
-                    }
-                )
-            if "SELECT attempt_id FROM study_position_issued_plans" in sql:
-                return Result([])
-            raise AssertionError(sql)
-
-    @contextmanager
-    def borrowed():
-        yield Reader()
-
-    class DueReader:
-        def __init__(self, *a, **kw):
-            pass
-
-        def read_due_page(self, **kw):
-            pytest.fail("Urgent target must not require natural due")
-
-        missing = None
-
-        def read_context(self, keys):
-            witnesses = {w.definition.key: w for w in request.dues}
-            return tuple(
-                Hold("position_state_missing")
-                if key == self.missing
-                else witnesses[key]
-                for key in keys
-            )
-
-    import pytest
-
-    monkeypatch.setattr(connections, "read_connection", borrowed)
-    monkeypatch.setattr(queue_next_card, "_cached_position_source", lambda *a: source)
-    monkeypatch.setattr(
-        position_due_candidates, "PositionDueCandidateReader", DueReader
-    )
-    monkeypatch.setattr(
-        position_queue_admission,
-        "select_carrier",
-        lambda *a, **kw: NS(presentation_revision=4),
-    )
-    monkeypatch.setattr(
-        game_feedback, "read_position_urgency", lambda *a, **kw: urgency
-    )
-    monkeypatch.setattr(
-        position_issued_plans, "read_applicable_clean_proofs", lambda *a, **kw: ()
-    )
-    payload = {
-        "queue_date": "2026-11-02",
-        "entry_id": 41,
-        "card_id": "legacy-card-1",
-        "expected_revision": 4,
-    }
-    result = queue_next_card.prepare_queue_head(payload)
-    assert result.mode == "position" and result.urgency == urgency
-    witness = next(
-        w for w in result.proposal.plan.due_positions if w.definition == target
-    )
-    assert witness.due is False and witness.position_revision == 7
-    assert result.proposal.plan.moves_uci == route.moves_uci
-    DueReader.missing = route.decisions[3].definition.key
-    result = queue_next_card.prepare_queue_head(payload)
-    assert result.mode == "position"
-    assert result.proposal.plan.moves_uci == route.moves_uci[:5]
-    assert len(result.proposal.plan.due_positions) == 3
-    DueReader.missing = route.decisions[0].definition.key
-    result = queue_next_card.prepare_queue_head(payload)
-    assert result.mode == "hold" and result.reason == "position_state_missing"
-
-
-def test_changed_urgency_rolls_back_inserted_position_plan(monkeypatch):
-    import pytest
-    from fastapi import HTTPException
+def test_changed_source_holds_before_position_plan_or_queue_locks(monkeypatch):
+    # SPEC November 10 pass 2 retires active Games urgency; current Study
+    # source fencing still protects an issued position proposal.
     from app import queue_commands
     from app.services import queue_next_card
-    from tempo_storage.authored_repertoires import (
-        position_study_source,
-    )
-    from tempo_storage.study import game_feedback
-    from app.study.position_learning import issuance as position_issued_plans
+    from tempo_storage.authored_repertoires import position_study_source
+    from app.study.position_learning import issuance
 
-    payload = {
-        "queue_date": "2026-11-02",
-        "entry_id": 4,
-        "card_id": "card",
-        "expected_revision": 2,
-    }
-    urgency = NS(definition=NS(key=NS(repertoire_id="r")))
-    prepared = queue_next_card.PreparedQueueHead(
-        payload, "position", NS(source=object()), urgency=urgency
-    )
-    monkeypatch.setattr(
-        queue_commands, "current_study_day", lambda *a: payload["queue_date"]
-    )
-    monkeypatch.setattr(position_study_source, "fence_position_source", lambda *a: None)
-    monkeypatch.setattr(
-        position_issued_plans, "issue_in_borrowed_transaction", lambda *a: object()
-    )
-    monkeypatch.setattr(queue_commands, "_lock_attempt_card", lambda *a: None)
-    monkeypatch.setattr(
-        queue_commands.queue_storage, "is_postgres_connection", lambda *a: False
-    )
-    monkeypatch.setattr(queue_commands.queue_storage, "retired_issuance_target", lambda *a: False)
-    monkeypatch.setattr(queue_commands.queue_storage, "issued_origin", lambda *a: True)
-    monkeypatch.setattr(
-        queue_commands.queue_storage,
-        "prepare_queue_head",
-        lambda *a: lambda day: {"id": 4},
-    )
-    monkeypatch.setattr(queue_commands, "validate_available_attempt", lambda *a: None)
-    monkeypatch.setattr(game_feedback, "read_position_urgency", lambda *a, **kw: None)
-    with pytest.raises(HTTPException) as failure:
-        queue_commands.issue_queue_head(object(), prepared)
-    assert failure.value.status_code == 409
+    payload = {"queue_date": "2026-11-02", "entry_id": 4,
+               "card_id": "card", "expected_revision": 2}
+    prepared = queue_next_card.PreparedQueueHead(payload, "position", NS(source=object()))
+    calls = []
+    monkeypatch.setattr(queue_commands, "current_study_day", lambda db: payload["queue_date"])
+    monkeypatch.setattr(position_study_source, "fence_position_source",
+                        lambda *a: calls.append("source") or Hold("position_owner_source_changed"))
+    monkeypatch.setattr(issuance, "issue_in_borrowed_transaction", lambda *a: calls.append("plan"))
+    monkeypatch.setattr(queue_commands, "_lock_attempt_card", lambda *a: calls.append("card"))
+    monkeypatch.setattr(queue_commands, "lock_queue_date_for_position", lambda *a: calls.append("date"))
+    result = queue_commands.issue_queue_head(object(), prepared)
+    assert result["issued"] is False
+    assert result["position_study_hold"] == "position_owner_source_changed"
+    assert calls == ["source"]
