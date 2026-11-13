@@ -8115,7 +8115,9 @@
         "database/tempo_storage/postgres.py#connection",
         "database/tempo_storage/postgres.py#diagnostic_read_connection"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "background-metrics-storage"
+      ],
       "buildInputs": [],
       "buildCommand": null,
       "artifact": null,
@@ -8173,7 +8175,8 @@
       ],
       "ownershipRole": "Compose admitted database connections",
       "dependencyNotes": [
-        "Background database sections use the bound gate and measurement; query-only scopes select reads and startup validates the installed schema version."
+        "Background database sections use the bound gate and measurement; query-only scopes select reads and startup validates the installed schema version.",
+        "Imports tempo_storage.ddl.schema_version for schema validation; DDL is outside this census."
       ],
       "censusScope": "database_infrastructure"
     },
