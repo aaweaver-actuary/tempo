@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { createIsolatedTestEnvironment } from "../../scripts/test-environment.mjs";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
-import { assertDisposableVolumes, verifyMaintainedQueueReceipt, verifyMaintainedBrowserReceipt, unresolvedQueueCases, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
+import { requireOriginalOperationReceipt, originalPrefixSplitRows, assertDisposableVolumes, verifyMaintainedQueueReceipt, verifyMaintainedBrowserReceipt, unresolvedQueueCases, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -31,7 +31,9 @@ if (options.list) {
   console.log(JSON.stringify({ mode: options.mode, stages,
     browser_file: options.browserFile, browser_grep: options.browserGrep,
     acceptance_scope: options.maintainedStudyProof ? "partial-maintained-study-not-full-E02" : options.mode,
-    unresolved_owner_cases: options.maintainedStudyProof ? unresolvedQueueCases : [] }, null, 2));
+    unresolved_owner_cases: stages.includes("study_durability") ? unresolvedQueueCases : [],
+    historical_priority_rollback: stages.includes("study_durability") ? "not executed" : undefined,
+    study_durability_cases: stages.includes("study_durability") ? ["foreground_study", "prefix_split_http_accept_replay", "prefix_split_http_restart_replay", "study_burial_quota", "blocked_burial_recovery"] : [] }, null, 2));
   process.exit(0);
 }
 
@@ -142,6 +144,8 @@ const measureScenario = createScenarioTimer(timingPath, {
   plan_hash: process.env.TEMPO_CI_PLAN_HASH ?? null,
   acceptance_scope: options.maintainedStudyProof ? "partial-maintained-study-not-full-E02" : options.mode,
   native_checks: options.nativeChecks ?? [],
+  unresolved_owner_cases: stages.includes("study_durability") ? unresolvedQueueCases : [],
+  historical_priority_rollback: stages.includes("study_durability") ? "not executed" : null,
   browser_file: options.browserFile, browser_grep: options.browserGrep,
   planned_stages: stages,
 });
@@ -240,6 +244,26 @@ async function verifyStudyQueueReceipts(maintained = false) {
         const receipt = records.findLast(record => record.execution === 'completed');
         verifyMaintainedQueueReceipt(receipt);
         atomicJson(`test-results/native/${project}-maintained-queue.json`, {revision: candidateRevision, project, ...receipt});
+        const paused = run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+          "/source/database/tests/check_postgres_queue_attempt_recovery.py", "--case-set", "paused-feedback"],
+          {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, echoCapturedOutput: true});
+        const pausedRecords = paused.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+        const pausedReceipt = pausedRecords.findLast(record => record.execution === 'completed');
+        assert.deepEqual(pausedReceipt?.cases, ['test_postgres_paused_feedback_history_preserves_ordinary_study']);
+        assert.equal(pausedReceipt?.case_set, 'paused-feedback');
+        assert.equal(pausedReceipt?.scope, 'paused-feedback-only');
+        assert.equal(pausedReceipt?.executed_count, 1);
+        atomicJson(`test-results/native/${project}-paused-feedback.json`, {revision: candidateRevision, project, ...pausedReceipt});
+        const review = run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+          "/source/database/tests/check_postgres_queue_attempt_recovery.py", "--case-set", "review-recovery"],
+          {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, echoCapturedOutput: true});
+        const reviewRecords = review.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+        const reviewReceipt = reviewRecords.findLast(record => record.execution === 'completed');
+        assert.deepEqual(reviewReceipt?.cases, ['test_postgres_retained_review_reconciliation_preserves_original_attempt']);
+        assert.equal(reviewReceipt?.case_set, 'review-recovery');
+        assert.equal(reviewReceipt?.scope, 'review-recovery-only');
+        assert.equal(reviewReceipt?.executed_count, 1);
+        atomicJson(`test-results/native/${project}-review-recovery.json`, {revision: candidateRevision, project, ...reviewReceipt});
       },
       restoreConsumers: () => restoreBackgroundWorkloadConsumers({
         startConsumers: services => run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...services]),
@@ -376,23 +400,24 @@ async function postCommand(path, payload, { method = "POST", operationId, label 
   if (operationId) headers["Idempotency-Key"] = operationId;
   return confirm(await apiRequest(path, {
     method, headers, body: JSON.stringify(payload),
-  }, label));
+  }, label), operationId);
 }
 
 async function confirm(...argumentsList) {
   return measureScenario.detail("operation_receipt", "readiness", () => pollForConfirmation(...argumentsList));
 }
 
-async function pollForConfirmation(response) {
+async function pollForConfirmation(response, expectedOperationId) {
   if (response.status !== 202) {
     if (!response.ok) throw new Error(`command HTTP ${response.status} ${await response.text()}`);
     return response.json();
   }
   const pending = await response.json();
   assert(pending.operation_id, "202 command must return an operation ID");
+  if (expectedOperationId) requireOriginalOperationReceipt(pending, expectedOperationId);
   for (let attempt = 0; attempt < 120; attempt += 1) {
     measureScenario.poll();
-    const receipt = await get(`operations/${encodeURIComponent(pending.operation_id)}`);
+    const receipt = requireOriginalOperationReceipt(await get(`operations/${encodeURIComponent(pending.operation_id)}`), pending.operation_id);
     if (receipt.state === "complete") return receipt.response;
     if (receipt.state === "failed") throw new Error(`PostgreSQL command failed: ${JSON.stringify(receipt.error)}`);
     await measureScenario.wait(250);
@@ -757,7 +782,7 @@ async function verifyForegroundAndStudyDurability() {
   assert(failedAttempt, "Guided failure command receives a confirmed response");
 
   const splitOperationId = `pg-study-prefix-split-${randomBytes(10).toString("hex")}`;
-  const split = await verifyNativeStudyPrefixSplit(splitCard, importedStudy.repertoire_id, splitOperationId);
+  const split = await measureScenario.detail("prefix_split_http_accept_replay", "scenario", () => verifyHttpStudyPrefixSplit(splitCard, importedStudy.repertoire_id, splitOperationId, true));
   assert.equal(split.response.applied, true);
   const queueRead = await apiRequest("queue/today", {}, "foreground GET queue/today during background backlog");
   assert.equal(queueRead.status, 200);
@@ -822,7 +847,7 @@ async function verifyForegroundAndStudyDurability() {
   assert(beforeRestartState.reviews.some((row) => row.card_id === reviewCard.id));
   assert(beforeRestartState.queue.some((row) => row.card_id === guidedCard.id
     && (row.attempt_failed === 1 || row.attempt_state === "failed" || row.attempt_state === "guided")));
-  assert(beforeRestartState.prefixSplits.some((row) => row.source_card_id === splitCard.id));
+  assert.equal(originalPrefixSplitRows(studySnapshot, splitCard.id).length, 1);
 
   const savedReviewCount = beforeRestartState.reviews.length;
   run("docker", [...compose, "down"]);
@@ -830,8 +855,8 @@ async function verifyForegroundAndStudyDurability() {
   await waitForReady();
   await waitForStudyableImport(importedStudy.repertoire_id);
   await waitForStudyableImport(importedBackground.repertoire_id);
-  const replayedSplit = await verifyNativeStudyPrefixSplit(splitCard, importedStudy.repertoire_id, splitOperationId);
-  assert.deepEqual(replayedSplit, split, "Native split receipt and exact split rows survive restart and original-ID replay");
+  const replayedSplit = await measureScenario.detail("prefix_split_http_restart_replay", "scenario", () => verifyHttpStudyPrefixSplit(splitCard, importedStudy.repertoire_id, splitOperationId, false));
+  assert.deepEqual(replayedSplit, split, "HTTP split receipt and exact split rows survive restart and original-ID replay");
   const afterRestartSnapshot = await readStudySnapshot();
   await verifyPgnImportReplayWithoutDuplicates(pgnImportOperationId, importedStudy, "after recreation");
   await verifyDiscardedPgnReplay(discardedPgnId);
@@ -873,25 +898,37 @@ async function verifyForegroundAndStudyDurability() {
   activeStudyRepertoireId = null;
 }
 
-async function verifyNativeStudyPrefixSplit(card, repertoireId, operationId) {
-  await readStudySnapshot(); // Revalidate the exact owned target and schema before writing.
-  const inspected = run("docker", ["inspect", "--format",
-    '{"id":{{json .Id}},"labels":{{json .Config.Labels}}}', `${project}-foreground-worker-1`],
-    {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'});
-  const writer = JSON.parse(inspected.stdout);
-  assert.match(writer.id, /^[a-f0-9]{64}$/);
-  assert.equal(writer.labels['com.docker.compose.project'], project);
-  assert.equal(writer.labels['com.docker.compose.service'], 'foreground-worker');
-  assert.equal(writer.labels['tempo.resource-owner'], process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN);
-  const proof = run("docker", ["exec", "-i", "-e", "TEMPO_TEST_INSTANCE=disposable", writer.id, "python", "-", card.id, repertoireId, operationId, String(card.revision)], {
-    input: readFileSync("tests/fixtures/postgres-study-prefix-split.py", "utf8"),
-    stdio: ['pipe', 'pipe', 'inherit'], encoding: 'utf8', env: environment,
-  });
-  const receipt = JSON.parse(proof.stdout.trim());
-  assert.equal(receipt.scope, 'native-command-durability-not-HTTP');
-  assert.equal(receipt.operation_id, operationId);
-  console.log(`PASS native prefix-split receipt/replay; UNRESOLVED HTTP transport: ${receipt.unresolved_transport}`);
-  return receipt;
+async function verifyHttpStudyPrefixSplit(card, repertoireId, operationId, initial) {
+  const path = `cards/${encodeURIComponent(card.id)}/prefix-split`;
+  const payload = {expected_revision: card.revision};
+  if (initial) {
+    const preview = await get(path);
+    assert.equal(preview.source_card_id, card.id);
+    assert.equal(preview.source_revision, card.revision);
+    assert.equal(preview.applied, false);
+  }
+  async function deliver() {
+    const raw = await apiRequest(path, {method: "POST", headers: {"Content-Type": "application/json", "Idempotency-Key": operationId}, body: JSON.stringify(payload)}, "foreground POST prefix split");
+    if (raw.status === 202) assert.equal((await raw.clone().json()).operation_id, operationId);
+    return confirm(raw, operationId);
+  }
+  const response = await deliver();
+  assert.equal(response.applied, true);
+  assert.equal(response.source_card_id, card.id);
+  assert.equal(response.source_revision, card.revision);
+  const receipt = requireOriginalOperationReceipt(await get(`operations/${encodeURIComponent(operationId)}`), operationId);
+  assert.equal(receipt.state, "complete");
+  assert.deepEqual(receipt.response, response);
+  const rows = originalPrefixSplitRows(await readStudySnapshot(), card.id);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].source_revision, card.revision);
+  assert.equal(rows[0].shortened_card_id, response.parent.card_id);
+  assert.equal(rows[0].continuation_card_id, response.continuation.card_id);
+  const replay = await deliver();
+  assert.deepEqual(replay, response);
+  assert.deepEqual(await get(`operations/${encodeURIComponent(operationId)}`), receipt);
+  assert.deepEqual(originalPrefixSplitRows(await readStudySnapshot(), card.id), rows);
+  return {response, receipt, rows};
 }
 
 async function verifyStudyBurialRetainsQuota() {
@@ -1425,7 +1462,7 @@ const actions = {
         atomicJson(`test-results/native/${project}-maintained-study.json`, {revision: candidateRevision, project,
           scope: 'partial-maintained-study-not-full-E02', browser_report: report, browser_cases: 1,
           unresolved_owner_cases: unresolvedQueueCases, historical_priority_rollback: 'not executed',
-          unresolved_transport: ['prefix-split HTTP GET/POST unmounted'], prefix_split_scope: 'native-command-durability-not-HTTP'});
+          prefix_split_scope: 'http-preview-accept-receipt-replay'});
       }
   },
   maintained_study_only: async () => {
@@ -1449,7 +1486,7 @@ const actions = {
     await verifyStudyOpeningAdmission();
   },
   study_queue_receipts: () => verifyStudyQueueReceipts(),
-  ...Object.fromEntries(['position-grade-effects', 'position-introductions', 'position-queue-admission', 'prefix-split-placement'].map(check => [check, async () => {
+  ...Object.fromEntries(['position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'prefix-split-placement'].map(check => [check, async () => {
     assertDevelopmentProjectOwned(project);
     const imageReference = run('docker', [...compose, 'images', '-q', 'schema'],
       {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout.trim();

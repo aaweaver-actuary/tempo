@@ -8,7 +8,7 @@ import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../database/tests/postgres-test-options.mjs";
-import { assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
+import { maintainedQueueCases, unresolvedQueueCases, excludedQueueCases, verifyMaintainedQueueReceipt, assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../database/tests/postgres-test-fixture.mjs";
 import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -808,8 +808,8 @@ test("nested timing cannot qualify failed, missing or stale durability and lifec
     const planned_stages = postgresTestStages({ mode });
     const plan = { commit: "candidate", hash: "immutable-plan", jobs: { [layer]: { mode, planned_stages } } };
     const report = { runner: "postgres", mode, commit: plan.commit, plan_hash: plan.hash, planned_stages,
-      stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0, duration_seconds: 1 }])),
-      details: [{ label: "expected_migration_rejection", category: "migration", exit_code: 1, completed: true }] };
+      acceptance_scope: mode, unresolved_owner_cases: mode === 'durability' ? unresolvedQueueCases : [], historical_priority_rollback: mode === 'durability' ? 'not executed' : null, stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0, duration_seconds: 1 }])),
+      details: [...(mode === "durability" ? ["prefix_split_http_accept_replay", "prefix_split_http_restart_replay"].map(label => ({stage:"study_durability", label, category:"scenario", completed:true, exit_code:0})) : []), { label: "expected_migration_rejection", category: "migration", exit_code: 1, completed: true }] };
     assert.doesNotThrow(() => validatePostgresScenarios(layer, plan, report));
     for (const modify of [
       candidate => { candidate.stages[planned_stages[0]].exit_code = 1; },
@@ -829,7 +829,7 @@ test("packaged Games reader cannot be missing, skipped, failed, or omitted from 
   const planned_stages = postgresTestStages({ mode: "durability" });
   const plan = { commit: "candidate", hash: "immutable-plan", jobs: { postgres: { mode: "durability", planned_stages } } };
   const report = { runner: "postgres", mode: "durability", commit: plan.commit, plan_hash: plan.hash, planned_stages,
-    stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0 }])) };
+    acceptance_scope: 'durability', unresolved_owner_cases: unresolvedQueueCases, historical_priority_rollback: 'not executed', details: ["prefix_split_http_accept_replay", "prefix_split_http_restart_replay"].map(label => ({stage:"study_durability", label, category:"scenario", completed:true, exit_code:0})), stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0 }])) };
   assert.doesNotThrow(() => validatePostgresScenarios("postgres", plan, report));
   for (const modify of [
     candidate => { delete candidate.stages.game_review_reader; },
@@ -1501,4 +1501,89 @@ test('selected Study durability retains current history and quota proofs without
     assert(action.includes(proof), `Missing retained ${proof}`);
   assert(!action.includes('check_postgres_stalemate_swindles.py'));
   assert(postgresTestStages({mode: 'study'}).includes('study_durability'));
+});
+
+
+test("P04 maintained queue receipt distinguishes pending native replacement from unresolved owner", () => {
+  const receipt = { case_set: "maintained-six", scope: "partial", execution: "completed", executed_count: 6,
+    cases: maintainedQueueCases, excluded_cases: excludedQueueCases, unresolved_owner_cases: unresolvedQueueCases };
+  assert.equal(excludedQueueCases[0], "test_postgres_paused_feedback_history_preserves_ordinary_study");
+  assert.deepEqual(unresolvedQueueCases, ["test_postgres_retained_review_reconciliation_preserves_original_attempt"]);
+  verifyMaintainedQueueReceipt(receipt);
+  assert.throws(() => verifyMaintainedQueueReceipt({ ...receipt, excluded_cases: unresolvedQueueCases }));
+  assert.throws(() => verifyMaintainedQueueReceipt({ ...receipt, unresolved_owner_cases: excludedQueueCases }));
+});
+
+
+test('P07 position atomicity bridge is explicitly selectable and cannot widen mode', () => {
+  const options = parse(['--mode', 'study', '--browser-grep', 'P07', '--native-check', 'position-review-atomicity']);
+  assert(postgresTestStages(options).includes('position-review-atomicity'));
+  assert.throws(() => parse(['--mode','durability','--native-check','position-review-atomicity']));
+  assert.throws(() => parse(['--mode','study','--browser-grep','P07','--native-check','position-review-atomicity','--native-check','position-review-atomicity']));
+  const source = readFileSync('database/tests/test-postgres-docker.mjs', 'utf8');
+  assert(source.includes("'position-grade-effects', 'position-review-atomicity', 'position-introductions'"));
+});
+
+test('P07 HTTP split report requires both exact completed cases and correct scope', async () => {
+  const { verifyStudyDurabilityScenario } = await import('../../database/tests/postgres-test-plan.mjs');
+  const details = ['prefix_split_http_accept_replay','prefix_split_http_restart_replay'].map(label => ({stage:'study_durability', label, category:'scenario', completed:true, exit_code:0}));
+  const report = {acceptance_scope:'durability', unresolved_owner_cases:unresolvedQueueCases, historical_priority_rollback:'not executed', details};
+  assert.doesNotThrow(() => verifyStudyDurabilityScenario(report, 'durability'));
+  for (const invalid of [
+    {...report, acceptance_scope:'full'}, {...report, details:[]},
+    {...report, details:[details[0],details[0],details[1]]},
+    {...report, details:[details[0], {...details[1], skipped:true}]},
+    {...report, details:[details[0], {...details[1], retries:1}]},
+    {...report, details:[details[0], {...details[1], exit_code:1}]},
+  ]) assert.throws(() => verifyStudyDurabilityScenario(invalid, 'durability'));
+});
+
+
+test('P07 CI PostgreSQL consumer rejects missing duplicate and partial HTTP evidence', () => {
+  const mode = 'durability', planned_stages = postgresTestStages({mode});
+  const plan = {commit:'candidate', hash:'plan', jobs:{postgres:{mode, planned_stages}}};
+  const labels = ['prefix_split_http_accept_replay','prefix_split_http_restart_replay'];
+  const report = {runner:'postgres',mode,commit:plan.commit,plan_hash:plan.hash,planned_stages,acceptance_scope:mode, unresolved_owner_cases:unresolvedQueueCases, historical_priority_rollback:'not executed',
+    stages:Object.fromEntries(planned_stages.map(stage => [stage,{exit_code:0}])),
+    details:labels.map(label => ({stage:'study_durability',label,category:'scenario',completed:true,exit_code:0}))};
+  assert.doesNotThrow(() => validatePostgresScenarios('postgres',plan,report));
+  for (const modify of [r => {r.details.pop();}, r => {r.details.push({...r.details[0]});},
+    r => {r.details[0].skipped=true;}, r => {r.acceptance_scope='partial-maintained-study-not-full-E02';},
+    r => {r.stages.cleanup.skipped=true;}, r => {r.unresolved_owner_cases=[];}, r => {r.historical_priority_rollback='passed';}]) {
+    const bad=structuredClone(report); modify(bad);
+    assert.throws(() => validatePostgresScenarios('postgres',plan,bad));
+  }
+});
+
+
+test('P07 original split rows survive removed membership and foreign card owner', async () => {
+  const {originalPrefixSplitRows} = await import('../../database/tests/postgres-test-plan.mjs');
+  const expected={source_card_id:'original',source_revision:4,shortened_card_id:'parent',continuation_card_id:'child'};
+  const snapshot={tables:{repertoire_cards:[{repertoire_id:'current',card_id:'parent'}],
+    cards:[{id:'original',repertoire_id:'foreign',archived:1}],
+    prefix_splits:[{...expected,extra:'unchanged'}, {source_card_id:'other'}]}};
+  assert.deepEqual(originalPrefixSplitRows(snapshot,'original'),[expected]);
+  assert.deepEqual(originalPrefixSplitRows(snapshot,'absent'),[]);
+});
+
+test('P07 accepts only the original operation receipt identity', async () => {
+  const {requireOriginalOperationReceipt} = await import('../../database/tests/postgres-test-plan.mjs');
+  const receipt={operation_id:'original',state:'complete',response:{applied:true}};
+  assert.strictEqual(requireOriginalOperationReceipt(receipt,'original'),receipt);
+  for (const bad of [{...receipt,operation_id:'foreign'}, {...receipt,operation_id:undefined}, null])
+    assert.throws(() => requireOriginalOperationReceipt(bad,'original'), /identity/);
+});
+
+test('P07 polling rejects foreign initial and completed operation identities', async () => {
+  const {requireOriginalOperationReceipt} = await import('../../database/tests/postgres-test-plan.mjs');
+  const source = readFileSync('database/tests/test-postgres-docker.mjs', 'utf8');
+  const body = source.slice(source.indexOf('async function pollForConfirmation('), source.indexOf('\nasync function waitForStudyableImport('));
+  let receipt = {operation_id:'foreign', state:'complete', response:{applied:true}};
+  const poll = runInNewContext(`(${body})`, {assert, requireOriginalOperationReceipt,
+    get: async () => receipt, measureScenario: {poll() {}, wait: async () => {}}, encodeURIComponent, Error});
+  const accepted = id => new Response(JSON.stringify({operation_id:id, state:'queued'}), {status:202});
+  await assert.rejects(poll(accepted('foreign'), 'original'), /identity/);
+  await assert.rejects(poll(accepted('original'), 'original'), /identity/);
+  receipt = {operation_id:'original', state:'complete', response:{applied:true}};
+  assert.deepEqual(await poll(accepted('original'), 'original'), {applied:true});
 });

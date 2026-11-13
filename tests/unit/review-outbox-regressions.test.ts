@@ -39,6 +39,35 @@ it("foreign initial review acknowledgment cannot settle the original attempt or 
   expect(requests.some(request => decodeURIComponent(request.url).includes("review-attempt:foreign"))).toBe(false);
 });
 
+it.each(["missing", "foreign"])("%s 202 with persisted flag cannot commit the review delivery journal", async kind => {
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  const original = auditReview(`false-receipt-${kind}`, 99102);
+  await enqueuePendingReview(original);
+  const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.method).toBe("POST");
+    return Response.json({ ...(kind === "foreign" ? { operation_id: "foreign" } : {}),
+      state: "queued", persisted: true }, { status: 202 });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  await expect(flushPendingReviews()).rejects.toThrow();
+  const store = await studyIntentStore();
+  const delivery = await store.get(`review-delivery:review-attempt:${original.attemptId}`);
+  expect(delivery?.state).toBe("pending");
+  expect(delivery?.receipt).toBeUndefined();
+  expect((await store.get(`review:${original.attemptId}`))?.state).toBe("pending");
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
+it("direct successful review commits its delivery journal", async () => {
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  const original = auditReview("direct-delivery", 99103);
+  await enqueuePendingReview(original);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ persisted: true, review_id: 314 })));
+  await flushPendingReviews();
+  expect(await (await studyIntentStore()).get("review-delivery:review-attempt:direct-delivery"))
+    .toMatchObject({ state: "committed", receipt: { persisted: true, review_id: 314 } });
+});
+
 it.each([
   ["review-attempt:aggregate", true, "review-attempt:aggregate:aggregate-only"],
   ["review-reconcile:attempt:2", false, "review-reconcile:attempt:2"],
@@ -1364,4 +1393,401 @@ it("pr285_discarded_review_race_never_reports_a_saved_grade_or_clears_failure_ev
   expect(notificationModule.notifications().some(notice => notice.key === "review-save:discard-race" && notice.severity === "success")).toBe(false);
   expect(fetcher).toHaveBeenCalledOnce();
   expect(await store.get("review:discard-race")).toMatchObject({ state: "discarded", receipt: { persisted: false } });
+});
+
+it.each(["missing", "foreign"])("%s advisory marker acknowledgment cannot stand in for the genuine guided review", async kind => {
+  const original = { backendId: "guided-marker", queueEntryId: 899, attemptId: "marker-original",
+    completedAt: "2026-10-08T12:00:00Z", outcome: "correct" as const, guided: true, expectedRevision: 3 };
+  await enqueuePendingReview(original);
+  const calls: { url: string; init?: RequestInit }[] = [];
+  let retry = false;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input); calls.push({ url, init });
+    if (url.endsWith("/fail")) {
+      expect(new Headers(init?.headers).get("Idempotency-Key")).toBe("queue-fail:marker-original");
+      if (retry) return Response.json({ detail: "stale marker" }, { status: 409 });
+      return Response.json(kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" }, { status: 202 });
+    }
+    if (url.endsWith("/review")) return Response.json({ persisted: true, review_id: 314 });
+    return Response.json({ state: "unknown" });
+  }));
+  await expect(flushPendingReviews()).rejects.toThrow();
+  expect(pendingReviews()).toContainEqual(expect.objectContaining({ attemptId: original.attemptId }));
+  expect(calls.filter(call => call.url.endsWith("/review"))).toHaveLength(0);
+  retry = true;
+  const result = await flushPendingReviews();
+  expect(result.persistedAttemptIds).toEqual([original.attemptId]);
+  expect(calls.filter(call => call.url.endsWith("/review"))).toHaveLength(1);
+  expect(calls.some(call => call.url.includes("foreign"))).toBe(false);
+  expect(pendingReviews()).toEqual([]);
+});
+
+it.each([
+  { path: "delivery", suffix: "", state: "pending" as const },
+  { path: "delivery", suffix: ":aggregate-only", state: "pending" as const },
+  { path: "claimed", suffix: "", state: "reconciling" as const },
+  { path: "claimed", suffix: ":aggregate-only", state: "reconciling" as const },
+])("receipt-first $path settles only the existing original delivery ($state$suffix)", async ({ path, suffix, state }) => {
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  const original = { ...auditReview(`recovered-${path}-${suffix || "base"}`, 99200), deliveryStarted: true,
+    ...(state === "reconciling" ? { state, reconciliationSequence: 2 } : {}),
+    ...(suffix ? { evidenceRejected: "retained rejection" } : {}) };
+  await enqueuePendingReview(original);
+  const attemptId = original.attemptId;
+  const operationId = (state === "reconciling" ? `review-reconcile:${attemptId}:2` : `review-attempt:${attemptId}`) + suffix;
+  const deliveryKey = `review-delivery:${operationId}`;
+  const store = await studyIntentStore();
+  const envelope = { key: deliveryKey, kind: "review-delivery", attemptId, requestId: operationId,
+    endpoint: "/original", createdAt: "original-time", payload: { body: "original bytes" } };
+  await store.put(envelope);
+  if (path === "claimed") expect(await store.claim(`review:${attemptId}`, "other-tab", Date.now(), 60_000)).toBeTruthy();
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.method).not.toBe("POST");
+    expect(decodeURIComponent(String(input))).toContain(`/api/operations/${operationId}`);
+    return Response.json({ operation_id: operationId, state: "complete", response: { persisted: true, review_id: 42 } });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  expect((await flushPendingReviews()).persistedAttemptIds).toEqual([attemptId]);
+  expect(await store.get(deliveryKey)).toMatchObject({ ...envelope, state: "committed", receipt: { persisted: true, review_id: 42 } });
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
+it.each(["delivery", "claimed"])("receipt-first %s does not create an absent delivery record", async path => {
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  const original = { ...auditReview(`missing-delivery-${path}`, 99201), deliveryStarted: true };
+  await enqueuePendingReview(original);
+  const store = await studyIntentStore();
+  if (path === "claimed") await store.claim(`review:${original.attemptId}`, "other-tab", Date.now(), 60_000);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "complete", response: { persisted: true, review_id: 43 } })));
+  expect((await flushPendingReviews()).persistedAttemptIds).toEqual([original.attemptId]);
+  expect(await store.get(`review-delivery:review-attempt:${original.attemptId}`)).toBeUndefined();
+});
+
+it("receipt recovery does not overwrite a mismatched existing delivery identity", async () => {
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  const original = { ...auditReview("mismatched-delivery", 99202), deliveryStarted: true };
+  await enqueuePendingReview(original);
+  const store = await studyIntentStore();
+  const key = `review-delivery:review-attempt:${original.attemptId}`;
+  const wrong = { key, kind: "review-delivery", attemptId: original.attemptId, requestId: "foreign",
+    endpoint: "/original", createdAt: "original", payload: { body: "retain" } };
+  await store.put(wrong);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "complete", response: { persisted: true, review_id: 44 } })));
+  expect((await flushPendingReviews()).persistedAttemptIds).toEqual([original.attemptId]);
+  expect(await store.get(key)).toMatchObject({ ...wrong, state: "pending" });
+});
+
+it.each(["immediate", "deferred"])("%s evidence rejection settles the fallback receipt's operation, not the last POST", async timing => {
+  const { studyIntentStore, refreshStudyIntents } = await import("../../database/browser/study-intent-storage");
+  const original = await enqueueOpeningEvidenceReview(`fallback-receipt-${timing}`);
+  const store = await studyIntentStore();
+  await store.update(`review:${original.attemptId}`, current => ({ ...current, data: { ...current.data as object, deliveryStarted: true } }));
+  await refreshStudyIntents();
+  const base = `review-attempt:${original.attemptId}`, aggregate = `${base}:aggregate-only`;
+  const key = `review-delivery:${aggregate}`;
+  await store.put({ key, kind: "review-delivery", attemptId: original.attemptId, requestId: aggregate,
+    endpoint: "/original", createdAt: "original", payload: { body: "retained aggregate bytes" } });
+  const calls: string[] = [];
+  let baseReads = 0;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = decodeURIComponent(String(input));
+    calls.push(`${init?.method ?? "GET"} ${url}`);
+    if (init?.method === "POST") {
+      expect(new Headers(init.headers).get("Idempotency-Key")).toBe(base);
+      return timing === "immediate"
+        ? Response.json({ detail: { code: "opening_evidence_conflict", message: "rejected", aggregate_review_allowed: true } }, { status: 409 })
+        : Response.json({ operation_id: base, state: "queued" }, { status: 202 });
+    }
+    if (url.endsWith(`/api/operations/${aggregate}`))
+      return Response.json({ operation_id: aggregate, state: "complete", response: { persisted: true, review_id: 55 } });
+    expect(url.endsWith(`/api/operations/${base}`)).toBe(true);
+    baseReads++;
+    return Response.json(baseReads === 1 ? { operation_id: base, state: "unknown" } :
+      { operation_id: base, state: "failed", error: { status_code: 409, message: "opening_evidence_conflict", retryable: false,
+        detail: { code: "opening_evidence_conflict", message: "rejected", aggregate_review_allowed: true } } });
+  }));
+  expect((await flushPendingReviews()).persistedAttemptIds).toEqual([original.attemptId]);
+  expect(await store.get(`review-delivery:${base}`)).toMatchObject({ state: "discarded", requestId: base, receipt: timing === "immediate" ? { status: 409, body: { detail: { code: "opening_evidence_conflict", aggregate_review_allowed: true } } } : { state: "failed", error: { status_code: 409, message: "opening_evidence_conflict" } } });
+  expect(await store.get(key)).toMatchObject({ state: "committed", requestId: aggregate, receipt: { persisted: true, review_id: 55 } });
+  expect(calls.filter(call => call.startsWith("POST "))).toHaveLength(1);
+});
+
+it.each(["failed", "retryable", "unknown", "unavailable"])("retained fallback recovers base disposition only from authoritative %s receipt", async status => {
+  const { studyIntentStore, refreshStudyIntents } = await import("../../database/browser/study-intent-storage");
+  const original = await enqueueOpeningEvidenceReview(`orphan-${status}`);
+  const store = await studyIntentStore();
+  await store.update(`review:${original.attemptId}`, current => ({ ...current, data: { ...current.data as object, deliveryStarted: true, evidenceRejected: "prior rejection" } }));
+  await refreshStudyIntents();
+  const base = `review-attempt:${original.attemptId}`, aggregate = `${base}:aggregate-only`;
+  const envelope = { key: `review-delivery:${base}`, kind: "review-delivery", attemptId: original.attemptId,
+    requestId: base, endpoint: "/original", createdAt: "original", payload: { body: "exact retained bytes" } };
+  await store.put(envelope);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = decodeURIComponent(String(input));
+    if (url.endsWith(`/api/operations/${base}`)) {
+      if (status === "unavailable") throw new Error("network unavailable");
+      return Response.json(["failed", "retryable"].includes(status) ? { operation_id: base, state: "failed", error: {
+        status_code: 409, code: "opening_evidence_conflict", message: "opening_evidence_conflict", retryable: status === "retryable",
+        detail: { code: "opening_evidence_conflict", message: "rejected", aggregate_review_allowed: true } } }
+        : { operation_id: base, state: "unknown" });
+    }
+    expect(url.endsWith(`/api/operations/${aggregate}`)).toBe(true);
+    return Response.json({ operation_id: aggregate, state: "complete", response: { persisted: true, review_id: 90 } });
+  }));
+  expect((await flushPendingReviews()).persistedAttemptIds).toEqual([original.attemptId]);
+  const saved = await store.get(envelope.key);
+  expect(saved).toMatchObject({ ...envelope, state: status === "failed" ? "discarded" : "pending" });
+  if (status === "failed") expect(saved?.receipt).toMatchObject({ state: "failed", error: { status_code: 409, code: "opening_evidence_conflict" } });
+  await closeStudyIntentStorage();
+  const reloaded = await (await studyIntentStore()).get(envelope.key);
+  expect(reloaded).toMatchObject({ ...envelope, state: status === "failed" ? "discarded" : "pending" });
+  const { inspectRetainedStudyAuthority } = await import("../../database/browser/study-connection-storage");
+  const inspected = await inspectRetainedStudyAuthority(() => []);
+  const exported = inspected.retained.databases["tempo-study-intents"].intents as Array<{ key: string; state: string; workspace: string }>;
+  const preserved = exported.find(item => item.key === envelope.key)!;
+  expect(preserved.state).toBe(status === "failed" ? "discarded" : "pending");
+  const fact = { authority: preserved.workspace, disposition: status === "failed" ? "terminal" as const : "unresolved" as const };
+  expect(inspected.facts).toContainEqual(fact);
+  const storage = await import("../../database/browser/study-connection-storage");
+  const { createStudyClient } = await import("../../app/lib/study-client");
+  const client = createStudyClient({ independent: true, baseUrl: "", storage: { ...storage,
+    inspectRetainedStudyAuthority: async () => ({ facts: [fact], retained: inspected.retained }) }, transport: vi.fn() });
+  const cutover = client.assertStudyAuthority("https://foreign.example", "other");
+  if (status === "failed") await expect(cutover).resolves.toEqual(inspected.retained);
+  else await expect(cutover).rejects.toMatchObject({ kind: "authority" });
+});
+
+it("C11 retryable structured evidence conflict keeps original delivery and never reconciles or falls back", async () => {
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  const original = await enqueueOpeningEvidenceReview("retryable-structured-evidence");
+  const calls: { url: string; init?: RequestInit }[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(input), init });
+    return Response.json({ detail: { code: "opening_evidence_conflict", message: "try again",
+      aggregate_review_allowed: true, retryable: true } }, { status: 409 });
+  }));
+  await expect(flushPendingReviews()).rejects.toMatchObject({ status: 409, retryable: true });
+  expect(calls).toHaveLength(1);
+  expect(new Headers(calls[0].init?.headers).get("Idempotency-Key")).toBe(`review-attempt:${original.attemptId}`);
+  expect(JSON.parse(String(calls[0].init?.body)).opening_evidence_completion).toEqual(original.openingEvidenceCompletion);
+  expect(pendingReviews()).toContainEqual(expect.objectContaining({ attemptId: original.attemptId }));
+  const store = await studyIntentStore();
+  expect(await store.get(`review-delivery:review-attempt:${original.attemptId}`)).toMatchObject({ state: "pending" });
+  expect(await store.get(`review-delivery:review-attempt:${original.attemptId}:aggregate-only`)).toBeUndefined();
+  expect(calls.some(call => call.url.includes("/reconcile"))).toBe(false);
+});
+
+it.each([true, false])("C11 receipt evidence conflict retryable=%s preserves original instead of reconciling", async retryable => {
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  const original = await enqueueOpeningEvidenceReview(`receipt-hold-${retryable}`);
+  const base = `review-attempt:${original.attemptId}`;
+  const calls: { url: string; init?: RequestInit }[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(input), init });
+    if (init?.method === "POST") return Response.json({ operation_id: base, state: "queued" }, { status: 202 });
+    return Response.json({ operation_id: base, state: "failed", error: { status_code: 409,
+      code: "opening_evidence_conflict", message: "original evidence held", retryable,
+      detail: { code: "opening_evidence_conflict", aggregate_review_allowed: false } } });
+  }));
+  await expect(flushPendingReviews()).rejects.toThrow();
+  expect(calls.filter(call => call.init?.method === "POST")).toHaveLength(1);
+  expect(new Headers(calls[0].init?.headers).get("Idempotency-Key")).toBe(base);
+  expect(JSON.parse(String(calls[0].init?.body)).opening_evidence_completion).toEqual(original.openingEvidenceCompletion);
+  const store = await studyIntentStore();
+  expect(await store.get(`review-delivery:${base}`)).toMatchObject({ state: "pending" });
+  expect(await store.get(`review-delivery:${base}:aggregate-only`)).toBeUndefined();
+  expect(calls.some(call => call.url.includes("/reconcile"))).toBe(false);
+});
+
+it("C11 retained fallback recovers a completed original parent without a second delivery", async () => {
+  const { studyIntentStore, refreshStudyIntents } = await import("../../database/browser/study-intent-storage");
+  const original = await enqueueOpeningEvidenceReview("fallback-original-complete");
+  const store = await studyIntentStore();
+  await store.update(`review:${original.attemptId}`, current => ({ ...current, data: { ...current.data as object, deliveryStarted: true, evidenceRejected: "old marker" } }));
+  await refreshStudyIntents();
+  const base = `review-attempt:${original.attemptId}`, aggregate = `${base}:aggregate-only`;
+  await store.put({ key: `review-delivery:${base}`, kind: "review-delivery", attemptId: original.attemptId,
+    requestId: base, endpoint: "/original", createdAt: "original", payload: { body: "original bytes" } });
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = decodeURIComponent(String(input)); calls.push(`${init?.method ?? "GET"} ${url}`);
+    expect(init?.method).not.toBe("POST");
+    return Response.json(url.endsWith(`/api/operations/${base}`)
+      ? { operation_id: base, state: "complete", response: { persisted: true, review_id: 707 } }
+      : { operation_id: aggregate, state: "unknown" });
+  }));
+  expect((await flushPendingReviews()).persistedAttemptIds).toEqual([original.attemptId]);
+  expect(await store.get(`review-delivery:${base}`)).toMatchObject({ state: "committed", receipt: { persisted: true, review_id: 707 } });
+  expect(calls.some(call => call.startsWith("POST "))).toBe(false);
+});
+
+it.each(["unknown", "retryable", "unavailable"])("C11 retained fallback with %s base and no fallback receipt never creates a new command", async status => {
+  const { studyIntentStore, refreshStudyIntents } = await import("../../database/browser/study-intent-storage");
+  const original = await enqueueOpeningEvidenceReview(`unconfirmed-base-${status}`);
+  const store = await studyIntentStore();
+  await store.update(`review:${original.attemptId}`, current => ({ ...current, data: { ...current.data as object, deliveryStarted: true, evidenceRejected: "old marker" } }));
+  await refreshStudyIntents();
+  const base = `review-attempt:${original.attemptId}`, aggregate = `${base}:aggregate-only`;
+  await store.put({ key: `review-delivery:${base}`, kind: "review-delivery", attemptId: original.attemptId,
+    requestId: base, endpoint: "/original", createdAt: "original", payload: { body: "retained original bytes" } });
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = decodeURIComponent(String(input)); calls.push(`${init?.method ?? "GET"} ${url}`);
+    expect(init?.method).not.toBe("POST");
+    if (url.endsWith(`/api/operations/${base}`)) {
+      if (status === "unavailable") throw new Error("network unavailable");
+      if (status === "retryable") return Response.json({ operation_id: base, state: "failed", error: {
+        status_code: 409, code: "opening_evidence_conflict", message: "retry", retryable: true } });
+      return Response.json({ operation_id: base, state: "unknown" });
+    }
+    return Response.json({ operation_id: aggregate, state: "unknown" });
+  }));
+  await expect(flushPendingReviews()).rejects.toThrow();
+  expect(await store.get(`review-delivery:${base}`)).toMatchObject({ state: "pending", payload: { body: "retained original bytes" } });
+  expect(await store.get(`review-delivery:${aggregate}`)).toBeUndefined();
+  expect(calls.some(call => call.startsWith("POST "))).toBe(false);
+});
+
+it.each([
+  "409: {'code': 'opening_evidence_conflict', 'message': 'held', 'aggregate_review_allowed': False}",
+  "409: {'code': 'opening_evidence_conflict', 'message': 'held', 'aggregate_review_allowed': True, 'retryable': True}",
+  "409: {'code': 'opening_evidence_conflict', 'message': 'aggregate_review_allowed: True', 'aggregate_review_allowed': False}",
+])("C11 legacy nonpermission retains the exact base journal and never starts fallback: %s", async message => {
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  const original = await enqueueOpeningEvidenceReview(`legacy-hold-${crypto.randomUUID()}`);
+  const base = `review-attempt:${original.attemptId}`;
+  const calls: { url: string; init?: RequestInit }[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(input), init });
+    return init?.method === "POST" ? Response.json({ operation_id: base, state: "queued" }, { status: 202 })
+      : Response.json({ operation_id: base, state: "failed", error: { status_code: 409, message } });
+  }));
+  await expect(flushPendingReviews()).rejects.toThrow();
+  const delivery = await (await studyIntentStore()).get(`review-delivery:${base}`);
+  expect(delivery).toMatchObject({ state: "pending", requestId: base, payload: { body: { attempt_id: original.attemptId, opening_evidence_completion: original.openingEvidenceCompletion } } });
+  expect(calls.filter(call => call.init?.method === "POST")).toHaveLength(1);
+  expect(calls.some(call => call.url.includes("aggregate-only"))).toBe(false);
+});
+
+it.each(["base", "aggregate", "reconcile"])('C11 orphan %s settles only from its own receipt', async variant => {
+  const { studyIntentStore } = await import('../../database/browser/study-intent-storage');
+  const { defaultStudyClient } = await import('../../app/lib/study-connection');
+  const { recoverCommittedReviewDelivery } = await import('../../app/lib/review-outbox');
+  const original = { ...auditReview(`orphan-${variant}`, 99110), completedAt: "2026-11-12T00:00:00Z" };
+  await enqueuePendingReview(original);
+  const store = await studyIntentStore();
+  await store.update(`review:${original.attemptId}`, current => ({ ...current, state: 'committed', receipt: { persisted: true, review_id: 1 } }));
+  const id = variant === 'reconcile' ? `review-reconcile:${original.attemptId}:2` :
+    `review-attempt:${original.attemptId}${variant === 'aggregate' ? ':aggregate-only' : ''}`;
+  const key = `review-delivery:${id}`;
+  await store.put({ key, kind: 'review-delivery', attemptId: original.attemptId, requestId: id,
+    endpoint: `${defaultStudyClient.origin}/api/cards/${original.backendId}/review${variant === 'reconcile' ? '/reconcile' : ''}`,
+    createdAt: '2026-11-12T00:00:00Z', payload: { parentKey: `review:${original.attemptId}`,
+      headers: { 'Idempotency-Key': id }, body: { outcome: original.outcome, guided: original.guided,
+        queue_entry_id: original.queueEntryId, attempt_id: original.attemptId, recorded_at: original.completedAt } } });
+  const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.method ?? 'GET').toBe('GET');
+    expect(decodeURIComponent(String(url))).toContain(`/api/operations/${id}`);
+    return Response.json({ operation_id: id, state: 'complete', response: { persisted: true, review_id: 77 } });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  expect(await recoverCommittedReviewDelivery(key, new AbortController().signal)).toBe('settled');
+  expect(await store.get(key)).toMatchObject({ state: 'committed', receipt: { persisted: true, review_id: 77 } });
+  expect(await store.get(`review:${original.attemptId}`)).toMatchObject({ state: 'committed', receipt: { review_id: 1 } });
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
+it.each(['unknown', 'foreign', 'unavailable', 'unproven failure', 'invalid body'])('C11 orphan %s keeps the original delivery pending', async scenario => {
+  const { studyIntentStore } = await import('../../database/browser/study-intent-storage');
+  const { defaultStudyClient } = await import('../../app/lib/study-connection');
+  const { recoverCommittedReviewDelivery } = await import('../../app/lib/review-outbox');
+  const original = { ...auditReview(`held-${scenario}`, 99111), completedAt: '2026-11-12T00:00:00Z' };
+  await enqueuePendingReview(original);
+  const store = await studyIntentStore();
+  await store.update(`review:${original.attemptId}`, current => ({ ...current, state: 'committed', receipt: { persisted: true } }));
+  const id = `review-attempt:${original.attemptId}`, key = `review-delivery:${id}`;
+  await store.put({ key, kind: 'review-delivery', attemptId: original.attemptId, requestId: id,
+    endpoint: `${defaultStudyClient.origin}/api/cards/${encodeURIComponent(original.backendId)}/review`, createdAt: original.completedAt,
+    payload: { parentKey: `review:${original.attemptId}`, headers: { 'Idempotency-Key': id },
+      body: { outcome: scenario === 'invalid body' ? 'again' : original.outcome, guided: original.guided,
+        queue_entry_id: original.queueEntryId, attempt_id: original.attemptId, recorded_at: original.completedAt } } });
+  const before = await store.get(key);
+  const fetcher = vi.fn(async () => {
+    if (scenario === 'unavailable') throw new Error('offline');
+    if (scenario === 'foreign') return Response.json({ operation_id: 'foreign', state: 'complete', response: { persisted: true } });
+    if (scenario === 'unproven failure') return Response.json({ operation_id: id, state: 'failed', error: { status_code: 409, code: 'opening_evidence_conflict', retryable: true } });
+    return Response.json({ operation_id: id, state: 'unknown' });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  expect(await recoverCommittedReviewDelivery(key, new AbortController().signal)).toBe(scenario === 'invalid body' ? 'ineligible' : 'hold');
+  expect(await store.get(key)).toEqual(before);
+  if (scenario === 'invalid body') expect(fetcher).not.toHaveBeenCalled();
+  closeStudyIntentStorage(); await initializeStudyIntentStorage();
+  expect(await (await studyIntentStore()).get(key)).toEqual(before);
+});
+
+it.each(["base", "reconcile"].flatMap(variant => ["authoritative rejection", "retryable rejection", "unavailable"].map(scenario => [variant, scenario])))(
+  "C11 committed-parent %s orphan %s preserves its exact evidence and disposition", async (variant, scenario) => {
+    const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+    const { defaultStudyClient } = await import("../../app/lib/study-connection");
+    const { recoverCommittedReviewDelivery } = await import("../../app/lib/review-outbox");
+    const original = await enqueueOpeningEvidenceReview(`orphan-evidence-${scenario}`);
+    const store = await studyIntentStore();
+    const parentKey = `review:${original.attemptId}`;
+    await store.update(parentKey, current => ({ ...current, state: "committed", receipt: { persisted: true, review_id: 19 } }));
+    const parentBefore = await store.get(parentKey);
+    const id = variant === "reconcile" ? `review-reconcile:${original.attemptId}:2` : `review-attempt:${original.attemptId}`;
+    const key = `review-delivery:${id}`;
+    const payload = { parentKey, headers: { "Content-Type": "application/json", "Idempotency-Key": id }, body: {
+      outcome: original.outcome, guided: original.guided, queue_entry_id: original.queueEntryId,
+      attempt_id: original.attemptId, recorded_at: original.completedAt, opening_evidence_completion: original.openingEvidenceCompletion,
+    } };
+    await store.put({ key, kind: "review-delivery", attemptId: original.attemptId!, requestId: id,
+      endpoint: `${defaultStudyClient.origin}/api/cards/${original.backendId}/review${variant === "reconcile" ? "/reconcile" : ""}`, createdAt: original.completedAt!, payload });
+    const before = await store.get(key);
+    const detail = { code: "opening_evidence_conflict", message: "Evidence was rejected", aggregate_review_allowed: true, retryable: false };
+    const error = { message: "Evidence was rejected", status_code: 409, code: detail.code,
+      retryable: scenario === "retryable rejection", detail };
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method ?? "GET").toBe("GET");
+      expect(decodeURIComponent(String(url))).toContain(`/api/operations/${id}`);
+      if (scenario === "unavailable") throw new Error("offline");
+      return Response.json({ operation_id: id, state: "failed", error });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    expect(await recoverCommittedReviewDelivery(key, new AbortController().signal))
+      .toBe(scenario === "authoritative rejection" ? "settled" : "hold");
+    const after = await store.get(key);
+    expect(after).toEqual(scenario === "authoritative rejection"
+      ? { ...before, version: before!.version + 1, state: "discarded", receipt: { state: "failed", error } } : before);
+    expect(after?.payload).toEqual(payload);
+    expect(await store.get(parentKey)).toEqual(parentBefore);
+    expect(fetcher).toHaveBeenCalledOnce();
+    closeStudyIntentStorage(); await initializeStudyIntentStorage();
+    expect(await (await studyIntentStore()).get(key)).toEqual(after);
+  });
+
+it.each(['aggregate', 'reconcile-aggregate', 'no-completion'])('C11 orphan %s retains definitive evidence failure without an evidence-bearing envelope', async variant => {
+  const { studyIntentStore } = await import('../../database/browser/study-intent-storage');
+  const { defaultStudyClient } = await import('../../app/lib/study-connection');
+  const { recoverCommittedReviewDelivery } = await import('../../app/lib/review-outbox');
+  const original = variant === 'no-completion' ? { ...auditReview(`no-evidence-${variant}`, 99119), completedAt: '2026-11-12T00:00:00Z' }
+    : await enqueueOpeningEvidenceReview(`no-evidence-${variant}`);
+  if (variant === 'no-completion') await enqueuePendingReview(original);
+  const store = await studyIntentStore();
+  await store.update(`review:${original.attemptId}`, current => ({ ...current, state: 'committed', receipt: { persisted: true } }));
+  const id = variant === 'reconcile-aggregate' ? `review-reconcile:${original.attemptId}:2:aggregate-only`
+    : `review-attempt:${original.attemptId}${variant === 'aggregate' ? ':aggregate-only' : ''}`;
+  const key = `review-delivery:${id}`;
+  await store.put({ key, kind: 'review-delivery', attemptId: original.attemptId!, requestId: id,
+    endpoint: `${defaultStudyClient.origin}/api/cards/${original.backendId}/review${variant === 'reconcile-aggregate' ? '/reconcile' : ''}`,
+    createdAt: original.completedAt!, payload: { parentKey: `review:${original.attemptId}`, headers: { 'Idempotency-Key': id }, body: {
+      outcome: original.outcome, guided: original.guided, queue_entry_id: original.queueEntryId,
+      attempt_id: original.attemptId, recorded_at: original.completedAt } } });
+  const before = await store.get(key);
+  const detail = { code: 'opening_evidence_conflict', message: 'Evidence was rejected', aggregate_review_allowed: true, retryable: false };
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ operation_id: id, state: 'failed', error: {
+    message: detail.message, status_code: 409, code: detail.code, retryable: false, detail } })));
+  expect(await recoverCommittedReviewDelivery(key, new AbortController().signal)).toBe('hold');
+  expect(await store.get(key)).toEqual(before);
 });
