@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, retainedBackendPaths, validateRetainedBackendOwnership, validateRetainedBackendInterfaces } from "../check-components.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, retainedBackendPaths, validateRetainedBackendOwnership, validateRetainedBackendInterfaces, reviewCommandOwnerIds, reviewCommandPaths, validateReviewCommandOwnership } from "../check-components.mjs";
 import { validateOwnedPaths, selectComponents } from "../selection.mjs";
 
 const python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3.12";
@@ -93,6 +93,26 @@ test("T02 backend seam guards reject unowned, overlap, stale and false entrypoin
   escapedOwner.ownedFiles.push("../outside.py");
   escapedOwner.publicExports.push("../outside.py#read");
   assert.throws(() => validateRetainedBackendInterfaces(escaping, repository, python), /Invalid retained interface/);
+});
+test("T02 selected review command seams retain exact owners and named interfaces", () => {
+  const paths = reviewCommandPaths(repository);
+  assert.equal(paths.length, 12);
+  validateReviewCommandOwnership(original, paths);
+  validateRetainedBackendInterfaces(original, repository, python, reviewCommandOwnerIds);
+  for (const id of reviewCommandOwnerIds) assert.throws(() => selectComponents(original, [id]), /mapped, not implemented/);
+});
+test("T02 review command scope rejects unowned, overlapping, stale and false interfaces", () => {
+  const paths = reviewCommandPaths(repository);
+  assert.throws(() => validateReviewCommandOwnership(original, [...paths, "backend/app/unowned-review.py"]), /found 0/);
+  const overlap = structuredClone(original);
+  overlap.components.find(item => item.id === "backend-contracts").ownedFiles.push(paths[0]);
+  assert.throws(() => validateReviewCommandOwnership(overlap, paths), /found 2/);
+  const stale = structuredClone(original);
+  stale.components.find(item => item.id === "study-review-command").ownedFiles.push("backend/app/untracked-review.py");
+  assert.throws(() => validateReviewCommandOwnership(stale, paths), /untracked source/);
+  const wrong = structuredClone(original);
+  wrong.components.find(item => item.id === "study-review-command").publicExports.push("backend/app/review_commands.py#missing");
+  assert.throws(() => validateRetainedBackendInterfaces(wrong, repository, python, reviewCommandOwnerIds), /Missing retained interface/);
 });
 test("Learning review registers its actual application, tooling and native suites", () => {
   const componentIds = ["learning-review-application"];

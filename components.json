@@ -2221,6 +2221,348 @@
       "dependencyNotes": [
         "Reads imported_games and repertoire_lines; no insert or queue mutation."
       ]
+    },
+    {
+      "id": "backend-command-dispatch",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/command_dispatch.py#dispatch_command"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "backend-contracts"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/command_dispatch.py"
+      ],
+      "ownershipRole": "Dispatch commands through the existing broker and return operation state",
+      "dependencyNotes": [
+        "Imports Celery, broker exceptions and command gateway; other worker and HTTP consumers remain outside this subset."
+      ]
+    },
+    {
+      "id": "backend-command-gateway",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/command_gateway.py#register_command",
+        "backend/app/command_gateway.py#execute_command",
+        "backend/app/command_gateway.py#read_operation"
+      ],
+      "dependencies": [
+        "backend-contracts",
+        "operation-receipt-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/command_gateway.py"
+      ],
+      "ownershipRole": "Register and execute commands with durable operation receipts",
+      "dependencyNotes": [
+        "Owns transaction and receipt lifecycle for multiple domains; imported handlers and worker recovery remain outside this subset."
+      ]
+    },
+    {
+      "id": "operation-receipt-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/commands/receipts",
+      "publicExports": [
+        "database/tempo_storage/commands/receipts/storage.py#receipt_write_scope",
+        "database/tempo_storage/commands/receipts/storage.py#ReceiptWriter",
+        "database/tempo_storage/commands/receipts/storage.py#locked_attempt"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/commands/receipts/storage.py"
+      ],
+      "ownershipRole": "Persist operation receipt, lease and attempt state",
+      "dependencyNotes": [
+        "Writer scope and foreground reader own connections; other methods require a supplied writer or database."
+      ]
+    },
+    {
+      "id": "study-review-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/review_commands.py#submit_review",
+        "backend/app/review_commands.py#reconcile_review",
+        "backend/app/review_commands.py#prepare_review"
+      ],
+      "dependencies": [
+        "study-review-adapter",
+        "study-review-reconciliation",
+        "study-review-savepoint-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/review_commands.py"
+      ],
+      "ownershipRole": "Prepare and register Study review commands",
+      "dependencyNotes": [
+        "Registers handlers at import time; preparation reads before the writer and reconciliation uses a savepoint."
+      ]
+    },
+    {
+      "id": "study-review-adapter",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/learning_review_adapter.py#LearningReviewAdapter",
+        "backend/app/services/learning_review_adapter.py#submit_legacy_review"
+      ],
+      "dependencies": [
+        "learning-review-application",
+        "study-review-bridge-storage",
+        "study-review-scheduling"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/learning_review_adapter.py"
+      ],
+      "ownershipRole": "Adapt retained review commands to the learning owner",
+      "dependencyNotes": [
+        "Existing apply_legacy_review compatibility entry remains present; reader and writer dependencies extend beyond this subset."
+      ]
+    },
+    {
+      "id": "study-review-scheduling",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/review_service.py#apply_scheduling_review"
+      ],
+      "dependencies": [
+        "study-review-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/review_service.py"
+      ],
+      "ownershipRole": "Apply scheduling review using the supplied writer",
+      "dependencyNotes": [
+        "Calls scheduling and queue storage owners and legacy child unlock; not a pure policy module."
+      ]
+    },
+    {
+      "id": "study-review-reconciliation",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/study/policy/review_reconciliation.py#reconcile_completed_review"
+      ],
+      "dependencies": [
+        "study-review-reconciliation-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/review_reconciliation.py",
+        "backend/app/study/policy/review_reconciliation.py"
+      ],
+      "ownershipRole": "Reconcile completed review through the current facade and policy",
+      "dependencyNotes": [
+        "The policy directly imports storage and scheduler services; the facade forwards to it."
+      ]
+    },
+    {
+      "id": "study-review-bridge-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/learning_bridge",
+      "publicExports": [
+        "database/tempo_storage/learning_bridge/review.py#lock_current_card",
+        "database/tempo_storage/learning_bridge/review.py#receipt",
+        "database/tempo_storage/learning_bridge/review.py#insert_receipt"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/learning_bridge/review.py"
+      ],
+      "ownershipRole": "Operate review identity, card locks and retained receipts using the supplied writer",
+      "dependencyNotes": [
+        "Lock order and transaction scope belong to the calling review owner."
+      ]
+    },
+    {
+      "id": "study-review-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/study/review",
+      "publicExports": [
+        "database/tempo_storage/study/review/storage.py#queued_entry",
+        "database/tempo_storage/study/review/storage.py#classify_entry",
+        "database/tempo_storage/study/review/storage.py#apply_priority_positions"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/study/review/storage.py"
+      ],
+      "ownershipRole": "Store review and queue presentation facts using the supplied writer",
+      "dependencyNotes": [
+        "Imports queue refresh presentation and dynamically references admission SQL; these dependencies are not isolated here."
+      ]
+    },
+    {
+      "id": "study-review-reconciliation-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage",
+      "publicExports": [
+        "database/tempo_storage/review_reconciliation.py#card_schedule_state",
+        "database/tempo_storage/review_reconciliation.py#save_schedule_snapshot",
+        "database/tempo_storage/review_reconciliation.py#retain_attempt_receipt"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/review_reconciliation.py"
+      ],
+      "ownershipRole": "Persist review reconciliation facts in the supplied transaction",
+      "dependencyNotes": [
+        "The reconciliation owner controls transaction and rollback."
+      ]
+    },
+    {
+      "id": "study-review-savepoint-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/controls",
+      "publicExports": [
+        "database/tempo_storage/controls/review_reconciliation.py#begin_reconciliation",
+        "database/tempo_storage/controls/review_reconciliation.py#rollback_reconciliation",
+        "database/tempo_storage/controls/review_reconciliation.py#release_reconciliation"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/controls/review_reconciliation.py"
+      ],
+      "ownershipRole": "Control the reconciliation savepoint in the supplied transaction",
+      "dependencyNotes": [
+        "Does not own the enclosing transaction."
+      ]
     }
   ],
   "suites": [
