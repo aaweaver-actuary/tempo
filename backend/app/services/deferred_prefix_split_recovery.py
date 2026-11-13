@@ -23,7 +23,7 @@ def valid_original_review_receipt(row):
 # A bounded keyset cursor advances even when an earlier row is locked.
 _scan_cursor = ""
 
-def enqueue_one_ready_split() -> bool:
+def enqueue_one_ready_split(published: list[tuple[str, str, dict]] | None = None) -> bool:
     global _scan_cursor
     with connection(background=True) as database:
         candidate = storage.due_intent(database, _scan_cursor)
@@ -86,4 +86,6 @@ def enqueue_one_ready_split() -> bool:
             return True
         if not storage.set_ready(database, intent["intent_id"], matches[0]["attempt_id"], matches[0]["review_id"], child):
             raise RuntimeError("Split intent changed while publishing recovery")
+        if published is not None:
+            published.append((child, command, payload))
         return True

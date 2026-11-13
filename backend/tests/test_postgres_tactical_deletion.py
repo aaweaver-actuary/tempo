@@ -24,12 +24,11 @@ def test_tactical_deleted_candidate_batches_preserve_rotated_order(
         tombstones.update(("a-2", "b-0"))
     lookup_batches = []
 
-    def read(statement, parameters=(), *, native=False):
+    def read(statement, parameters=()):
         if "deleted_cards" in statement:
             assert "WHERE card_id=ANY(%s::text[])" in statement, (
                 "Unbounded tombstone read"
             )
-            assert native
             candidate_ids = parameters[0]
             assert 1 <= len(candidate_ids) <= 16
             assert not any(
@@ -151,3 +150,20 @@ def test_pr102_tactical_deletion_fixture_is_nonterminal_and_uuid_independent(
             board.push(move)
         identifiers.append(card_id(*validate_puzzle_record(record)))
     assert len(set(identifiers)) == 3
+
+
+def test_tactical_deleted_candidates_use_native_bounded_storage_reader(monkeypatch):
+    from contextlib import contextmanager
+    from tempo_storage.queue_refresh import reads
+
+    calls = []
+    class Database:
+        def execute_native(self, statement, parameters):
+            calls.append((statement, parameters))
+            return SimpleNamespace(fetchall=lambda: [('deleted',)])
+    @contextmanager
+    def connection():
+        yield Database()
+    monkeypatch.setattr(reads, 'background_read_connection', connection)
+    assert reads.deleted_candidates(['deleted', 'kept']) == [('deleted',)]
+    assert calls == [('SELECT card_id FROM deleted_cards WHERE card_id=ANY(%s::text[])', (['deleted', 'kept'],))]

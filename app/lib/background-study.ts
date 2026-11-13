@@ -62,10 +62,12 @@ export function runStudyTask<Task extends StudyTask>(
             reject(new DOMException("Cancelled", "AbortError"));
             return;
           }
+          const effects = { reportIssue: (issue: import("../domain/validation").ValidationIssue) => reportDataDiagnostic(issue.source, issue.raw, issue.message, issue.recordId),
+            reportError: reportDebugError, shouldPublishDiagnostics };
           resolve((task.kind === "workspace"
-            ? validateWorkspacePayload(task.url, task.payload, shouldPublishDiagnostics, reportDebugError)
-            : optional ? optional.computeOptionalStudyTask(task, reportDebugError)
-              : computeEssentialStudyTask(task, reportDebugError)) as StudyTaskResult<Task>);
+            ? validateWorkspacePayload(task.url, task.payload, shouldPublishDiagnostics, effects)
+            : optional ? optional.computeOptionalStudyTask(task, effects)
+              : computeEssentialStudyTask(task, effects)) as StudyTaskResult<Task>);
           updateBrowserActivity(activityId, title, "complete", "Finished");
         } catch (error) {
           updateBrowserActivity(activityId, title, "failed", "Failed", String(error));
@@ -116,7 +118,7 @@ export function runStudyTask<Task extends StudyTask>(
       request.reject(new Error(data.error));
     } else {
       try {
-        const result = decodeStudyResult(request.task, data.result, request.shouldPublishDiagnostics, reportDebugError);
+        const result = decodeStudyResult(request.task, data.result, request.shouldPublishDiagnostics, { reportIssue: issue => reportDataDiagnostic(issue.source, issue.raw, issue.message, issue.recordId), reportError: reportDebugError, shouldPublishDiagnostics: request.shouldPublishDiagnostics });
         updateBrowserActivity(`study:${data.id}`, request.title, "complete", "Finished");
         request.resolve(result);
       } catch (error) {

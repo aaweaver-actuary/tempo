@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 import tempo_learning_review as review
+from tempo_learning_review.models import ScheduledReview
 
 _path = (
     Path(__file__).resolve().parents[2]
@@ -28,7 +29,7 @@ class PositionStore(_fixture.Capabilities):
 
     def record_position_review(self, command, context, *, outcome, guided):
         self.event("human_review")
-        return {**self.scheduled, "requeue_today": False, "requeue_after_cards": None}
+        return ScheduledReview.from_dict({**self.scheduled, "requeue_today": False, "requeue_after_cards": None})
 
     def save_position_receipt(self, command, context, result):
         self.save_receipt(command, context, result)
@@ -245,3 +246,31 @@ def test_repeated_position_in_one_completion_has_one_good(monkeypatch):
         completion=object(),
     )
     assert [r.grade for r in result] == ["good", "observe"]
+
+
+def test_production_adapter_translates_owner_schedule_and_reconciliation_without_changing_payload(monkeypatch):
+    from contextlib import nullcontext
+    from app.services import learning_review_adapter as adapter_module
+    from tempo_learning_review.models import ScheduleSnapshot, ReconciledReview
+
+    adapter = object.__new__(adapter_module.LearningReviewAdapter)
+    adapter.database = object()
+    adapter._command_timezone = 'America/New_York'
+    adapter._command_time = _fixture.NOW
+    owner_result = _fixture.Capabilities().scheduled
+    reconciliation = {'persisted': True, 'review_id': None, 'queue_entry_id': 1,
+        'requeue_entry_id': None, 'reconciliation': 'history_only', 'warning': 'retained', 'competing_review': None}
+    snapshot = {'due_date': '2026-10-14', 'interval_days': 1, 'fsrs_card_json': None,
+        'first_correct_at': None, 'reinforcement_pending': 0, 'stability': 2.0, 'guided_review': 0,
+        'state': 'learning', 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'recent_attempts_json': None}
+    monkeypatch.setattr(adapter_module, 'training_timing_stage', lambda *_: nullcontext())
+    monkeypatch.setattr(adapter_module, 'apply_scheduling_review', lambda *args, **kwargs: owner_result.copy())
+    monkeypatch.setattr(adapter_module, 'card_schedule_state', lambda *args: snapshot.copy())
+    monkeypatch.setattr(adapter_module, 'reconcile_completed_review', lambda *args, **kwargs: reconciliation.copy())
+    command, context = _fixture.command(), _fixture.CONTEXT
+    policy = review.ReviewPolicy('America/New_York', 7)
+    assert adapter.schedule(command, context, outcome='correct', guided=False, policy=policy).as_dict() == owner_result
+    captured = adapter.schedule_snapshot(command.card_id)
+    assert isinstance(captured, ScheduleSnapshot) and captured.as_dict() == snapshot
+    result = adapter.reconcile_completed(command, _fixture.Capabilities().attempt, context, guided=False, revision=1)
+    assert isinstance(result, ReconciledReview) and result.as_dict() == reconciliation

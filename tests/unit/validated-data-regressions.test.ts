@@ -1,8 +1,9 @@
-import { beforeEach, expect, it } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import * as z from "zod";
 import { Chess } from "chess.js";
 import { queueCardsFromPayload } from "../../app/domain/adapters/practice-card-adapters";
 import { computeStudyTask } from "../../app/lib/study-computation";
+import type { ValidationIssue } from "../../app/domain/validation";
 import {
   builderSessionSchema,
   discoveryRecommendationSchema,
@@ -24,6 +25,11 @@ import * as browserValidation from "../../app/lib/validated-data";
 import * as pureValidation from "../../app/lib/data-validation";
 import { clearDebugErrors, debugErrors, reportDebugError, resolveValidationIncidentsForEndpoint } from "../../app/lib/debug-reporting";
 import { clearNotificationHistory, notifications } from "../../app/lib/notifications";
+
+const diagnosticEffects = {
+  reportIssue: ({ source, raw, message, recordId }: ValidationIssue) =>
+    browserValidation.reportDataDiagnostic(source, raw, message, recordId),
+};
 
 beforeEach(clearDataDiagnostics);
 
@@ -176,7 +182,7 @@ it("optional_encounter_status_keeps_unknown_values_and_fields_quarantined", () =
   expect(computeStudyTask({ kind: "queue", payload: { cards: [
     { ...rawCard, encounter_evidence_status: "unknown" },
     { ...rawCard, encounter_evidence_status: "available", unexpected: true },
-  ], count: 2 } })).toEqual([]);
+  ], count: 2 } }, diagnosticEffects)).toEqual([]);
   expect(dataDiagnostics()).toHaveLength(2);
 });
 
@@ -240,7 +246,7 @@ it("malformed FEN, null UCI and illegal queue lines are quarantined without disc
       { ...rawCard, id: "null", moves: ["0000"] },
       { ...rawCard, id: "illegal", moves: ["e2e5"] },
     ],
-  });
+  }, diagnosticEffects);
   expect(cards).toHaveLength(1);
   expect(cards[0].queueEntryId).toBe(42);
   expect(dataDiagnostics()).toHaveLength(3);
@@ -279,7 +285,7 @@ it("controlled queue payload structural drift produces a named diagnostic instea
         { ...rawCard, queue_entry_id: "42" },
         { ...rawCard, unrecognized: "value" },
       ],
-    }),
+    }, diagnosticEffects),
   ).toEqual([]);
   expect(dataDiagnostics()).toHaveLength(2);
 });
@@ -352,4 +358,15 @@ it("backup snapshots require all version, timestamp, checksum, table, and count 
       counts: {},
     }).success,
   ).toBe(false);
+});
+
+it("validation collector preserves independent publication and reporter decisions", () => {
+  const source = "decision-order";
+  const decisions = [true, false];
+  const reporter = vi.fn();
+  expect(() => pureValidation.parseData(z.object({ value: z.number() }), { id: "card", value: "bad" },
+    source, "/api/cards", "worker", () => decisions.shift()!, reporter)).toThrow("Invalid decision-order data");
+  expect(dataDiagnostics()).toHaveLength(1);
+  expect(reporter).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ notify: false, endpoint: "/api/cards" }));
+  expect(decisions).toEqual([]);
 });

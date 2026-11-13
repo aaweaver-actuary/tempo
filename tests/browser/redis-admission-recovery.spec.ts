@@ -1,11 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { test, expect } from "./observability";
 import { boardBounds } from "./ui-fixtures";
 import { RedisAdmissionCleanup } from "./support/redis-admission-cleanup";
+import { createRedisAdmissionEvidenceDirectory, writeEvidenceThenCleanup, writeRedisAdmissionEvidence } from "./support/redis-admission-evidence";
 import { connectedReviewState, nativeStudyRecords } from "./native-study-storage";
 import type { IntentRecord } from "@tempo/browser-intents";
 
@@ -25,6 +24,7 @@ test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_dupl
   expect(health.ok()).toBe(true);
   expect((await health.json()).test_instance).toBe(true);
   const identity = `redis-admission-${randomUUID()}`;
+  const directory = createRedisAdmissionEvidenceDirectory(process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/issue-225", project, identity);
   const compose = ["compose", "-f", "docker-compose.postgres.test.yml", "-p", project];
   const docker = (...args: string[]) => execute("docker", [...compose, ...args], { timeout: 30_000 });
   const fixture = async (action: string) => {
@@ -49,9 +49,6 @@ test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_dupl
     // Recover by identity even when committed seed stdout was lost.
     cleanupFixture: async () => {
       receiptAuditBefore = await fixture("audit") as ReceiptAudit;
-      const directory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/issue-225";
-      mkdirSync(directory, { recursive: true });
-      writeFileSync(join(directory, "receipt-inventory-before-cleanup.json"), JSON.stringify(receiptAuditBefore, null, 2));
       const ownedQueueIds = new Set(receiptAuditBefore.queue_entry_ids.map(String));
       for (const receipt of receiptAuditBefore.operations) {
         const payload = JSON.parse(receipt.payload_json ?? "null");
@@ -60,25 +57,30 @@ test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_dupl
           expect(ownedCardIds.has(payload?.card_id), `Unexpected queue-only receipt: ${receipt.command_name}`).toBe(true);
         }
       }
-      await fixture("cleanup");
-      receiptAuditAfter = await fixture("audit") as ReceiptAudit;
-      const remainingIds = new Set(receiptAuditAfter.operations.map(receipt => receipt.operation_id));
-      for (const receipt of receiptAuditAfter.operations) {
-        const payload = JSON.parse(receipt.payload_json ?? "null");
-        expect(ownedCardIds.has(payload?.card_id), `Owned receipt remains: ${receipt.operation_id}`).toBe(false);
-      }
-      if (receiptAuditBefore) {
-        const queueIds = new Set(receiptAuditBefore.queue_entry_ids.map(String));
-        for (const receipt of receiptAuditBefore.operations) {
-          const payload = JSON.parse(receipt.payload_json ?? "null");
-          const owned = ownedCardIds.has(payload?.card_id)
-            || queueIds.has(String(payload?.entry_id ?? payload?.queue_entry_id));
-          expect(remainingIds.has(receipt.operation_id), `Receipt preservation: ${receipt.command_name} ${receipt.operation_id}`).toBe(!owned);
-        }
-      }
-      const receiptProof = JSON.stringify({ identity, receiptAuditBefore, receiptAuditAfter }, null, 2);
-      writeFileSync(join(directory, "receipt-cleanup.json"), receiptProof);
-      await testInfo.attach("redis-admission-receipt-cleanup", { body: receiptProof, contentType: "application/json" });
+      await writeEvidenceThenCleanup(
+        () => writeRedisAdmissionEvidence(directory, "receipt-inventory-before-cleanup.json", JSON.stringify(receiptAuditBefore, null, 2)),
+        async () => {
+          await fixture("cleanup");
+          receiptAuditAfter = await fixture("audit") as ReceiptAudit;
+          const remainingIds = new Set(receiptAuditAfter.operations.map(receipt => receipt.operation_id));
+          for (const receipt of receiptAuditAfter.operations) {
+            const payload = JSON.parse(receipt.payload_json ?? "null");
+            expect(ownedCardIds.has(payload?.card_id), `Owned receipt remains: ${receipt.operation_id}`).toBe(false);
+          }
+          if (receiptAuditBefore) {
+            const queueIds = new Set(receiptAuditBefore.queue_entry_ids.map(String));
+            for (const receipt of receiptAuditBefore.operations) {
+              const payload = JSON.parse(receipt.payload_json ?? "null");
+              const owned = ownedCardIds.has(payload?.card_id)
+                || queueIds.has(String(payload?.entry_id ?? payload?.queue_entry_id));
+              expect(remainingIds.has(receipt.operation_id), `Receipt preservation: ${receipt.command_name} ${receipt.operation_id}`).toBe(!owned);
+            }
+          }
+          const receiptProof = JSON.stringify({ identity, receiptAuditBefore, receiptAuditAfter }, null, 2);
+          writeRedisAdmissionEvidence(directory, "receipt-cleanup.json", receiptProof);
+          await testInfo.attach("redis-admission-receipt-cleanup", { body: receiptProof, contentType: "application/json" });
+        },
+      );
     },
   });
   await cleanup.run(async () => {
@@ -161,10 +163,8 @@ test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_dupl
         evidence.push({ fault, queueEntry, delivery, retained, committed, acceptedResult, subsequentOperation, recovered });
       });
     }
-    const directory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/issue-225";
-    mkdirSync(directory, { recursive: true });
     const proof = JSON.stringify({ project, recoveryDeadline, evidence }, null, 2);
-    writeFileSync(join(directory, "native-recovery.json"), proof);
+    writeRedisAdmissionEvidence(directory, "native-recovery.json", proof);
     await testInfo.attach("redis-admission-native-proof", { body: proof, contentType: "application/json" });
   });
 });

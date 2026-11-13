@@ -6506,7 +6506,7 @@
       ],
       "ownershipRole": "Adapt retained review commands to the learning owner",
       "dependencyNotes": [
-        "Existing apply_legacy_review compatibility entry remains present; reader and writer dependencies extend beyond this subset."
+        "submit_legacy_review remains the registered submission adapter; the apply_legacy_review compatibility bypass was removed. Reader and writer dependencies extend beyond this subset."
       ],
       "censusScope": "review"
     },

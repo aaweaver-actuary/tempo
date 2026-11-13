@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import uuid
 from datetime import date
 
 import psycopg
@@ -23,6 +24,8 @@ if date.fromisoformat(day).isoformat() != day:
     raise ValueError('Invalid original Study day')
 
 with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
+    if action == 'wake-snapshot':
+        db.execute('SET TRANSACTION READ ONLY')
     marker = db.execute("SELECT current_database(), shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()").fetchone()
     if marker != ('tempo', 'tempo-disposable-postgres-test'):
         raise RuntimeError('Database is not the owned disposable runner')
@@ -65,6 +68,16 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
         db.execute('UPDATE cards SET recent_attempts_json=%s WHERE id=%s', ('["again","again","again"]', card))
         prior = db.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(%s,'again','2000-01-01T00:00:00Z',1,1,'study') RETURNING id", (card,)).fetchone()[0]
         print(json.dumps({'ready': True, 'card': card, 'entry': entry, 'prior_review': prior, 'displaced': displaced}))
+    elif action == 'wake-snapshot':
+        acceptance, review, intent = sys.argv[6:9]
+        if str(uuid.UUID(acceptance)) != acceptance or not review.startswith('review-attempt:') or str(uuid.UUID(review.removeprefix('review-attempt:'))) != review.removeprefix('review-attempt:') or str(uuid.UUID(intent)) != intent:
+            raise RuntimeError('Invalid exact wake identity')
+        child = 'prefix-split-intent:' + intent
+        owned = db.execute('SELECT intent_id,card_id,source_revision,queue_entry_id,state,review_attempt_id,review_id,child_operation_id FROM study_deferred_prefix_splits WHERE intent_id=%s AND card_id=%s', (intent, card)).fetchone()
+        operations = db.execute("SELECT operation_id,command_name,state,created_at,updated_at,attempt_count,background,request_hash,response_json FROM operation_receipts WHERE operation_id=ANY(%s) ORDER BY operation_id", ([acceptance,review,child],)).fetchall()
+        receipts = db.execute('SELECT attempt_id,card_id,queue_entry_id,review_id,result_json FROM review_attempt_receipts WHERE attempt_id=%s AND card_id=%s', (review.removeprefix('review-attempt:'), card)).fetchall()
+        split = db.execute('SELECT source_card_id,source_revision,shortened_card_id,continuation_card_id FROM prefix_splits WHERE source_card_id=%s', (card,)).fetchall()
+        print(json.dumps({'intent':owned,'operations':operations,'receipts':receipts,'split':split}, default=str))
     elif action == 'snapshot':
         split = db.execute('SELECT source_card_id,source_revision,shortened_card_id,continuation_card_id FROM prefix_splits WHERE source_card_id=%s', (card,)).fetchall()
         intent = db.execute('SELECT intent_id,card_id,source_revision,queue_entry_id,state,review_attempt_id,review_id,child_operation_id,result_json FROM study_deferred_prefix_splits WHERE card_id=%s ORDER BY intent_id', (card,)).fetchall()

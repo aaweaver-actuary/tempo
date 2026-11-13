@@ -15,6 +15,7 @@ import time
 import redis
 
 from tempo_storage.redis_control import policy as storage
+from tempo_storage.redis_control import admission as admission_storage
 from tempo_storage.redis_control.policy import (
     POLICY_KEY,
     GENERATION_KEY,
@@ -104,9 +105,8 @@ def control_snapshot() -> dict:
     }
     try:
         if redis_admission_gate.configured():
-            active, encoded, current_generation = storage.policy_snapshot(
+            active, encoded, current_generation = admission_storage.policy_telemetry(
                 control_client(),
-                redis_admission_gate._FOREGROUND_KEY,
                 POLICY_KEY,
                 GENERATION_KEY,
                 int(time.time() * 1000),

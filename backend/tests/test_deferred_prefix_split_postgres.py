@@ -237,3 +237,89 @@ def test_lost_child_wake_recovers_same_operation_via_existing_worker(native, mon
         assert fetch_intent(db, case)['state'] == 'applied'
         receipt = db.execute_native('SELECT state,response_json FROM operation_receipts WHERE operation_id=%s', (child,)).fetchone()
         assert receipt['state'] == 'complete' and json.loads(receipt['response_json']) == result
+
+
+def test_delayed_split_readiness_respects_queued_grace_and_recovers_original_child(native, monkeypatch):
+    """Synthetic review receipt; only the owned child timestamp simulates elapsed time.
+
+    Real PostgreSQL locks/receipt selection are exercised. Celery publication is
+    observed in process; this does not establish assembled broker behavior.
+    """
+    from contextlib import nullcontext
+    from app import command_gateway as gateway, tasks
+    from app.services import queue_refresh_wakeup
+
+    with native() as db:
+        case = seed(db, 'late-grace')
+        accepted = accept(db, case)
+        review_id, original_review = save_receipt(db, case)
+        other = 'p06-unrelated-' + uuid.uuid4().hex
+        db.execute_native("""INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,background,updated_at)
+            VALUES(%s,'settings.update','unrelated-test','queued','{}',false,NOW()-INTERVAL '1 minute')""", (other,))
+
+    @contextmanager
+    def writer(_background):
+        with native() as db:
+            yield db
+    monkeypatch.setattr(gateway, '_writer_connection', writer)
+    monkeypatch.setattr(tasks.activity_gate, 'background_job', lambda *a, **kw: nullcontext())
+    monkeypatch.setattr(tasks.activity_gate, 'background_control', lambda: nullcontext())
+    monkeypatch.setattr(tasks, 'study_only_enabled', lambda: True)
+    monkeypatch.setattr(queue_refresh_wakeup, 'wake_queue_refresh', lambda *a, **kw: None)
+    monkeypatch.setattr(recovery, '_scan_cursor', '')
+    dispatched = []
+    monkeypatch.setattr(tasks.celery_app, 'connection_for_write', lambda **kw: nullcontext(object()))
+    def send_task(name, **kw):
+        if kw['task_id'].startswith('prefix-split-intent:') and kw.get('retry') is False:
+            raise OSError('injected post-commit broker failure')
+        dispatched.append((name, kw))
+    monkeypatch.setattr(tasks.celery_app, 'send_task', send_task)
+
+    # A real owner lock delays this split while another eligible receipt routes.
+    with native() as locked:
+        commands._lock_prefix_card(locked, case['card'])
+        assert tasks.recover_study_operations.run()
+        assert [(name, call['task_id'], call['queue']) for name, call in dispatched] == [
+            ('app.tasks.execute_foreground_command', other, 'foreground')]
+        with native() as db:
+            waiting = fetch_intent(db, case)
+            assert (waiting['intent_id'], waiting['state'], waiting['queue_entry_id']) == (accepted['intent_id'], 'waiting_review', case['entry'])
+            assert db.execute_native('SELECT result_json FROM review_attempt_receipts WHERE attempt_id=%s', (case['attempt'],)).fetchone()[0] == original_review
+    with native() as db:
+        make_due(db, accepted['intent_id'])
+    dispatched.clear()
+    # The post-commit advisory wake fails; periodic recovery remains authoritative.
+    assert tasks.recover_study_operations.run()
+    assert dispatched == []
+    with native() as db:
+        ready = fetch_intent(db, case)
+        child = 'prefix-split-intent:' + accepted['intent_id']
+        assert (ready['state'], ready['child_operation_id'], ready['review_attempt_id'], ready['review_id']) == ('ready', child, case['attempt'], review_id)
+        receipt = db.execute_native("SELECT state,command_name,background,updated_at,NOW()-updated_at AS age FROM operation_receipts WHERE operation_id=%s", (child,)).fetchone()
+        assert (receipt['state'], receipt['command_name'], receipt['background']) == ('queued', 'cards.prefix_split.apply_deferred', False)
+        assert receipt['age'].total_seconds() < 30
+    assert tasks.recover_study_operations.run() is False
+    assert dispatched == []
+    with native() as db:
+        # Simulate passage beyond the actual 30-second DB predicate; no global clock change.
+        db.execute_native("UPDATE operation_receipts SET updated_at=NOW()-INTERVAL '31 seconds' WHERE operation_id=%s", (child,))
+    assert tasks.recover_study_operations.run()
+    assert len(dispatched) == 1
+    name, call = dispatched[0]
+    assert (name, call['task_id'], call['queue']) == ('app.tasks.execute_foreground_command', child, 'foreground')
+    assert call['args'] == [child, 'cards.prefix_split.apply_deferred', {'intent_id': accepted['intent_id']}]
+    should_run, payload, token, _ = gateway.record_operation_attempt(child, call['args'][1], call['args'][2], background=False)
+    assert should_run and payload == {'intent_id': accepted['intent_id']}
+    result = gateway.execute_command(child, call['args'][1], payload, attempt_token=token)
+    assert result['status'] == 'applied'
+    with native() as db:
+        applied = fetch_intent(db, case)
+        assert (applied['intent_id'], applied['child_operation_id'], applied['review_attempt_id'], applied['review_id']) == (accepted['intent_id'], child, case['attempt'], review_id)
+        assert db.execute_native('SELECT result_json FROM review_attempt_receipts WHERE attempt_id=%s', (case['attempt'],)).fetchone()[0] == original_review
+        receipt = db.execute_native('SELECT state,response_json FROM operation_receipts WHERE operation_id=%s', (child,)).fetchone()
+        assert receipt['state'] == 'complete' and json.loads(receipt['response_json']) == result
+    # A duplicate delivery must not create a second operation or effect.
+    again, _, _, _ = gateway.record_operation_attempt(child, call['args'][1], call['args'][2], background=False)
+    assert not again
+    with native() as db:
+        assert db.execute_native('SELECT COUNT(*) FROM prefix_splits WHERE source_card_id=%s', (case['card'],)).fetchone()[0] == 1
