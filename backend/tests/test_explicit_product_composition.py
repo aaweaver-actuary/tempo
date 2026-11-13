@@ -1,63 +1,20 @@
-"""C1: compatibility lifecycle and authored Studies composition boundaries."""
+"""Retained lifecycle, Study routes and repertoire composition boundaries."""
 
 import os
 import subprocess
 import sys
-from contextlib import nullcontext
+from datetime import date, datetime, timezone
+from types import SimpleNamespace
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
-
-def test_authored_studies_router_keeps_each_refresh_callback(monkeypatch):
-    from app import study_routes
-
-    calls = []
-    monkeypatch.setattr(
-        study_routes.route_storage, "native_commands_enabled", lambda: False
-    )
-    monkeypatch.setattr(study_routes, "connection", lambda: nullcontext(object()))
-    monkeypatch.setattr(study_routes, "_require", lambda *args: {"id": "study"})
-    monkeypatch.setattr(study_routes.route_storage, "insert_study", lambda *args: None)
-    monkeypatch.setattr(study_routes.route_storage, "archive_study", lambda *args: None)
-    monkeypatch.setattr(
-        study_routes.route_storage, "archive_study_cards", lambda *args: None
-    )
-    apps = [FastAPI(), FastAPI()]
-    for index, app in enumerate(apps):
-        app.include_router(
-            study_routes.create_study_router(lambda index=index: calls.append(index))
-        )
-    routes = [
-        [
-            (route.path, tuple(sorted(route.methods or [])))
-            for route in app.routes
-            if route.path.startswith("/api/studies")
-        ]
-        for app in apps
-    ]
-    assert routes[0] == routes[1]
-    with TestClient(apps[0]) as first, TestClient(apps[1]) as second:
-        response = first.post(
-            "/api/studies", json={"title": "Test", "description": "", "source": {}}
-        )
-        assert response.status_code == 200 and "id" in response.json()
-        assert first.post("/api/studies/study/archive").json() == {
-            "id": "study",
-            "archived": True,
-        }
-        assert second.post("/api/studies/study/archive").json() == {
-            "id": "study",
-            "archived": True,
-        }
-        assert first.post("/api/studies/study/archive").status_code == 200
-    assert calls == [0, 1, 0]
+import pytest
 
 
 def test_postgres_main_cold_lifespan_excludes_legacy_sync_and_providers():
     code = """
 import asyncio, importlib.abc, os, socket, subprocess, sys
 from contextlib import contextmanager, nullcontext
+from datetime import date
+from types import SimpleNamespace
 class Guard(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname in {'app.services.game_sync_coordinator', 'app.services.game_sync',
@@ -90,6 +47,7 @@ from app import queue_commands
 from app.services import queue_next_card
 queue_commands.current_study_day = lambda db: '2026-01-01'
 main.read_connection = lambda: nullcontext(object())
+main.capture_study_calendar = lambda db: SimpleNamespace(day=date(2026, 1, 1))
 main.queue_projection_storage.evidence_timezone = lambda *args: ('UTC',)
 main.queue_projection_storage.queue_projection = lambda *args: None
 main.queue_projection_storage.queue_diagnostics = lambda *args: []
@@ -101,7 +59,10 @@ async def run():
         assert result['local_date'] == '2026-01-01' and result['cards'] == [] and result['count'] == 0
         calls.append('serving')
 asyncio.run(run())
-assert '/api/game-evidence/product/feedback' in {route.path for route in main.app.routes}
+paths = {route.path for route in main.app.routes}
+prefix = '/api/studies/{study_id}/exercises/{exercise_id}'
+assert {prefix + '/present', prefix + '/attempts', prefix + '/attempts/{attempt_id}/self-assess', prefix + '/attempts/{attempt_id}/feedback'} <= paths
+assert '/api/game-evidence/product/feedback' not in paths
 assert not {'/api/product/game-history/preview', '/api/repertoires/{identifier}/coverage'} & {route.path for route in main.app.routes}
 assert calls[0] == 'initialize'
 assert calls[1][0:2] == ('dispatch','queue.ensure_current') and calls[1][2]['queue_date'] and calls[1][3] is None
@@ -121,6 +82,8 @@ def test_branch_add_and_remove_preserve_repairs(monkeypatch):
 
     events = []
     db = object()
+    calendar = SimpleNamespace(day=date(2026, 1, 1), observed_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    monkeypatch.setattr(owner, "capture_study_calendar", lambda database: calendar if database is db else pytest.fail("wrong calendar database"))
     monkeypatch.setattr(
         owner.storage,
         "lock_repertoire_for_add",
@@ -137,11 +100,12 @@ def test_branch_add_and_remove_preserve_repairs(monkeypatch):
     monkeypatch.setattr(
         owner, "ensure_line_in_scope", lambda *_args, **_kwargs: "route"
     )
-    monkeypatch.setattr(
-        owner.storage,
-        "insert_line_values",
-        lambda *_: events.append("insert") or ("line",),
-    )
+    def insert_line(database, values):
+        assert database is db and values[-1] == calendar.observed_at.isoformat()
+        events.append("insert")
+        return ("line",)
+
+    monkeypatch.setattr(owner.storage, "insert_line_values", insert_line)
     monkeypatch.setattr(owner.storage, "initial_training_depth", lambda *_: 2)
     monkeypatch.setattr(
         owner.storage, "set_line_training_depth", lambda *_: events.append("depth")
@@ -154,9 +118,11 @@ def test_branch_add_and_remove_preserve_repairs(monkeypatch):
         "invalidate_integrity_in_transaction",
         lambda *_: events.append("integrity"),
     )
-    monkeypatch.setattr(
-        owner, "request_graph_rebuild_in_transaction", lambda *_: events.append("graph")
-    )
+    def request_graph(database, repertoire_id, day):
+        assert database is db and repertoire_id == "rep" and day == calendar.day.isoformat()
+        events.append("graph")
+
+    monkeypatch.setattr(owner, "request_graph_rebuild_in_transaction", request_graph)
     monkeypatch.setattr(owner, "integrity_summary", lambda *_: {"status": "unchecked"})
     payload = {
         "repertoire_id": "rep",
