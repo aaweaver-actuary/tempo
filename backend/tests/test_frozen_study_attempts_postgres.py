@@ -29,7 +29,17 @@ def frozen(owned_postgres, monkeypatch):
             db.execute("INSERT INTO study_exercises(id,study_id,position_id,current_revision,status,created_at,updated_at) VALUES(%s,'frozen','position',1,'published','2026-01-01','2026-01-01')", (exercise,))
             db.execute("INSERT INTO study_exercise_revisions(exercise_id,revision,specification_json,specification_hash,created_at) VALUES(%s,1,%s,'original-hash','2026-01-01')", (exercise, json.dumps(specification)))
             db.execute("INSERT INTO cards(id,repertoire_id,kind,content_type,study_exercise_id,start_fen,moves_json,state,due_date,revision) VALUES(%s,NULL,'exercise','study_exercise',%s,%s,'[]','learning',%s,1)", ("card-" + exercise, exercise, FEN, date.today().isoformat()))
-    monkeypatch.setattr(study_exercise_routes, 'read_connection', owned_postgres)
+    # Every production preparation and handler connection must use this
+    # fixture's owned database. Any unbound pool access fails before a socket.
+    from tempo_storage import connections, postgres
+    def unbound_pool(*args, **kwargs):
+        raise AssertionError("Unbound PostgreSQL capability in owned fixture")
+    def owned_connection(*args, **kwargs):
+        return owned_postgres()
+    monkeypatch.setattr(postgres, '_pool', unbound_pool)
+    for name in ('connection', 'read_connection', 'background_connection', 'background_read_connection', 'foreground_connection'):
+        monkeypatch.setattr(connections, name, owned_connection)
+    monkeypatch.setattr(study_exercise_routes, 'read_connection', owned_connection)
     monkeypatch.setattr(command_gateway, '_writer_connection', lambda background: owned_postgres())
     monkeypatch.setattr(command_dispatch, 'dispatch_command', lambda name, payload, *, idempotency_key: command_gateway.execute_command(idempotency_key, name, payload))
     # Simulate failure at the advisory broker connection boundary without ever
@@ -142,6 +152,10 @@ def _issued_before_archive_remounts_and_saves_original_attempt(frozen, monkeypat
     # Real issuer stamps the original queue/card/revision; no synthetic origin.
     issued = command_gateway.execute_command('original-issued-head', 'queue.issue_head',
         {'queue_date': day, 'entry_id': retained, 'card_id': 'card-retained', 'expected_revision': 1})
+    if issued is None:
+        with transaction() as db:
+            receipt = db.execute("SELECT state,error_json,last_error_json FROM operation_receipts WHERE operation_id=%s", ('original-issued-head',)).fetchone()
+            raise AssertionError(f"Original issuance failed; durable receipt: {dict(receipt) if receipt else None}")
     assert issued['issued'] is True
     parent = {'attempt_id': 'pending-practice', 'revision': 1, 'context': 'practice', 'answer': {'type': 'explanation', 'text': 'original'}}
     assert client.post(BASE + 'explain/attempts', json=parent, headers={'Idempotency-Key': 'pending-practice-parent'}).json()['pending_self_assessment'] is True
