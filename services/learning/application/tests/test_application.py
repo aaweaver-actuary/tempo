@@ -5,6 +5,7 @@ import json
 
 import pytest
 import tempo_learning_review as review
+from tempo_learning_review.models import ScheduledReview, ScheduleSnapshot, ReconciledReview
 
 NOW = datetime(2026, 10, 15, 2, 30, tzinfo=timezone.utc)
 DAY = date(2026, 10, 14)
@@ -60,16 +61,21 @@ class Capabilities:
     def has_later_review(self, *args): return self.later
     def reconcile_completed(self, cmd, attempt, ctx, **options):
         self.event("reconcile", options)
-        return dict(persisted=True, review_id=13, queue_entry_id=attempt.id,
-                    requeue_entry_id=None, reconciliation="chronological")
+        return ReconciledReview.from_dict(dict(persisted=True, review_id=13, queue_entry_id=attempt.id,
+                    requeue_entry_id=None, reconciliation="chronological"))
     def bind_receipt(self, cmd, request_json, *, restore_original=False):
         self.event("bind", restore_original)
         if self.saved_receipt:
             self.saved_receipt = replace(self.saved_receipt, request_json=request_json)
-    def schedule_snapshot(self, card_id): return {"interval_days":0}
+    def schedule_snapshot(self, card_id): return ScheduleSnapshot.from_dict(dict(due_date=DAY.isoformat(), interval_days=0, fsrs_card_json=None, first_correct_at=None, reinforcement_pending=False, stability=0.0, guided_review=False, state="learning", scheduling_mode="normal", hard_correct_streak=0, recent_attempts_json=None))
     def schedule(self, cmd, ctx, **options):
         self.event("schedule", options["outcome"], options["guided"], ctx.reviewed_at, ctx.review_day)
-        return self.scheduled.copy()
+        return ScheduledReview.from_dict(self.scheduled.copy())
+    def record_position_review(self, cmd, ctx, **options):
+        self.event("position_review", options["outcome"], options["guided"])
+        return ScheduledReview.from_dict({**self.scheduled, "requeue_today": False, "requeue_after_cards": None})
+    def save_position_receipt(self, cmd, ctx, result):
+        self.save_receipt(cmd, ctx, result)
     def complete_attempt(self, cmd, ctx, **options): self.event("complete", options["guided"])
     def mark_clean_tactic(self, *args): self.event("clean")
     def requeue(self, *args):
@@ -272,3 +278,28 @@ def test_offline_local_timezone_and_unknown_zone_preserve_system_fallback(timezo
     ctx = review.review_context(command(recorded_at=NOW.isoformat()),observed_at=NOW,
                                 local_day=DAY,timezone_name=timezone_name)
     assert ctx.review_day == NOW.astimezone().date()
+
+
+def test_position_records_human_review_without_physical_schedule_or_requeue():
+    store = Capabilities()
+    result = review.apply_review(store, command(), CONTEXT, position=True).as_dict()
+    assert result["review_id"] == 12 and result["requeue_entry_id"] is None
+    assert ("position_review", "correct", False) in store.calls
+    assert not any(event[0] in {"schedule", "snapshot", "requeue"} for event in store.calls)
+
+
+def test_schedule_and_reconciliation_missing_required_values_fail_at_boundary():
+    with pytest.raises(TypeError):
+        ScheduledReview.from_dict({"state": "learning"})
+    with pytest.raises(ValueError, match="Missing schedule snapshot field"):
+        ScheduleSnapshot.from_dict({"interval_days": 1})
+    with pytest.raises(ValueError, match="Missing reconciliation field"):
+        ReconciledReview.from_dict({"persisted": True})
+
+
+def test_original_receipt_bytes_replay_without_reencoding():
+    store = Capabilities()
+    raw = '{ "persisted" : true, "queue_entry_id": 1, "review_id": 12 }'
+    store.saved_receipt = review.AttemptReceipt("card-a", 1, "correct", False, None, raw, None)
+    assert review.apply_review(store, command(), CONTEXT).payload_json == raw
+    assert not store.calls

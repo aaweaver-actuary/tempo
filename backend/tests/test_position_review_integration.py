@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 import tempo_learning_review as review
+from tempo_learning_review.models import ScheduledReview
 
 _source = (
     Path(__file__).resolve().parents[2]
@@ -22,7 +23,7 @@ class PositionStore(_fixture.Capabilities):
 
     def record_position_review(self, command, context, *, outcome, guided):
         self.event("human_review")
-        return {**self.scheduled, "requeue_today": False, "requeue_after_cards": None}
+        return ScheduledReview.from_dict({**self.scheduled, "requeue_today": False, "requeue_after_cards": None})
 
     def lock_position_attempt(self, command):
         self.event("attempt_lock")
@@ -110,7 +111,7 @@ def test_position_human_review_does_not_save_card_schedule(monkeypatch):
     adapter = LearningReviewAdapter(object(), object())
     result = adapter.record_position_review(
         _fixture.command(), _fixture.CONTEXT, outcome="correct", guided=False
-    )
+    ).as_dict()
     assert (
         result["next_due"] == card.due_date
         and result["interval_days"] == card.interval_days
