@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from itertools import islice
 import json
 import logging
@@ -37,6 +37,8 @@ from .durable_tasks import (
     complete_task_slice_in_transaction,
     lock_current_slice,
     defer_future_queue_slice_in_transaction,
+    hold_unknown_queue_day_in_transaction,
+    accepted_queue_day,
 )
 from app.chess.pgn import ends_on_trained_move
 from .puzzles import validate_puzzle_record
@@ -700,7 +702,14 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     """Apply one eligibility phase; later queue phases remain explicitly gated."""
 
     payload = task["payload"]
-    queue_date = str(payload.get("queue_date") or date.today().isoformat())
+    queue_date = accepted_queue_day(payload)
+    if queue_date is None:
+        # Never prepare or publish a slice using a newly inferred day. This
+        # transaction fences the original generation and preserves its payload.
+        with connection(background=True) as database:
+            if lock_current_slice(database, task):
+                hold_unknown_queue_day_in_transaction(database, task)
+        return False
     # Pin before preparing any work. An upgraded checkpoint cannot certify that
     # its earlier slices covered requests accepted before epoch tracking existed.
     if "_refresh_cycle_epoch" not in payload:

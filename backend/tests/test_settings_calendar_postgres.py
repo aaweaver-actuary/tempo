@@ -157,3 +157,90 @@ def test_settings_receipt_replay_and_failed_followup_rollback(owned_postgres, mo
         assert db.execute_native("SELECT new_cards_per_day FROM settings WHERE id=1").fetchone()[0] == 13
         assert db.execute_native("SELECT requested_refresh_epoch FROM queue_projections WHERE queue_date=%s", ("2026-11-11",)).fetchone()[0] == epoch
         assert db.execute_native("SELECT state FROM operation_receipts WHERE operation_id=%s", ("calendar-settings-failure",)).fetchone()[0] == "failed"
+
+
+# This case needs a fresh invocation-owned database, independent of the B02
+# case's current singleton and without borrowing installed state.
+import pytest
+from native_study_fixture import owned_postgres as _owned_postgres_factory
+
+@pytest.fixture
+def missing_day_postgres(tmp_path_factory):
+    yield from _owned_postgres_factory.__wrapped__(tmp_path_factory)
+
+
+@pytest.mark.parametrize("has_epoch", [False, True])
+def test_missing_accepted_day_stays_held_while_known_current_queue_progresses(missing_day_postgres, monkeypatch, has_epoch):
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
+    monkeypatch.setenv("TEMPO_TEST_INSTANCE", "disposable")
+    url = make_conninfo(**missing_day_postgres.connection_options)
+    monkeypatch.setenv("TEMPO_DATABASE_READ_URL", url)
+    monkeypatch.setenv("TEMPO_DATABASE_WRITE_URL", url)
+    postgres.prepare_authoritative_background_pool()
+    payload = {"_queue_phase":"admit_due", "preserve_through_entry_id":1}
+    if has_epoch:
+        payload["_refresh_cycle_epoch"] = 42
+    payload_json = json.dumps(payload, separators=(",", ":"))
+    try:
+        with missing_day_postgres() as db:
+            db.execute_native("UPDATE settings SET timezone='UTC' WHERE id=1")
+            facts = seed_queue_refresh_case(db, queued_count=32, frozen_active=False)
+            db.execute_native("DELETE FROM background_tasks WHERE id=%s", (facts.task_id,))
+            observed = datetime.combine(date.fromisoformat(facts.queue_date), time(12), tzinfo=timezone.utc)
+            now = observed.isoformat()
+            db.execute_native("INSERT INTO background_tasks(id,kind,deduplication_key,generation,priority,state,phase,payload_json,next_attempt_at,created_at,updated_at) VALUES('unknown-day','daily_queue','current',7,10,'queued','admit_due',%s,%s,%s,%s)", (payload_json, now, now, now))
+            protected_before = protected_hash(db.raw, facts.issued_ids)
+        class FixedClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return observed if tz else observed.replace(tzinfo=None)
+        monkeypatch.setattr(refresh, "datetime", FixedClock)
+        monkeypatch.setattr(durable_tasks, "_now", lambda: observed)
+        old = durable_tasks.claim_task("daily_queue")
+        assert old["id"] == "unknown-day" and old["generation"] == 7
+        with monkeypatch.context() as patch:
+            def interrupt(*args, **kwargs):
+                raise RuntimeError("synthetic hold interruption")
+            patch.setattr(durable_tasks, "_record_event", interrupt)
+            with pytest.raises(RuntimeError, match="synthetic hold interruption"):
+                refresh.execute_postgres_queue_refresh_slice(old)
+        with missing_day_postgres() as db:
+            interrupted = db.execute_native("SELECT state,generation,lease_token,payload_json,last_error FROM background_tasks WHERE id='unknown-day'").fetchone()
+            assert interrupted["state"] == "leased" and interrupted["generation"] == 7
+            assert interrupted["lease_token"] == old["lease_token"] and interrupted["payload_json"] == payload_json
+            assert interrupted["last_error"] is None
+        assert not refresh.execute_postgres_queue_refresh_slice(old)
+        assert not refresh.execute_postgres_queue_refresh_slice(old), "stale lease replay must not alter the hold"
+        durable_tasks.requeue_interrupted_tasks()
+        with missing_day_postgres() as db:
+            held = dict(db.execute_native("SELECT * FROM background_tasks WHERE id='unknown-day'").fetchone())
+            assert held["generation"] == 7 and held["state"] == "retrying"
+            assert held["payload_json"] == payload_json and held["phase"] == "admit_due"
+            assert held["last_error"] == "accepted_queue_day_unknown"
+            assert held["next_attempt_at"] == durable_tasks._UNKNOWN_QUEUE_DAY_UNTIL
+            assert held["lease_token"] is None
+            db.execute_native("UPDATE settings SET timezone='America/New_York' WHERE id=1")
+            today = facts.queue_date
+            first = queue_application.request_queue_refresh_in_transaction(db, today)
+            second = queue_application.request_queue_refresh_in_transaction(db, today)
+            assert first["id"] == second["id"] != old["id"]
+        for _ in range(300):
+            with missing_day_postgres() as db:
+                row = db.execute_native("SELECT state,refresh_pending FROM queue_projections WHERE queue_date=%s", (today,)).fetchone()
+                if row and row["state"] == "ready" and not row["refresh_pending"]:
+                    break
+            task = durable_tasks.claim_task("daily_queue")
+            assert task and task["id"] == first["id"]
+            refresh.execute_postgres_queue_refresh_slice(task)
+        else:
+            raise AssertionError("known current-day queue did not progress")
+        with missing_day_postgres() as db:
+            after = dict(db.execute_native("SELECT * FROM background_tasks WHERE id='unknown-day'").fetchone())
+            for key in ("id", "generation", "state", "phase", "payload_json", "last_error", "next_attempt_at"):
+                assert after[key] == held[key]
+            assert protected_hash(db.raw, facts.issued_ids) == protected_before
+            card = db.execute_native("SELECT c.start_fen,c.moves_json FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.queue_date=%s AND q.status='queued' ORDER BY q.position LIMIT 1", (today,)).fetchone()
+            assert card and chess.Board(card["start_fen"]).parse_uci(json.loads(card["moves_json"])[0])
+    finally:
+        postgres.close_pools()

@@ -63,7 +63,7 @@ def lock_current_queue_task(database, queue_date=None):
         active_task = database.execute(current_task_lock_sql).fetchone()
     if queue_date and active_task:
         day = json.loads(active_task["payload_json"]).get("queue_date")
-        if day and day != queue_date:
+        if day != queue_date:
             return database.execute(
                 "SELECT id,state,payload_json,last_error FROM background_tasks WHERE kind='daily_queue' AND deduplication_key=%s FOR UPDATE",
                 ("current-day:" + queue_date,),

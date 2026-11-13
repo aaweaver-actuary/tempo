@@ -417,3 +417,44 @@ def test_future_day_slice_defers_without_changing_its_lease_identity(monkeypatch
     calls.clear()
     assert refresh._admit_current_day_slice(object(), task, "2026-11-11")
     assert calls == [("lock", task)]
+
+
+@pytest.mark.parametrize("payload", [{}, {"_refresh_cycle_epoch": 7, "_queue_phase": "admit_due"}, {"queue_date": "not-a-day"}])
+@pytest.mark.parametrize("current_lease", [True, False])
+def test_dayless_accepted_slice_holds_original_checkpoint_without_inventing_day(monkeypatch, payload, current_lease):
+    from contextlib import contextmanager
+    from app.services import postgres_queue_refresh as refresh
+    task = {"id": "original", "generation": 7, "lease_token": "lease", "payload": payload.copy()}
+    calls = []
+    @contextmanager
+    def connection(**kwargs):
+        assert kwargs == {"background": True}
+        yield object()
+    monkeypatch.setattr(refresh, "connection", connection)
+    monkeypatch.setattr(refresh, "lock_current_slice", lambda db, value: calls.append(("lock", value.copy())) or current_lease)
+    monkeypatch.setattr(refresh, "hold_unknown_queue_day_in_transaction", lambda db, value: calls.append(("hold", value.copy())))
+    monkeypatch.setattr(refresh, "_queue_slice_current_day", lambda db: pytest.fail("must not infer a day"))
+    assert not refresh.execute_postgres_queue_refresh_slice(task)
+    assert [call[0] for call in calls] == (["lock", "hold"] if current_lease else ["lock"])
+    assert task["payload"] == payload
+
+
+def test_fresh_day_does_not_replace_unknown_accepted_singleton(monkeypatch):
+    from app.services import durable_tasks
+    from tempo_storage.queue_refresh import foreground
+    old = {"id":"old", "generation":7, "state":"retrying", "payload_json":'{"_queue_phase":"admit_due"}'}
+    fresh = {"id":"fresh", "generation":1, "state":"queued", "payload_json":'{"queue_date":"2026-11-11"}'}
+    before = dict(old)
+    keys, signals = [], []
+    def lock(db, **kwargs):
+        key = kwargs.get("deduplication_key", "current")
+        keys.append(key)
+        return (old, False) if key == "current" else (fresh, True)
+    monkeypatch.setattr(durable_tasks.storage, "lock_or_create_current_queue_task", lock)
+    monkeypatch.setattr(durable_tasks.storage, "locked_queue_task_for_day", lambda db, day: None)
+    monkeypatch.setattr(foreground, "signal_queue_refresh_in_transaction", lambda db, day: signals.append(day))
+    monkeypatch.setattr(durable_tasks, "_record_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(durable_tasks, "mark_queue_refresh_requested", lambda: None)
+    task = durable_tasks._request_current_queue_in_transaction(object(), {"queue_date":"2026-11-11"}, priority=10, max_attempts=5, delay_seconds=0, minimum_generation=0)
+    assert task == fresh and old == before
+    assert keys == ["current", "current-day:2026-11-11"] and signals == ["2026-11-11"]

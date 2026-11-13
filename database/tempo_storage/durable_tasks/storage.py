@@ -255,6 +255,18 @@ def update_integrity_failure(database, values):
     )
 
 
+def hold_unknown_queue_day(database, values):
+    """Retain the leased generation and checkpoint in a non-claimable hold."""
+    return database.execute(
+        "UPDATE background_tasks SET state='retrying', "
+        "attempt_count=CASE WHEN attempt_count>0 THEN attempt_count-1 ELSE 0 END, "
+        "next_attempt_at=%s,lease_token=NULL,lease_expires_at=NULL, "
+        "last_error='accepted_queue_day_unknown',updated_at=%s "
+        "WHERE id=%s AND generation=%s AND lease_token=%s AND state='leased'",
+        values,
+    ).rowcount
+
+
 def defer_for_foreground(database, values):
     return database.execute(
         "UPDATE background_tasks SET state='retrying',\n               attempt_count=CASE WHEN attempt_count>0 THEN attempt_count-1 ELSE 0 END,\n               next_attempt_at=%s,lease_token=NULL,lease_expires_at=NULL,updated_at=%s\n               WHERE id=%s AND generation=%s AND lease_token=%s AND state='leased'",
