@@ -10,7 +10,7 @@ const fallbackEvidenceCodes = new Set(["opening_evidence_conflict", "opening_evi
 // explicit True permission; never extract a token from arbitrary message text.
 const legacyEvidenceDetail = /^409: \{'code': '(opening_evidence_(?:conflict|unavailable))', (?:'message': (?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"), )?'aggregate_review_allowed': True(?:, 'retryable': False)?\}$/;
 
-function definitiveEvidenceFailure(error: unknown): string | undefined {
+export function definitiveEvidenceFailure(error: unknown): string | undefined {
   if (!(error instanceof FailedOperationError) || error.retryable === true) return;
   // The receipt owner persisted status_code even before structured detail was
   // added. A message that merely resembles a 409 is not authoritative status.
@@ -123,12 +123,15 @@ export async function saveEvidenceAwareReview(options: ReviewEvidenceOptions): P
   }
   if (!options.positionStudy && options.completion && !rejection && response.status === 409) {
     const result = await response.clone().json().catch(() => ({})) as {
+      code?: unknown; retryable?: unknown;
       detail?: { code?: string; message?: string; aggregate_review_allowed?: boolean; retryable?: boolean };
     };
     requireCurrent();
     if (result.detail?.aggregate_review_allowed === true &&
         (result.detail.retryable === undefined || result.detail.retryable === false) &&
-        typeof result.detail.code === "string" && fallbackEvidenceCodes.has(result.detail.code)) {
+        (result.retryable === undefined || result.retryable === false) &&
+        typeof result.detail.code === "string" && fallbackEvidenceCodes.has(result.detail.code) &&
+        (result.code === undefined || result.code === result.detail.code)) {
       rejection = result.detail.message ?? "The opening evidence was rejected.";
       // Persist fallback identity before submitting it; a reload cannot switch delivery keys.
       await options.onEvidenceRejected(rejection);

@@ -1668,3 +1668,60 @@ it.each([
   expect(calls.filter(call => call.init?.method === "POST")).toHaveLength(1);
   expect(calls.some(call => call.url.includes("aggregate-only"))).toBe(false);
 });
+
+it.each(["base", "aggregate", "reconcile"])('C11 orphan %s settles only from its own receipt', async variant => {
+  const { studyIntentStore } = await import('../../database/browser/study-intent-storage');
+  const { defaultStudyClient } = await import('../../app/lib/study-connection');
+  const { recoverCommittedReviewDelivery } = await import('../../app/lib/review-outbox');
+  const original = { ...auditReview(`orphan-${variant}`, 99110), completedAt: "2026-11-12T00:00:00Z" };
+  await enqueuePendingReview(original);
+  const store = await studyIntentStore();
+  await store.update(`review:${original.attemptId}`, current => ({ ...current, state: 'committed', receipt: { persisted: true, review_id: 1 } }));
+  const id = variant === 'reconcile' ? `review-reconcile:${original.attemptId}:2` :
+    `review-attempt:${original.attemptId}${variant === 'aggregate' ? ':aggregate-only' : ''}`;
+  const key = `review-delivery:${id}`;
+  await store.put({ key, kind: 'review-delivery', attemptId: original.attemptId, requestId: id,
+    endpoint: `${defaultStudyClient.origin}/api/cards/${original.backendId}/review${variant === 'reconcile' ? '/reconcile' : ''}`,
+    createdAt: '2026-11-12T00:00:00Z', payload: { parentKey: `review:${original.attemptId}`,
+      headers: { 'Idempotency-Key': id }, body: { outcome: original.outcome, guided: original.guided,
+        queue_entry_id: original.queueEntryId, attempt_id: original.attemptId, recorded_at: original.completedAt } } });
+  const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.method ?? 'GET').toBe('GET');
+    expect(decodeURIComponent(String(url))).toContain(`/api/operations/${id}`);
+    return Response.json({ operation_id: id, state: 'complete', response: { persisted: true, review_id: 77 } });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  expect(await recoverCommittedReviewDelivery(key, new AbortController().signal)).toBe('settled');
+  expect(await store.get(key)).toMatchObject({ state: 'committed', receipt: { persisted: true, review_id: 77 } });
+  expect(await store.get(`review:${original.attemptId}`)).toMatchObject({ state: 'committed', receipt: { review_id: 1 } });
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
+it.each(['unknown', 'foreign', 'unavailable', 'unproven failure', 'invalid body'])('C11 orphan %s keeps the original delivery pending', async scenario => {
+  const { studyIntentStore } = await import('../../database/browser/study-intent-storage');
+  const { defaultStudyClient } = await import('../../app/lib/study-connection');
+  const { recoverCommittedReviewDelivery } = await import('../../app/lib/review-outbox');
+  const original = { ...auditReview(`held-${scenario}`, 99111), completedAt: '2026-11-12T00:00:00Z' };
+  await enqueuePendingReview(original);
+  const store = await studyIntentStore();
+  await store.update(`review:${original.attemptId}`, current => ({ ...current, state: 'committed', receipt: { persisted: true } }));
+  const id = `review-attempt:${original.attemptId}`, key = `review-delivery:${id}`;
+  await store.put({ key, kind: 'review-delivery', attemptId: original.attemptId, requestId: id,
+    endpoint: `${defaultStudyClient.origin}/api/cards/${encodeURIComponent(original.backendId)}/review`, createdAt: original.completedAt,
+    payload: { parentKey: `review:${original.attemptId}`, headers: { 'Idempotency-Key': id },
+      body: { outcome: scenario === 'invalid body' ? 'again' : original.outcome, guided: original.guided,
+        queue_entry_id: original.queueEntryId, attempt_id: original.attemptId, recorded_at: original.completedAt } } });
+  const before = await store.get(key);
+  const fetcher = vi.fn(async () => {
+    if (scenario === 'unavailable') throw new Error('offline');
+    if (scenario === 'foreign') return Response.json({ operation_id: 'foreign', state: 'complete', response: { persisted: true } });
+    if (scenario === 'unproven failure') return Response.json({ operation_id: id, state: 'failed', error: { status_code: 409, code: 'opening_evidence_conflict', retryable: true } });
+    return Response.json({ operation_id: id, state: 'unknown' });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  expect(await recoverCommittedReviewDelivery(key, new AbortController().signal)).toBe(scenario === 'invalid body' ? 'ineligible' : 'hold');
+  expect(await store.get(key)).toEqual(before);
+  if (scenario === 'invalid body') expect(fetcher).not.toHaveBeenCalled();
+  closeStudyIntentStorage(); await initializeStudyIntentStorage();
+  expect(await (await studyIntentStore()).get(key)).toEqual(before);
+});

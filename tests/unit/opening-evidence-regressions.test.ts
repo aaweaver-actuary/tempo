@@ -237,6 +237,18 @@ describe("evidence aware aggregate review", () => {
     expect(request).toHaveBeenCalledOnce();
     expect(rejected).not.toHaveBeenCalled();
   });
+  it.each([{ retryable: true }, { retryable: "false" }, { code: "review_revision_conflict" }])(
+    "C11 contradictory top-level 409 %o does not authorize fallback", async fields => {
+      const request = vi.fn().mockResolvedValue(Response.json({ ...fields, detail: {
+        code: "opening_evidence_conflict", aggregate_review_allowed: true,
+      } }, { status: 409 }));
+      const rejected = vi.fn();
+      const response = await saveEvidenceAwareReview({ endpoint: "/review", operationKey: "original", body, completion,
+        onEvidenceRejected: rejected, request });
+      expect(response.status).toBe(409);
+      expect(request).toHaveBeenCalledOnce();
+      expect(rejected).not.toHaveBeenCalled();
+    });
   it.each([409, 422, 500])("AS-16 unrelated immediate %s does not trigger evidence fallback", async status => {
     const request = vi.fn().mockResolvedValue(Response.json({ detail: {
       code: "review_revision_conflict", message: "Unrelated failure", aggregate_review_allowed: true,
