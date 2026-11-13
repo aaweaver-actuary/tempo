@@ -380,8 +380,15 @@ scan facts and card blocks and supports repair under caller-owned transactions.
 This source map does not establish runtime isolation or native qualification.
 The inherited legacy command fixture remains unresolved.
 
-At this base revision, 205 of 291 tracked Python files in those trees remain
-outside the combined 86-file selections. The registry alone assigns owners;
+A twelfth selection maps opening graph construction, bounded PostgreSQL rebuild
+slices and native storage. Task composition dispatches rebuilds; authored edits
+and integrity repair request generations. Existing durable task fences, Redis
+lease, graph publication, queue retirement, card links and integrity blocks remain
+visible. This is a source map, not a runtime isolation or native qualification.
+The inherited legacy command fixture remains unresolved.
+
+At this base revision, 201 of 291 tracked Python files in those trees remain
+outside the combined 90-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

@@ -162,7 +162,8 @@
               "teaching",
               "annotation",
               "activity",
-              "integrity"
+              "integrity",
+              "opening_graph"
             ]
           }
         }

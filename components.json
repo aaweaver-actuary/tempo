@@ -2,6 +2,103 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "opening-graph-builder",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/opening_graph.py#build_graph",
+        "backend/app/services/opening_graph.py#decision_segments"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/opening_graph.py"
+      ],
+      "ownershipRole": "Build opening graph and decision segments",
+      "dependencyNotes": [
+        "Uses python-chess, card identity and the existing GraphStep contract; source preparation and publication remain outside."
+      ],
+      "censusScope": "opening_graph"
+    },
+    {
+      "id": "opening-graph-rebuild",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/postgres_opening_graph.py#request_graph_rebuild_in_transaction",
+        "backend/app/services/postgres_opening_graph.py#execute_postgres_opening_graph_slice"
+      ],
+      "dependencies": [
+        "opening-graph-builder",
+        "opening-graph-storage",
+        "durable-task-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/postgres_opening_graph.py"
+      ],
+      "ownershipRole": "Prepare and publish bounded graph rebuild slices",
+      "dependencyNotes": [
+        "Uses background reads, PostgreSQL writers, durable task slice fences, Redis background lease and deleted-card filtering. Task composition dispatches opening_graph_rebuild; authoring and integrity repair request generations."
+      ],
+      "censusScope": "opening_graph"
+    },
+    {
+      "id": "opening-graph-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/opening_graph",
+      "publicExports": [
+        "database/tempo_storage/opening_graph/worker.py#lock_graph_rebuild",
+        "database/tempo_storage/opening_graph/worker.py#publish_generation",
+        "database/tempo_storage/opening_graph/worker.py#protected_queue_entry",
+        "database/tempo_storage/opening_graph/worker.py#cleanup_candidates"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/opening_graph/__init__.py",
+        "database/tempo_storage/opening_graph/worker.py"
+      ],
+      "ownershipRole": "Persist graph generation and cleanup facts",
+      "dependencyNotes": [
+        "Native SQL owns graph staging, publication, card and membership changes, queue retirement, integrity block updates and advisory locks under caller-managed operations; exposes the existing writer connection capability."
+      ],
+      "censusScope": "opening_graph"
+    },
+    {
       "id": "integrity-repair-command",
       "type": "integration",
       "maintainer": "Tempo",
