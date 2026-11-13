@@ -18,3 +18,10 @@ PostgreSQL prerequisites and task-owned isolation still apply. This suite is not
 a substitute for position-plan replay/rollback or assembled Study acceptance.
 The application and tooling suites use the same runner with their respective
 suite names. Installed-package qualification tests the built library separately.
+
+The supported user-review submission boundary is `submit_review`, called through
+the registered backend commands and their borrowed writer transaction. It owns
+card and queue fences, position and evidence validation, receipt binding and
+continuation sequencing. `apply_review` remains exported for compatibility with
+internal algorithm tests and already-fenced callers; it does not establish those
+submission guarantees and must not be used as a user submission entrypoint.

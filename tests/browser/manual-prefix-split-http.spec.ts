@@ -46,6 +46,7 @@ async function withOwnedPrefix(page: Page, request: APIRequestContext, action: (
   const fixture = (actionName: string, ...extra: string[]) => JSON.parse(execFileSync('docker', [...compose, 'run', '--rm', '--no-deps', '-e', 'TEMPO_TEST_INSTANCE=disposable', 'schema', 'python', '-', actionName, filename, repertoire, card, day, ...extra], {
     input: requireFixture(), encoding: 'utf8', timeout: 30_000,
   }));
+  let originalFailure: unknown;
   try {
     const settingsResponse = await request.get(`${api}/settings`);
     const settings = await settingsResponse.json();
@@ -62,12 +63,17 @@ async function withOwnedPrefix(page: Page, request: APIRequestContext, action: (
     await expect(page.locator('#train')).toHaveAttribute('data-queue-entry-id', String(entry));
     await expect(page.getByRole('button', {name:'Accept', exact:true})).toBeVisible();
     await action({card, entry, repertoire, snapshot, track: id => operations.push(id)});
-  } finally {
-    if (!day) throw new Error('Original fixture Study day unavailable; preserve for inspection');
-    const cleanup = fixture('cleanup', JSON.stringify(displaced), JSON.stringify(operations));
-    expect(cleanup.cleaned).toBe(true);
-    expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
-    expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
+  } catch (error) { originalFailure = error; throw error; } finally {
+    try {
+      if (!day) throw new Error('Original fixture Study day unavailable; preserve for inspection');
+      const cleanup = fixture('cleanup', JSON.stringify(displaced), JSON.stringify(operations));
+      expect(cleanup.cleaned).toBe(true);
+      expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
+      expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
+    } catch (error) {
+      if (originalFailure === undefined) throw error;
+      throw new Error(`Original split failure: ${originalFailure instanceof Error ? originalFailure.stack : String(originalFailure)}\n\nFixture cleanup failure: ${error instanceof Error ? error.stack : String(error)}`);
+    }
   }
 }
 
@@ -75,7 +81,7 @@ function requireFixture() {
   return readFileSync('tests/fixtures/postgres-manual-prefix-browser.py', 'utf8');
 }
 
-test('real manual split accepts original issued review and replays its exact receipt', async ({page, request}) => {
+test('real manual split accepts original issued review and replays its exact receipt', async ({page, request}, testInfo) => {
   test.setTimeout(180_000);
   await withOwnedPrefix(page, request, async ({card, entry, snapshot, track}) => {
     const preview = await request.get(`${api}/cards/${card}/prefix-split`);
@@ -101,7 +107,28 @@ test('real manual split accepts original issued review and replays its exact rec
     const review = await reviewRequest; const reviewBody = review.postDataJSON();
     const reviewOperationId = review.headers()['idempotency-key']; expect(reviewOperationId).toBeTruthy(); track(reviewOperationId);
     expect(reviewBody.queue_entry_id).toBe(entry); expect(reviewBody.expected_revision).toBe(proposed.source_revision);
-    await expect.poll(() => snapshot().intent[0]?.[4], {timeout:90_000}).toBe('applied');
+    try {
+      await expect.poll(() => snapshot().intent[0]?.[4], {timeout:90_000}).toBe('applied');
+    } catch (original) {
+      // Only this fixture's exact identities are inspected, inside the already
+      // verified disposable project; diagnostic failure never replaces the poll.
+      try {
+        const data = execFileSync('docker', [...postgresFixtureComposeArguments(process.env.TEMPO_TEST_COMPOSE_PROJECT),
+          'run','--rm','--no-deps','-e','TEMPO_TEST_INSTANCE=disposable','schema','python','-',
+          card, acceptance.intent_id, operationId, reviewOperationId], {
+          input: readFileSync('tests/fixtures/postgres-manual-prefix-diagnostics.py','utf8'), encoding:'utf8', timeout:10_000,
+        });
+        await testInfo.attach('split-operation-diagnostics', {body:data,contentType:'application/json'});
+        const logs = execFileSync('docker', [...postgresFixtureComposeArguments(process.env.TEMPO_TEST_COMPOSE_PROJECT),
+          'logs','--no-color','--tail','300','foreground-worker','background-scheduler'], {encoding:'utf8',timeout:10_000});
+        const lines = logs.split('\n').filter(line => line.includes('recover_study_operations') ||
+          line.includes('execute_foreground_command') || line.includes(`prefix-split-intent:${acceptance.intent_id}`)).slice(-100).map(line => line.slice(0, 2048));
+        await testInfo.attach('split-recovery-routing', {body:lines.join('\n'),contentType:'text/plain'});
+      } catch (diagnosticError) {
+        await testInfo.attach('split-diagnostic-failure', {body:String(diagnosticError),contentType:'text/plain'}).catch(() => undefined);
+      }
+      throw original;
+    }
     const after = snapshot();
     expect(after.split).toHaveLength(1); expect(after.intent).toHaveLength(1);
     expect(after.intent[0].slice(0, 6)).toEqual([acceptance.intent_id, card, proposed.source_revision, entry, 'applied', reviewBody.attempt_id]);

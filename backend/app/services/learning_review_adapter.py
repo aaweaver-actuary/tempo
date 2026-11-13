@@ -1,16 +1,18 @@
 """Legacy persistence/transport capabilities borrowing the caller's connection."""
 
 from __future__ import annotations
-from contextlib import nullcontext
 from datetime import date, datetime, timezone
 import json
 
 from fastapi import HTTPException
 import tempo_learning_review as learning
+from tempo_learning_review.models import (
+    QueueAttempt, ReconciledReview, ReviewCommand, ReviewContext, ReviewPolicy,
+    ScheduledReview, ScheduleSnapshot,
+)
 from tempo_storage.learning_bridge import review as storage
-from tempo_storage.connections import connection, read_connection
+from tempo_storage.connections import read_connection
 from app.contracts.transport.study import ReviewRequest
-from tempo_storage.postgres import PostgresConnection
 from app.contracts.review_conflicts import ReviewConflict
 from tempo_storage.queue_position_lock import (
     lock_queue_date_for_position,
@@ -235,8 +237,9 @@ class LearningReviewAdapter:
         )
 
     def reconcile_completed(
-        self, command, attempt, context, *, guided, revision, competing_review=None
-    ):
+        self, command: ReviewCommand, attempt: QueueAttempt, context: ReviewContext, *,
+        guided: bool, revision: int | None, competing_review: dict | None = None
+    ) -> ReconciledReview:
         result = reconcile_completed_review(
             self.database,
             command.card_id,
@@ -251,7 +254,7 @@ class LearningReviewAdapter:
             local_day=context.local_day,
             competing_review=competing_review,
         )
-        return result
+        return ReconciledReview.from_dict(result)
 
     def bind_receipt(self, command, request_json, *, restore_original=False):
         if restore_original:
@@ -260,12 +263,16 @@ class LearningReviewAdapter:
             )
         storage.bind_receipt_request(self.database, request_json, command.attempt_id)
 
-    def schedule_snapshot(self, card_id):
-        return card_schedule_state(self.database, card_id)
+    def schedule_snapshot(self, card_id: str) -> ScheduleSnapshot | None:
+        state = card_schedule_state(self.database, card_id)
+        return ScheduleSnapshot.from_dict(state) if state else None
 
-    def schedule(self, command, context, *, outcome, guided, policy):
+    def schedule(
+        self, command: ReviewCommand, context: ReviewContext, *, outcome: str,
+        guided: bool, policy: ReviewPolicy,
+    ) -> ScheduledReview:
         with training_timing_stage("fsrs_review_receipt"):
-            return apply_scheduling_review(
+            result = apply_scheduling_review(
                 self.database,
                 command.card_id,
                 outcome,
@@ -278,8 +285,11 @@ class LearningReviewAdapter:
                 reviewed_at=context.reviewed_at,
                 review_day=context.review_day,
             )
+        return ScheduledReview.from_dict(result)
 
-    def record_position_review(self, command, context, *, outcome, guided):
+    def record_position_review(
+        self, command: ReviewCommand, context: ReviewContext, *, outcome: str, guided: bool,
+    ) -> ScheduledReview:
         """Save the human review without advancing the physical card schedule."""
         from tempo_storage.scheduling_review_store import (
             OwnedConnectionSchedulingReviewStore,
@@ -303,7 +313,7 @@ class LearningReviewAdapter:
                 f"attempt:{command.attempt_id}",
             )
         )
-        return {
+        return ScheduledReview.from_dict({
             "card_id": command.card_id,
             "next_due": card.due_date,
             "interval_days": card.interval_days,
@@ -315,7 +325,7 @@ class LearningReviewAdapter:
             "hard_correct_streak": card.hard_correct_streak,
             "suggest_shorter_prefix": False,
             "idempotent": False,
-        }
+        })
 
     def complete_attempt(self, command, context, *, guided):
         queue_day = storage.queue_date(self.database, command.queue_entry_id)
@@ -344,8 +354,8 @@ class LearningReviewAdapter:
             self.database, attempt.queue_date, card_id, after, state
         )
 
-    def save_snapshot(self, review_id, snapshot):
-        save_schedule_snapshot(self.database, review_id, snapshot)
+    def save_snapshot(self, review_id: int, snapshot: ScheduleSnapshot) -> None:
+        save_schedule_snapshot(self.database, review_id, snapshot.as_dict())
 
     def save_receipt(self, command, context, result):
         storage.insert_receipt(
@@ -668,33 +678,6 @@ class LearningReviewAdapter:
     def save_continuation(self, attempt_id, result):
         storage.save_continuation(self.database, json.dumps(result), attempt_id)
 
-
-def apply_legacy_review(
-    card_id,
-    request,
-    *,
-    database=None,
-    observed_at=None,
-    local_day=None,
-    policy_provider=None,
-):
-    command = command_from_request(card_id, request)
-    with nullcontext(database) if database is not None else connection() as owned:
-        adapter = LearningReviewAdapter(
-            owned,
-            request,
-            observed_at=observed_at,
-            local_day=local_day,
-            policy_provider=policy_provider,
-        )
-        try:
-            result = learning.apply_review(
-                adapter, command, adapter.context(command)
-            ).as_dict()
-        except learning.ReviewFailure as error:
-            raise translate_failure(error) from error
-    adapter.finish_compatibility_effects()
-    return result
 
 
 def submit_legacy_review(database, payload):

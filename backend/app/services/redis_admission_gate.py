@@ -13,7 +13,7 @@ from typing import Iterator
 import redis
 
 from tempo_storage.redis_control import admission as storage
-from tempo_storage.redis_control.admission import _REGISTER_FOREGROUND, _CLAIM_BACKGROUND, _FOREGROUND_KEY, _BACKGROUND_KEY, _FOREGROUND_LEASE_MS, _BACKGROUND_LEASE_MS, client, configured
+from tempo_storage.redis_control.admission import client, configured
 
 
 _LOGGER = logging.getLogger("tempo.admission")
@@ -30,20 +30,13 @@ class BackgroundAdmissionDeferred(RuntimeError):
 def foreground_present() -> bool:
     current_milliseconds = int(time.time() * 1000)
     server = client()
-    return storage.foreground_present(server, _FOREGROUND_KEY, current_milliseconds)
+    return storage.has_foreground(server, current_milliseconds)
 
 
 def record_browser_activity(seconds: float, *, session_id: str = "legacy") -> None:
     """Keep the active workspace ahead of new background database slices."""
 
-    lease_milliseconds = max(1, int(seconds * 1000))
-    storage.register_foreground(
-        client(),
-        _FOREGROUND_KEY,
-        int(time.time() * 1000),
-        f"browser-activity:{session_id}",
-        lease_milliseconds,
-    )
+    storage.record_browser_presence(client(), int(time.time() * 1000), session_id, seconds)
 
 
 @asynccontextmanager
@@ -53,19 +46,17 @@ async def async_foreground_lease():
 
     async def register():
         await asyncio.to_thread(
-            storage.register_foreground,
+            storage.acquire_foreground,
             client(),
-            _FOREGROUND_KEY,
             int(time.time() * 1000),
             token,
-            _FOREGROUND_LEASE_MS,
         )
 
     await register()
 
     async def renew():
         while True:
-            await asyncio.sleep(_FOREGROUND_LEASE_MS / 3000)
+            await asyncio.sleep(storage.foreground_renewal_seconds())
             try:
                 await register()
             except redis.RedisError:
@@ -80,7 +71,7 @@ async def async_foreground_lease():
             await renewal
         try:
             await asyncio.to_thread(
-                storage.release_foreground, client(), _FOREGROUND_KEY, token
+                storage.remove_foreground, client(), token
             )
         except redis.RedisError:
             _LOGGER.exception("Could not release foreground admission lease")
@@ -92,14 +83,12 @@ def foreground_lease() -> Iterator[None]:
     stop_renewal = threading.Event()
 
     def renew() -> None:
-        while not stop_renewal.wait(_FOREGROUND_LEASE_MS / 3000):
+        while not stop_renewal.wait(storage.foreground_renewal_seconds()):
             try:
-                storage.register_foreground(
+                storage.acquire_foreground(
                     client(),
-                    _FOREGROUND_KEY,
                     int(time.time() * 1000),
                     token,
-                    _FOREGROUND_LEASE_MS,
                 )
             except redis.RedisError:
                 _LOGGER.exception("Could not renew foreground admission lease")
@@ -107,12 +96,10 @@ def foreground_lease() -> Iterator[None]:
     from .background_runtime import training_timing_stage
 
     with training_timing_stage("foreground_admission"):
-        storage.register_foreground(
+        storage.acquire_foreground(
             client(),
-            _FOREGROUND_KEY,
             int(time.time() * 1000),
             token,
-            _FOREGROUND_LEASE_MS,
         )
     renewal = threading.Thread(target=renew, name="tempo-foreground-lease", daemon=True)
     renewal.start()
@@ -122,7 +109,7 @@ def foreground_lease() -> Iterator[None]:
         stop_renewal.set()
         renewal.join(timeout=1)
         try:
-            storage.release_foreground(client(), _FOREGROUND_KEY, token)
+            storage.remove_foreground(client(), token)
         except redis.RedisError:
             _LOGGER.exception("Could not release foreground admission lease")
 
@@ -131,13 +118,10 @@ def foreground_lease() -> Iterator[None]:
 def background_lease() -> Iterator[None]:
     token = uuid.uuid4().hex
     try:
-        admitted = storage.claim_background(
+        admitted = storage.acquire_background(
             client(),
-            _FOREGROUND_KEY,
-            _BACKGROUND_KEY,
             int(time.time() * 1000),
             token,
-            _BACKGROUND_LEASE_MS,
         )
     except redis.RedisError as error:
         raise BackgroundAdmissionDeferred(
@@ -149,6 +133,6 @@ def background_lease() -> Iterator[None]:
         yield
     finally:
         try:
-            storage.release_background(client(), _BACKGROUND_KEY, token)
+            storage.remove_background(client(), token)
         except redis.RedisError:
             _LOGGER.exception("Could not release background admission lease")

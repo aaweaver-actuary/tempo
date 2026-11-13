@@ -436,3 +436,17 @@ it('C24 never sends evidence fallback after authority changes during rejection',
     expect((await offline.readPreparedTraining())?.attempts).toEqual([attempt]); expect(calls).toHaveLength(1);
   } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
 });
+
+it('FE10 phone preparation publishes invalid opening evidence while retaining the usable card', async () => {
+  const { vi } = await import('vitest'); const { openingEvidenceStorage } = await import('../fixtures/opening-evidence-storage');
+  const browserStorage = localStorage; await openingEvidenceStorage(); vi.stubGlobal('localStorage', browserStorage);
+  const diagnostics = await import('../../app/lib/data-validation'); diagnostics.clearDataDiagnostics();
+  const card = { ...preparedCard, opening_decision_manifest: { malformed: true } };
+  try {
+    const offline = await import('../../app/lib/offline-training');
+    const saved = await offline.savePreparedTraining({ local_date: '2026-10-05', prepared_at: '2026-10-05T12:02:00Z', cards: [card], count: 1,
+      projection: { state: 'ready', generation: 1, updated_at: null, refresh_pending: 0, last_error: null } });
+    expect(saved.cards).toHaveLength(1); expect(saved.cards[0].opening_decision_manifest).toBeUndefined();
+    expect(diagnostics.dataDiagnostics()).toEqual([expect.objectContaining({ source: 'opening evidence', raw: card, message: expect.stringContaining('invalid manifest') })]);
+  } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+});

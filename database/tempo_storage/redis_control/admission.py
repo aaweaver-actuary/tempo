@@ -76,3 +76,42 @@ def claim_background(server, foreground_key: str, background_key: str,
 
 def release_background(server, background_key: str, token: str):
     return server.zrem(background_key, token)
+
+
+def foreground_renewal_seconds() -> float:
+    """Renew an ordinary foreground lease at one third of its fixed lifetime."""
+    return _FOREGROUND_LEASE_MS / 3000
+
+
+def acquire_foreground(server, current_milliseconds: int, token: str):
+    """Acquire or renew one fixed-duration foreground token."""
+    return register_foreground(server, _FOREGROUND_KEY, current_milliseconds, token, _FOREGROUND_LEASE_MS)
+
+
+def record_browser_presence(server, current_milliseconds: int, session_id: str, seconds: float):
+    """Extend one browser session without shortening any existing token."""
+    return register_foreground(server, _FOREGROUND_KEY, current_milliseconds,
+                               f'browser-activity:{session_id}', max(1, int(seconds * 1000)))
+
+
+def remove_foreground(server, token: str):
+    return release_foreground(server, _FOREGROUND_KEY, token)
+
+
+def has_foreground(server, current_milliseconds: int) -> bool:
+    return foreground_present(server, _FOREGROUND_KEY, current_milliseconds)
+
+
+def acquire_background(server, current_milliseconds: int, token: str):
+    return claim_background(server, _FOREGROUND_KEY, _BACKGROUND_KEY,
+                            current_milliseconds, token, _BACKGROUND_LEASE_MS)
+
+
+def remove_background(server, token: str):
+    return release_background(server, _BACKGROUND_KEY, token)
+
+
+def policy_telemetry(server, policy_key: str, generation_key: str, current_milliseconds: int):
+    """Read foreground and policy atomically using the existing policy script."""
+    from . import policy
+    return policy.policy_snapshot(server, _FOREGROUND_KEY, policy_key, generation_key, current_milliseconds)

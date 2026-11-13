@@ -7145,6 +7145,37 @@
   "certifiedTests": [
     {
       "paths": [
+        "tests/unit/redis-admission-evidence.test.ts"
+      ],
+      "tier": "STUDY",
+      "frontend": [
+        "tests/unit/redis-admission-evidence.test.ts"
+      ],
+      "backend": [],
+      "browser": [],
+      "nativeChecks": []
+    },
+    {
+      "paths": [
+        "tests/browser/support/redis-admission-evidence.ts"
+      ],
+      "tier": "STUDY",
+      "frontend": [
+        "tests/unit/redis-admission-cleanup-regressions.test.ts",
+        "tests/unit/redis-admission-evidence.test.ts"
+      ],
+      "backend": [],
+      "browser": [
+        {
+          "file": "redis-admission-recovery.spec.ts",
+          "title": "test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate",
+          "project": "chromium"
+        }
+      ],
+      "nativeChecks": []
+    },
+    {
+      "paths": [
         "tests/unit/redis-admission-cleanup-regressions.test.ts"
       ],
       "tier": "FAST",
@@ -7161,7 +7192,8 @@
       ],
       "tier": "STUDY",
       "frontend": [
-        "tests/unit/redis-admission-cleanup-regressions.test.ts"
+        "tests/unit/redis-admission-cleanup-regressions.test.ts",
+        "tests/unit/redis-admission-evidence.test.ts"
       ],
       "backend": [],
       "browser": [
@@ -7179,7 +7211,8 @@
       ],
       "tier": "STUDY",
       "frontend": [
-        "tests/unit/redis-admission-cleanup-regressions.test.ts"
+        "tests/unit/redis-admission-cleanup-regressions.test.ts",
+        "tests/unit/redis-admission-evidence.test.ts"
       ],
       "backend": [],
       "browser": [

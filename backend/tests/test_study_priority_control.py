@@ -1,5 +1,7 @@
 """Study control must be fast, expiring, session-scoped and conservative."""
 
+from tempo_storage.redis_control import admission as admission_storage
+
 from contextlib import contextmanager
 from types import SimpleNamespace
 import json
@@ -32,7 +34,7 @@ def control(monkeypatch):
                 return 1
             if script == study_priority._READ:
                 return [int(bool(self.leases)), self.policy or "", self.generation]
-            assert script == redis_admission_gate._REGISTER_FOREGROUND
+            assert script == admission_storage._REGISTER_FOREGROUND
             key, now, session, duration = args
             self.leases[session] = now + duration
             return 1

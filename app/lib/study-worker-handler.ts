@@ -4,9 +4,13 @@ import {
   clearDataDiagnostics,
   dataDiagnostics,
   parseData,
+  reportDataDiagnostic,
 } from "./data-validation";
 
-export function installStudyWorker(compute: (task: StudyTask) => unknown): void {
+import type { ValidationEffects } from "../domain/validation";
+
+export function installStudyWorker(compute: (task: StudyTask, effects?: ValidationEffects) => unknown): void {
+  const effects: ValidationEffects = { reportIssue: issue => reportDataDiagnostic(issue.source, issue.raw, issue.message, issue.recordId) };
   self.onmessage = ({ data: raw }: MessageEvent<unknown>) => {
     let data;
     try {
@@ -21,7 +25,7 @@ export function installStudyWorker(compute: (task: StudyTask) => unknown): void 
     self.postMessage({ id: data.id, state: "running" });
     const computeStartedAt = performance.now();
     try {
-      const result = compute(data.task);
+      const result = compute(data.task, effects);
       self.postMessage({
         id: data.id,
         result,

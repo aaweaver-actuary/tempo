@@ -662,3 +662,35 @@ test('P07 fast Study gate consumes HTTP scenario evidence', () => {
     assert(validateFastGate(plan,bad,needs,pr,execution).length > 0);
   }
 });
+
+test('Redis evidence mapping retains browser coverage and fails closed on changed certificate', () => {
+  const evidenceTest = 'tests/unit/redis-admission-evidence.test.ts';
+  const browserCase = 'chromium:redis-admission-recovery.spec.ts:test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate';
+  // Reconstruct the recorded certificate's dependency/consumer facts. This is
+  // a selector unit test, not a renewal of the actual source certificate.
+  const certified = readCertificateSources();
+  for (const [path, lines] of Object.entries(certificate.dependencies))
+    if (!(path in (certificate.sqlRelations ?? {}))) certified[path] = lines.join('\n');
+  for (const [token, expected] of Object.entries(certificate.consumers)) {
+    for (const path of Object.keys(certified))
+      if (!expected.includes(path)) certified[path] = certified[path].replaceAll(token, 'removed-token');
+    for (const path of expected) if (!certified[path].includes(token)) certified[path] += `\n// ${token}`;
+  }
+  assert.equal(validateCertificate(certificate, certified), true);
+  for (const path of [evidenceTest, 'tests/browser/support/redis-admission-evidence.ts',
+    'tests/browser/support/redis-admission-cleanup.ts', 'tests/browser/redis-admission-recovery.spec.ts']) {
+    const mapping = fastInventory.certifiedTests.filter(item => item.paths.includes(path));
+    assert.equal(mapping.length, 1, path);
+    assert.equal(mapping[0].tier, 'STUDY', path);
+    assert(mapping[0].frontend.includes(evidenceTest), path);
+    if (path !== evidenceTest) assert(mapping[0].browser.some(value => testIdentity(value) === browserCase), path);
+    const valid = selectFastLane([path], {certificateSources: certified});
+    assert.equal(valid.tier, 'STUDY', path);
+    assert(valid.frontend.includes(evidenceTest), path);
+    if (path !== evidenceTest) assert(valid.browser.some(value => testIdentity(value) === browserCase), path);
+    const changed = {...certified};
+    const dependency = Object.keys(certificate.dependencies)[0];
+    changed[dependency] += '\nimport "changed-certificate-dependency";\n';
+    assert.equal(selectFastLane([path], {certificateSources: changed}).tier, 'FULL', path);
+  }
+});

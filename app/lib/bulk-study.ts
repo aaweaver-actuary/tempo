@@ -67,14 +67,14 @@ function pump() {
           updateBrowserActivity(`bulk:${request.id}`, 'Preparing workspace data', 'running', 'Computing');
           return;
         }
-        if (reply.error !== undefined) throw new Error(reply.error);
         for (const issue of reply.diagnostics ?? []) {
           if (request.current?.() === false) break;
           reportDataDiagnostic(issue.source, issue.raw, issue.message, issue.recordId);
         }
+        if (reply.error !== undefined) throw new Error(reply.error);
         if (reply.computeMs !== undefined) recordTempoDuration('bulk-worker-compute', reply.computeMs);
         recordTempoDuration('bulk-worker-roundtrip', performance.now() - request.queuedAt);
-        finish(undefined, decodeStudyResult(request.task, reply.result, request.current, reportDebugError));
+        finish(undefined, decodeStudyResult(request.task, reply.result, request.current, { reportIssue: issue => reportDataDiagnostic(issue.source, issue.raw, issue.message, issue.recordId), reportError: reportDebugError, shouldPublishDiagnostics: request.current }));
       } catch (error) { fail(error); }
     };
     runningWorker.onerror = event => { if (current()) fail(new Error(event.message || 'Workspace worker failed')); };

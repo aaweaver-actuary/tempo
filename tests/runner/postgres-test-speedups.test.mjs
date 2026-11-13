@@ -8,7 +8,7 @@ import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../database/tests/postgres-test-options.mjs";
-import { maintainedQueueCases, unresolvedQueueCases, excludedQueueCases, verifyMaintainedQueueReceipt, verifyCheckpoint1QueueReceipt, verifyCheckpoint1BrowserReceipt, checkpoint1BrowserCases, checkpoint1NativeChecks, checkpoint1QueueCases, assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
+import { verifyRedisResidualReceipt, verifyRedisRestartIdentity, verifyOwnerTrioReceipt, maintainedQueueCases, unresolvedQueueCases, excludedQueueCases, verifyMaintainedQueueReceipt, verifyCheckpoint1QueueReceipt, verifyCheckpoint1BrowserReceipt, checkpoint1BrowserCases, checkpoint1NativeChecks, checkpoint1QueueCases, assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../database/tests/postgres-test-fixture.mjs";
 import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -1263,8 +1263,8 @@ test("pr102 background restoration recovers API health before confirming restore
   assert.deepEqual(events, [["background-worker", "background-scheduler"], "original readiness passed",
     "verified all running"]);
   const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
-  // The retired priority benchmark and Defense proof have no restoration call sites.
-  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 3);
+  // The owner trio adds one isolated workload restoration site.
+  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 4);
 });
 
 
@@ -1782,4 +1782,82 @@ test('P07 polling rejects foreign initial and completed operation identities', a
   await assert.rejects(poll(accepted('original'), 'original'), /identity/);
   receipt = {operation_id:'original', state:'complete', response:{applied:true}};
   assert.deepEqual(await poll(accepted('original'), 'original'), {applied:true});
+});
+
+test("owner trio selection and receipt fail closed", () => {
+  const options = parse(["--mode", "browser", "--browser-file", "redis-admission-recovery.spec.ts", "--native-check", "owner-trio"]);
+  assert(postgresTestStages(options).includes("owner-trio"));
+  assert.throws(() => parse(["--mode", "durability", "--native-check", "owner-trio"]));
+  assert.throws(() => parse(["--mode", "browser", "--native-check", "owner-trio", "--native-check", "owner-trio"]));
+  const project = "tempo-pg-regressions-12-12345678", revision = "a".repeat(40);
+  const receipt = { project, revision, cleanup: "completed", completed: ["deletion", "monotonic_renewal", "broker_wakes"] };
+  verifyOwnerTrioReceipt(receipt, project, revision);
+  for (const change of [{project: "foreign"}, {revision: "b".repeat(40)}, {cleanup: "unknown"},
+    {completed: ["deletion", "broker_wakes"]}, {completed: ["deletion", "monotonic_renewal", "monotonic_renewal"]}])
+    assert.throws(() => verifyOwnerTrioReceipt({...receipt, ...change}, project, revision));
+});
+test("owner trio rejects foreign identity before connection", () => {
+  const probe = `import runpy
+m=runpy.run_path('database/tests/check_owner_trio.py')
+f=m['validate_environment']
+base={'TEMPO_TEST_INSTANCE':'disposable','TEMPO_TEST_COMPOSE_PROJECT':'tempo-pg-regressions-1-12345678','TEMPO_NATIVE_CANDIDATE_REVISION':'a'*40,'TEMPO_REDIS_URL':'redis://redis:6379/0','PGPASSFILE':'/run/secrets/admin_pgpass'}
+assert f(base)==(base['TEMPO_TEST_COMPOSE_PROJECT'],base['TEMPO_NATIVE_CANDIDATE_REVISION'])
+for change in ({'TEMPO_TEST_INSTANCE':'live'},{'TEMPO_TEST_COMPOSE_PROJECT':'foreign'},{'TEMPO_REDIS_URL':'redis://localhost:6379/0'},{'PGHOSTADDR':'127.0.0.1'},{'TEMPO_DATABASE_WRITE_URL':'foreign'},{'PGPASSFILE':'/tmp/pass'}):
+ try: f({**base,**change})
+ except RuntimeError: pass
+ else: raise AssertionError(change)`;
+  const result = spawnSync(resolvePython(), ['-c', probe], { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("Redis residual selection and evidence reject partial or foreign completion", () => {
+  const options = parse(['--mode', 'browser', '--browser-file', 'redis-admission-recovery.spec.ts', '--native-check', 'redis-residual']);
+  assert(postgresTestStages(options).includes('redis-residual'));
+  assert.throws(() => parse(['--mode', 'durability', '--native-check', 'redis-residual']));
+  assert.throws(() => parse(['--mode', 'browser', '--native-check', 'redis-residual', '--native-check', 'redis-residual']));
+  const project = 'tempo-pg-regressions-12-12345678', revision = 'a'.repeat(40);
+  const receipt = { project, revision, cleanup: 'completed', completed: ['redis_admission_real_lease_interference', 'test_real_broker_persistent_wake_survives_aof_restart'], restart: {kind: 'clean', sync: {project, revision, sync: 'WAITAOF', local_fsynced: 1, timeout_ms: 5000}} };
+  verifyRedisResidualReceipt(receipt, project, revision);
+  for (const change of [{ project: 'foreign' }, { revision: 'b'.repeat(40) }, { cleanup: 'unknown' }, { completed: [receipt.completed[0]] }, { restart: {kind: 'clean', sync: {...receipt.restart.sync, local_fsynced: 0}} }, { restart: {...receipt.restart, kind: 'crash'} }])
+    assert.throws(() => verifyRedisResidualReceipt({...receipt, ...change}, project, revision));
+});
+test("Redis restart requires the same owned volume and a new process", () => {
+  const project = 'tempo-pg-regressions-12-12345678';
+  const before = { project, service: 'redis', id: 'a'.repeat(64), image: 'sha256:' + 'b'.repeat(64), volume: project + '_redis-test-data', startedAt: 'before', healthy: true, runId: 'c'.repeat(40) };
+  const after = { ...before, startedAt: 'after', runId: 'd'.repeat(40) };
+  verifyRedisRestartIdentity(before, after, project);
+  for (const change of [{ project: 'foreign' }, { service: 'api' }, { id: 'e'.repeat(64) }, { image: 'sha256:' + 'e'.repeat(64) }, { volume: 'foreign' }, { startedAt: 'before' }, { runId: before.runId }, { healthy: false }])
+    assert.throws(() => verifyRedisRestartIdentity(before, {...after, ...change}, project));
+});
+test("Redis residual rejects non-owned target before connecting", () => {
+  const probe = `import runpy
+m=runpy.run_path('database/tests/redis/check_redis_admission_leases.py'); f=m['validate_environment']
+base={'TEMPO_TEST_INSTANCE':'disposable','TEMPO_TEST_COMPOSE_PROJECT':'tempo-pg-regressions-1-12345678','TEMPO_NATIVE_CANDIDATE_REVISION':'a'*40,'TEMPO_REDIS_URL':'redis://redis:6379/0'}
+assert f(base)==(base['TEMPO_TEST_COMPOSE_PROJECT'],base['TEMPO_NATIVE_CANDIDATE_REVISION'])
+for change in ({'TEMPO_TEST_INSTANCE':'live'},{'TEMPO_TEST_COMPOSE_PROJECT':'foreign'},{'TEMPO_REDIS_URL':'redis://localhost:6379/0'},{'TEMPO_NATIVE_CANDIDATE_REVISION':'foreign'}):
+ try: f({**base,**change})
+ except RuntimeError: pass
+ else: raise AssertionError(change)`;
+  const result = spawnSync(resolvePython(), ['-c', probe], { cwd: root, encoding: 'utf8', env: {...process.env, PYTHONPATH: 'backend:database'} });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("Redis AOF barrier requires same-connection local fsync acknowledgment", () => {
+  const probe = `import runpy
+m=runpy.run_path('database/tests/redis/check_redis_admission_leases.py'); f=m['require_local_aof_sync']
+class Pipe:
+ def __init__(self,result): self.result=result; self.calls=[]
+ def set(self,*a,**k): self.calls.append(('set',a,k)); return self
+ def execute_command(self,*a): self.calls.append(('command',a)); return self
+ def execute(self): return self.result
+class Server:
+ def __init__(self,result): self.p=Pipe(result)
+ def pipeline(self,transaction): assert transaction is False; return self.p
+s=Server([True,[1,0]]); f(s,'owned:barrier','token'); assert s.p.calls==[('set',('owned:barrier','token'),{'nx':True}),('command',('WAITAOF',1,0,5000))]
+for value in ([True,[0,0]], [None,[1,0]], [True,[0,1]]):
+ try: f(Server(value),'owned:barrier','token')
+ except RuntimeError: pass
+ else: raise AssertionError(value)`;
+  const result = spawnSync(resolvePython(), ['-c', probe], { cwd: root, encoding: 'utf8', env: {...process.env, PYTHONPATH: 'backend:database'} });
+  assert.equal(result.status, 0, result.stderr);
 });
