@@ -2,6 +2,178 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "position-study-ports",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/position_learning",
+      "publicExports": [
+        "backend/app/study/position_learning/contracts.py#PositionScheduleReadPort",
+        "backend/app/study/position_learning/contracts.py#IssuedPositionAttemptPort",
+        "backend/app/study/position_learning/contracts.py#GradeEffectWritePort",
+        "backend/app/study/position_learning/contracts.py#PositionOwnerEpochReadPort"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/position_learning/contracts.py",
+        "backend/app/study/position_learning/__init__.py"
+      ],
+      "ownershipRole": "Describe Study position transaction capabilities",
+      "dependencyNotes": [
+        "Exports existing evidence-math value types and typed ports; does not open transactions or turn a proposal into an issuance."
+      ],
+      "censusScope": "position_plan"
+    },
+    {
+      "id": "position-prefix-proof",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/position_learning",
+      "publicExports": [
+        "backend/app/study/position_learning/prefix_eligibility.py#CleanFirstResponse",
+        "backend/app/study/position_learning/prefix_eligibility.py#CleanPresentationProof",
+        "backend/app/study/position_learning/prefix_eligibility.py#CleanPrefixEligibility",
+        "backend/app/study/position_learning/prefix_eligibility.py#verify_clean_prefix"
+      ],
+      "dependencies": [
+        "position-study-ports"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/position_learning/prefix_eligibility.py"
+      ],
+      "ownershipRole": "Check supplied clean presentation proof",
+      "dependencyNotes": [
+        "Checks exact route, first responses, source, day and owner facts using chess and evidence-math. Supplied receipt claims do not independently attest persistence."
+      ],
+      "censusScope": "position_plan"
+    },
+    {
+      "id": "position-route-planner",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/position_learning",
+      "publicExports": [
+        "backend/app/study/position_learning/route_planner.py#Plan",
+        "backend/app/study/position_learning/route_planner.py#choose_plan"
+      ],
+      "dependencies": [
+        "position-study-ports",
+        "position-prefix-proof"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/position_learning/route_planner.py"
+      ],
+      "ownershipRole": "Select deterministic position route",
+      "dependencyNotes": [
+        "Uses legal route and supplied source/clean-prefix facts; holds ambiguous targets and does not establish issuance authority."
+      ],
+      "censusScope": "position_plan"
+    },
+    {
+      "id": "position-issued-plan-contract",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/position_learning",
+      "publicExports": [
+        "backend/app/study/position_learning/issued_plan_contracts.py#DecisionSlot",
+        "backend/app/study/position_learning/issued_plan_contracts.py#IssuedPlan",
+        "backend/app/study/position_learning/issued_plan_contracts.py#SelectionRequest",
+        "backend/app/study/position_learning/issued_plan_contracts.py#freeze_issued_plan",
+        "backend/app/study/position_learning/issued_plan_contracts.py#select_and_freeze",
+        "backend/app/study/position_learning/issued_plan_contracts.py#decode_issued_record",
+        "backend/app/study/position_learning/issued_plan_contracts.py#validate_wire_v1"
+      ],
+      "dependencies": [
+        "position-study-ports",
+        "position-prefix-proof",
+        "position-route-planner"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/position_learning/issued_plan_contracts.py"
+      ],
+      "ownershipRole": "Freeze and decode immutable position plan",
+      "dependencyNotes": [
+        "Binds original route, source, owner, attempt and decision facts in versioned plan and validates wire record; pure facts do not attest storage."
+      ],
+      "censusScope": "position_plan"
+    },
+    {
+      "id": "position-issuance-preparation",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/position_learning",
+      "publicExports": [
+        "backend/app/study/position_learning/issued_plan_service.py#PreparedPositionIssuance",
+        "backend/app/study/position_learning/issued_plan_service.py#prepare_position_issuance",
+        "backend/app/study/position_learning/issued_plan_service.py#is_prepared_position_issuance"
+      ],
+      "dependencies": [
+        "position-issued-plan-contract"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/position_learning/issued_plan_service.py"
+      ],
+      "ownershipRole": "Prepare sealed issuance proposal",
+      "dependencyNotes": [
+        "Builds a sealed proposal from owner-prepared routes and authored token outside writer; seal is not a receipt and database owner must fence source, admission and schedule witnesses."
+      ],
+      "censusScope": "position_plan"
+    },
+    {
       "id": "position-daily-credit-policy",
       "type": "integration",
       "maintainer": "Tempo",

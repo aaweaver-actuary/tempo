@@ -525,8 +525,14 @@ one-Good-per-day and version-fenced schedule boundaries remain visible; checkpoi
 and Learning review are callers. This source map is not native qualification. The
 nineteen previously reported fixture failures remain unresolved.
 
-At this base revision, 111 of 291 tracked Python files in those trees remain
-outside the combined 180-file selections. The registry alone assigns owners;
+A thirty-second selection maps position Study ports, clean-prefix proof, route
+selection, immutable plan contract and sealed preparation. Supplied receipt facts
+and the preparation seal are claims, not storage attestations; the issuer still
+fences source, admission and schedule witnesses. This source map does not establish
+native qualification. The nineteen previously reported fixture failures remain open.
+
+At this base revision, 105 of 291 tracked Python files in those trees remain
+outside the combined 186-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
