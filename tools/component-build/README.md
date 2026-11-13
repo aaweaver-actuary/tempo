@@ -738,3 +738,13 @@ own target selection, exclusive writer/DDL and Docker/admission fences, transact
 and recovery. This source census parses only; it does not execute or qualify a cut,
 backup, native, runtime or installed behavior. Other database tooling and existing
 fixture and test-selection gaps remain open.
+
+## PostgreSQL qualification tooling source roles
+
+The bounded rehearsal admission helper and restored-copy GET route audit are
+separate qualification tools. The audit opens a supplied reader database, imports
+the real application, issues GET requests and can write output; it is not a
+passive source check. Current source expects 59 route results while an older
+regression note says 58; this discrepancy has not been qualified. The source
+census imports or invokes neither tool and does not prove runtime or native
+behavior. Other database tooling and previously recorded gaps remain open.
