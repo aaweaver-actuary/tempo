@@ -294,3 +294,27 @@ CLI installation, or complete T02 runtime ownership.
 own supplied snapshot format. It does not currently consume this registry or
 select production checks, and this batch does not adopt it as an authoritative
 planner. Its synthetic ownership rules are test inputs, not a second live map.
+
+## Retained backend seam map
+
+The next finite map records 37 tracked Python files across backend contracts,
+Study queue selection/composition and position issuance, their borrowed SQL
+adapters, and minimal Game Review. Named `path#symbol` entries are source
+navigation points, checked against Python AST without importing modules; they do
+not assert a frozen public package API. `mapped` continues to mean no standalone
+artifact or executable selection. Each entry records the observed effect boundary
+and selected dependencies; notes identify out-of-scope collaborators. The
+checker tests exact ownership only within this named set and fails unowned,
+overlapping, stale, or nonexistent named entrypoints.
+
+This is not a whole-backend or storage ownership proof: 254 other tracked Python
+files in those trees remain outside the 37-file selection at the base revision.
+Known existing edges remain visible rather than being called pure isolation:
+`study/queue_placement.py` imports the private service helper
+`queue_ordering._priority_queue_order`, `study/policy/review_reconciliation.py`
+imports storage and scheduling services, and `tempo_storage/commands/queue.py`
+imports the private queue-refresh projection SQL constant. They are not within
+this map and this change neither authorizes nor performs their extraction. The
+current next-exercise main branch still has its existing untyped callbacks;
+unmerged B12/B13 are not represented as released. Native, browser, package and
+assembled behavior are not established by these source checks.

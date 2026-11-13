@@ -159,10 +159,52 @@ export function validateCompositionOwnership(manifest, paths) {
   if (new Set(declared).size !== declared.length || declared.length !== paths.length || declared.some(path => !paths.includes(path))) throw new Error("Composition inventory contains duplicate or untracked source");
 }
 
+// Named retained seams only. This is a selected source set, not a claim that
+// all backend/storage files have been classified or isolated.
+export const retainedBackendOwnerIds = ["backend-contracts", "study-next-core", "study-queue-composition", "study-queue-preparation", "study-next-storage", "study-position-issuance", "study-position-storage", "game-review-policy", "game-review-http", "game-review-storage"];
+export function retainedBackendPaths(root = repository) {
+  const result = spawnSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" });
+  if (result.error || result.status !== 0) throw new Error("Cannot enumerate tracked backend seams");
+  const exact = new Set([
+    "backend/app/study/next_exercise.py", "backend/app/study/queue_serving.py",
+    "backend/app/product_composition/study.py", "backend/app/services/queue_next_card.py",
+    "backend/app/study/position_learning/issuance.py", "database/tempo_storage/study/next_exercise_reads.py",
+    "database/tempo_storage/study/position_issued_plans.py", "database/tempo_storage/game_review.py",
+  ]);
+  return result.stdout.split("\0").filter(path => exact.has(path) ||
+    ((path.startsWith("backend/app/contracts/") || path.startsWith("backend/app/games/")) && path.endsWith(".py")));
+}
+export function validateRetainedBackendOwnership(manifest, paths) {
+  validateOwnedPaths(manifest, paths, retainedBackendOwnerIds);
+  const declared = manifest.components.filter(component => retainedBackendOwnerIds.includes(component.id)).flatMap(component => component.ownedFiles ?? []);
+  if (new Set(declared).size !== declared.length || declared.length !== paths.length || declared.some(path => !paths.includes(path))) throw new Error("Retained backend seam inventory contains duplicate or untracked source");
+}
+export function validateRetainedBackendInterfaces(manifest, root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3") {
+  const owners = manifest.components.filter(component => retainedBackendOwnerIds.includes(component.id));
+  if (owners.length !== retainedBackendOwnerIds.length || owners.some(owner => !owner.publicExports?.length)) throw new Error("Retained backend owner lacks named interfaces");
+  const references = owners.flatMap(owner => owner.publicExports.map(value => {
+    const parts = value.split("#");
+    if (parts.length !== 2 || !owner.ownedFiles?.includes(parts[0]) || parts[0].split("/").some(part => !part || part === "." || part === "..") || !inside(resolve(root), resolve(root, parts[0])) || !/^[A-Za-z_][A-Za-z_0-9]*$/.test(parts[1])) throw new Error("Invalid retained interface: " + value);
+    return { path: parts[0], symbol: parts[1] };
+  }));
+  const code = `import ast,json,pathlib,sys
+root=pathlib.Path(sys.argv[1])
+for ref in json.loads(sys.argv[2]):
+ tree=ast.parse((root/ref["path"]).read_text(),filename=ref["path"])
+ names={node.name for node in tree.body if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef))}
+ if ref["symbol"] not in names: raise SystemExit("Missing retained interface: "+ref["path"]+"#"+ref["symbol"])`;
+  const result = spawnSync(python, ["-c", code, root, JSON.stringify(references)], { encoding: "utf8" });
+  if (result.error || result.status !== 0) throw new Error(result.error?.message ?? result.stdout + result.stderr);
+}
+
 export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", options = {}) {
   const manifest = readManifest(root);
   const selected = selectComponents(manifest, options.componentIds);
-  if (root === repository && options.componentIds === undefined) validateCompositionOwnership(manifest, compositionPaths(root));
+  if (root === repository && options.componentIds === undefined) {
+    validateCompositionOwnership(manifest, compositionPaths(root));
+    validateRetainedBackendOwnership(manifest, retainedBackendPaths(root));
+    validateRetainedBackendInterfaces(manifest, root, python);
+  }
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
   const results = [];
   for (const component of selected) {
