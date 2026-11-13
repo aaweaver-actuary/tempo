@@ -84,6 +84,22 @@ def _writer(database) -> bool:
         return False
 
 
+def borrowed_writer_available(database) -> bool:
+    """Check the caller-owned transaction without opening or changing it."""
+    return _writer(database)
+
+
+def shared_owner_fence(database, repertoire_id: str) -> Literal["acquired", "writer_unavailable", "busy"]:
+    """Fence original-owner replay without requiring current source or owner mode."""
+    if not _writer(database):
+        return "writer_unavailable"
+    locked = database.execute_native(
+        "SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
+        (owner_lock_key(repertoire_id),),
+    ).fetchone()
+    return "acquired" if locked and locked[0] else "busy"
+
+
 def _hold(reason: str, mode=None, epoch=None, digest=None) -> OwnerDecision:
     return OwnerDecision("hold", mode, epoch, digest, reason)
 
@@ -101,11 +117,7 @@ def owner_mode(database, repertoire_id: str, expected_authored_digest: str | Non
         return _hold("borrowed_owner_writer_transaction_required")
     if not isinstance(repertoire_id, str) or not repertoire_id:
         return _hold("repertoire_required")
-    locked = database.execute_native(
-        "SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
-        (owner_lock_key(repertoire_id),),
-    ).fetchone()
-    if not locked or not locked[0]:
+    if shared_owner_fence(database, repertoire_id) != "acquired":
         return _hold("position_owner_busy")
     row = database.execute_native(
         """SELECT o.mode,o.epoch,e.source_digest FROM study_position_owners o
