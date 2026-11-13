@@ -395,6 +395,7 @@ def historical_rollback_proof(parent_url, owned_url, receipt_ids=None, *, sentin
                 require_historical_receipt_bindings(historical, historical_ids)
                 before = historical_rows(historical, historical_ids)
                 queue_before = historical.execute("SELECT * FROM daily_queue ORDER BY id").fetchall()
+                if len(queue_before) != 60: raise RuntimeError('Historical accepted queue fixture differs')
                 indexes_before = historical_indexes(historical)
                 historical.commit()
                 historical.execute((ROOT / 'database/tempo_storage/ddl/rollbacks/049_study_priority_recovery.sql').read_text(), prepare=False)
