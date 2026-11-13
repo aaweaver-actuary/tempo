@@ -17,11 +17,13 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
     marker = db.execute("SELECT current_database(),shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()").fetchone()
     if marker != ('tempo', 'tempo-disposable-postgres-test'):
         raise RuntimeError('Database is not owned disposable PostgreSQL')
-    if action == 'seed':
+    if action in ('seed', 'seed-requeue'):
         if db.execute('SELECT 1 FROM studies WHERE id=%s', (prefix,)).fetchone():
             raise RuntimeError('Fixture identity already exists')
         if db.execute("SELECT 1 FROM daily_queue q JOIN queue_attempt_origins o ON o.queue_entry_id=q.id WHERE q.queue_date=%s AND q.status='queued' AND o.issued_as_head=1 LIMIT 1", (day,)).fetchone():
             raise RuntimeError('An existing issued attempt must not be displaced')
+        if action == 'seed-requeue' and db.execute("SELECT 1 FROM daily_queue WHERE queue_date=%s AND status='queued' LIMIT 1", (day,)).fetchone():
+            print(json.dumps({'ready': False})); sys.exit(0)
         projection = db.execute('SELECT state,refresh_pending FROM queue_projections WHERE queue_date=%s', (day,)).fetchone()
         if not projection or projection[0] != 'ready' or projection[1]:
             print(json.dumps({'ready': False}))
@@ -41,6 +43,7 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
         definitions = [dict(base, type='move_line', prompt='P12 first move', mode='single', grading_policy='reference', accepted_lines=[['e2e4']]),
             dict(base, type='explanation', prompt='P12 explain the move', rubric='The pawn claims the centre.'),
             dict(base, type='move_line', prompt='P12 playable successor', mode='single', grading_policy='reference', accepted_lines=[['d2d4']])]
+        if action == 'seed-requeue': definitions = definitions[:1]
         entries = []
         for index, specification in enumerate(definitions):
             exercise, card = f'{prefix}-exercise-{index}', f'{prefix}-card-{index}'
@@ -51,6 +54,10 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
             db.execute("INSERT INTO cards(id,repertoire_id,kind,content_type,study_exercise_id,start_fen,moves_json,state,due_date,revision,trained_color,introduced_at,first_correct_at) VALUES(%s,NULL,'exercise','study_exercise',%s,%s,'[]','learning',%s,1,'white','2000-01-01','2000-01-01')", (card,exercise,fen,day))
             entry = db.execute("INSERT INTO daily_queue(queue_date,card_id,position,cycle,admission_kind) VALUES(%s,%s,%s,0,'explicit') RETURNING id", (day,card,index)).fetchone()[0]
             entries.append(entry)
+        if action == 'seed-requeue':
+            # Retained old cycles are source facts; the real owner chooses the
+            # next cycle after the genuine parent review is committed.
+            db.execute("INSERT INTO daily_queue(queue_date,card_id,position,cycle,status) VALUES(%s,%s,9,3,'complete')", (day,prefix+'-card-0'))
         print(json.dumps({'ready':True, 'entries':entries, 'displaced':displaced}))
     elif action == 'snapshot':
         attempts = db.execute('SELECT id,exercise_id,revision,card_id,queue_entry_id,cycle,context,answer_hash,finalized_at,result_json FROM study_attempts WHERE exercise_id LIKE %s ORDER BY id', (prefix+'-exercise-%',)).fetchall()

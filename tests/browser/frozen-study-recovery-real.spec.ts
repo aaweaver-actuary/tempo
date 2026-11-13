@@ -214,4 +214,84 @@ test.describe('real frozen phone recovery', () => {
     expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
     }
   });
+
+  test('real phone Again resolves original repeat cycle before replaying child', async ({page, context, request}) => {
+    test.setTimeout(180_000);
+    const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
+    const health = await request.get(`${api}/health`);
+    await verifyPostgresFixtureTarget({health:await health.json(), apiUrl:api, project});
+    const compose = postgresFixtureComposeArguments(project);
+    const settings = await (await request.get(`${api}/settings`)).json();
+    const day = new Intl.DateTimeFormat('en-CA', {timeZone:settings.timezone === 'local' ? process.env.TZ : settings.timezone,
+      year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+    const prefix = `p12-frozen-${randomUUID().replaceAll('-', '')}`;
+    let displaced: number[][] = []; const operations: string[] = [];
+    const fixture = (action: string, ...args: string[]) => JSON.parse(execFileSync('docker', [...compose,'run','--rm','--no-deps','-e','TEMPO_TEST_INSTANCE=disposable','schema','python','-',action,prefix,day,...args], {
+      input:readFileSync('tests/fixtures/postgres-frozen-study-browser.py','utf8'), encoding:'utf8', timeout:30_000,
+    }));
+    const readPhone = () => page.evaluate(async () => {
+      const opened=indexedDB.open('tempo-offline-training',2);
+      const db=await new Promise<IDBDatabase>((resolve,reject)=>{opened.onsuccess=()=>resolve(opened.result);opened.onerror=()=>reject(opened.error);});
+      const reading=db.transaction('training').objectStore('training').get('prepared-daily-queue');
+      const result=await new Promise<any>((resolve,reject)=>{reading.onsuccess=()=>resolve(reading.result);reading.onerror=()=>reject(reading.error);});
+      db.close(); return result;
+    });
+    try {
+      let seeded: {ready:boolean; displaced:number[][]; entries:number[]} = {ready:false,displaced:[],entries:[]};
+      await expect.poll(() => {seeded=fixture('seed-requeue'); return seeded.ready;}, {timeout:60_000}).toBe(true);
+      displaced=seeded.displaced;
+      await context.addInitScript(() => Object.defineProperty(navigator,'standalone',{value:true, configurable:true}));
+      await page.setViewportSize({width:390,height:844});
+      await prepareUI(page); await navigate(page,'Train');
+      await expect(page.getByText('P12 first move')).toBeVisible();
+      const head = await authoritativeHead(request);
+      expect(head).toMatchObject({id:`${prefix}-card-0`,queue_entry_id:seeded.entries[0],cycle:0,revision:1});
+      await expect.poll(async () => {
+        const saved=await readPhone();
+        return Boolean(saved?.localDate===day && saved.cards?.some((item: {id:string}) => item.id===`${prefix}-card-0`) && await page.evaluate(() => Boolean(navigator.serviceWorker?.controller)));
+      }, {timeout:60_000}).toBe(true);
+      await context.setOffline(true); await page.reload();
+      await page.getByLabel('Coordinates or UCI move').fill('d2d4');
+      await page.getByRole('button',{name:'Add',exact:true}).click();
+      await page.getByRole('button',{name:'Submit',exact:true}).click();
+      await expect.poll(async () => (await readPhone())?.attempts?.length ?? 0).toBe(1);
+      await page.getByRole('button',{name:'Continue',exact:true}).click();
+      await expect(page.getByText('P12 first move')).toBeVisible();
+      await page.getByLabel('Coordinates or UCI move').fill('e2e4');
+      await page.getByRole('button',{name:'Add',exact:true}).click();
+      await page.getByRole('button',{name:'Submit',exact:true}).click();
+      await expect.poll(async () => (await readPhone())?.attempts?.length ?? 0).toBe(2);
+      const saved=(await readPhone()).attempts;
+      const parent=saved.find((item: {localEntryId:number}) => item.localEntryId===seeded.entries[0]);
+      const child=saved.find((item: {parentLocalEntryId?:number}) => item.parentLocalEntryId===seeded.entries[0]);
+      expect(parent).toMatchObject({cardId:head.id,queueCycle:0,outcome:'again'});
+      expect(child).toMatchObject({cardId:head.id,queueCycle:1,outcome:'correct'});
+      expect(parent.attemptId).toBeTruthy(); expect(child.attemptId).toBeTruthy(); expect(child.attemptId).not.toBe(parent.attemptId);
+      await page.reload();
+      const parentKey=`phone-study:${parent.attemptId}`, childKey=`phone-study:${child.attemptId}`;
+      const parentDelivery=page.waitForRequest(event => event.method()==='POST' && event.headers()['idempotency-key']===parentKey);
+      const repeatRead=page.waitForResponse(response => response.request().method()==='GET' && response.url().endsWith(`/attempts/${parent.attemptId}/requeue`));
+      const childDelivery=page.waitForRequest(event => event.method()==='POST' && event.headers()['idempotency-key']===childKey);
+      await context.setOffline(false);
+      const first=await parentDelivery; operations.push(parentKey); expect(first.postDataJSON()).toMatchObject({attempt_id:parent.attemptId,queue_entry_id:head.queue_entry_id,queue_cycle:0});
+      const repeatResponse=await repeatRead; expect(repeatResponse.ok()).toBe(true); const repeat=await repeatResponse.json();
+      expect(repeat).toMatchObject({parent_attempt_id:parent.attemptId,card_id:head.id,revision:1,cycle:4,review_id:expect.any(Number),queue_entry_id:expect.any(Number)});
+      const second=await childDelivery; operations.push(childKey);
+      expect(second.postDataJSON()).toMatchObject({attempt_id:child.attemptId,card_id:head.id,queue_entry_id:repeat.queue_entry_id,queue_cycle:4,expected_review_id:repeat.review_id});
+      await expect.poll(async () => (await readPhone())?.attempts?.filter((item: {serverAcknowledged?:boolean}) => item.serverAcknowledged).length ?? 0,{timeout:60_000}).toBe(2);
+      for (const [key, attempt] of [[parentKey,parent.attemptId],[childKey,child.attemptId]]) {
+        const receipt=await (await request.get(`${api}/operations/${encodeURIComponent(key)}`)).json();
+        expect(receipt).toMatchObject({operation_id:key,state:'complete',response:{attempt_id:attempt,persisted:true}});
+      }
+      const snapshot=fixture('snapshot'); expect(snapshot.attempts).toHaveLength(2); expect(snapshot.reviews).toHaveLength(2);
+      expect(snapshot.attempts).toContainEqual(expect.arrayContaining([parent.attemptId,`${prefix}-exercise-0`,1,head.id,head.queue_entry_id,0,'review']));
+      expect(snapshot.attempts).toContainEqual(expect.arrayContaining([child.attemptId,`${prefix}-exercise-0`,1,head.id,repeat.queue_entry_id,4,'review']));
+      await page.reload(); expect(fixture('snapshot')).toEqual(snapshot);
+    } finally {
+      await context.setOffline(false);
+      const cleanup = fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
+      expect(cleanup.cleaned).toBe(true); expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
+      expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
+    }
+  });
 });

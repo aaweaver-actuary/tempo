@@ -1545,7 +1545,7 @@ const actions = {
     await verifyStudyOpeningAdmission();
   },
   study_queue_receipts: () => verifyStudyQueueReceipts(false, options.p14Checkpoint1),
-  ...Object.fromEntries(['position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'prefix-split-placement'].map(check => [check, async () => {
+  ...Object.fromEntries(['position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'frozen-requeue-cycle', 'prefix-split-placement'].map(check => [check, async () => {
     assertDevelopmentProjectOwned(project);
     const imageReference = run('docker', [...compose, 'images', '-q', 'schema'],
       {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout.trim();

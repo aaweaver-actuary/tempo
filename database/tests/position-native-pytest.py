@@ -20,6 +20,7 @@ NODEIDS = {
     'position-grade-effects': NODEID,
     'position-review-atomicity': 'database/tests/position_study/test_position_review_transport_atomicity.py::test_p05_real_issued_review_transport_effect_and_checkpoint_rollback',
     'position-introductions': 'backend/tests/test_position_introductions.py::test_native_authorized_introduction_writes_fresh_state_only_after_admission',
+    'frozen-requeue-cycle': 'backend/tests/test_frozen_study_attempts_postgres.py::test_native_original_review_requeue_cycle_read_is_bound_and_read_only',
 }
 
 
@@ -110,6 +111,10 @@ def execute():
     recorder = ExactCase(nodeid)
     def run_case():
         os.environ['TEMPO_POSITION_TEST_DSN'] = 'postgresql://postgres@postgres:5432/' + database
+        if os.environ.get('TEMPO_NATIVE_POSITION_CHECK') == 'frozen-requeue-cycle':
+            os.environ['TEMPO_NATIVE_FROZEN_BRIDGE_DSN'] = os.environ['TEMPO_POSITION_TEST_DSN']
+        else:
+            os.environ.pop('TEMPO_NATIVE_FROZEN_BRIDGE_DSN', None)
         os.environ['PYTEST_DISABLE_PLUGIN_AUTOLOAD'] = '1'
         os.environ.pop('PYTEST_ADDOPTS', None)
         for path in (ROOT, ROOT / 'database', ROOT / 'backend'):

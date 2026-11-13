@@ -23,7 +23,7 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
     else if (argument === "--list") options.list = true;
     else if (argument === '--native-check') {
       const check = argumentsList[++argumentIndex];
-      if (!['redis-fixture-isolation', 'position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'prefix-split-placement', 'game-review-reader'].includes(check) || options.nativeChecks?.includes(check)) throw new Error('Unknown or duplicate native check');
+      if (!['redis-fixture-isolation', 'position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'frozen-requeue-cycle', 'prefix-split-placement', 'game-review-reader'].includes(check) || options.nativeChecks?.includes(check)) throw new Error('Unknown or duplicate native check');
       (options.nativeChecks ??= []).push(check);
     }
     else if (argument === "--skip-browser") options.skipBrowser = true;

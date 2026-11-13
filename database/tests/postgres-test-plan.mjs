@@ -1,6 +1,7 @@
 export const checkpoint1BrowserCases = [
   ['frozen-study-recovery-real.spec.ts', 'real frozen Study preserves original parent and child through reload and playable successor'],
   ['frozen-study-recovery-real.spec.ts', 'original frozen phone attempt survives offline reload and reconciles once'],
+  ['frozen-study-recovery-real.spec.ts', 'real phone Again resolves original repeat cycle before replaying child'],
   ['manual-prefix-split-http.spec.ts', 'real manual split accepts original issued review and replays its exact receipt'],
   ['manual-prefix-split-http.spec.ts', 'real manual split rejection is retained on the original offered card'],
   ['minimal-game-review-acceptance.spec.ts', 'minimal Game Review compares pasted and saved games against current repertoire without Study writes'],
@@ -11,7 +12,7 @@ export const checkpoint1BrowserCases = [
   ['study-only-mode.spec.ts', 'study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption'],
 ];
 export const checkpoint1BrowserGrep = checkpoint1BrowserCases.map(([, title]) => title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$').join('|');
-export const checkpoint1NativeChecks = ['position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'prefix-split-placement', 'game-review-reader'];
+export const checkpoint1NativeChecks = ['position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'frozen-requeue-cycle', 'prefix-split-placement', 'game-review-reader'];
 export const checkpoint1QueueCases = [
   'test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay',
   'test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure',
@@ -24,7 +25,7 @@ export const checkpoint1QueueCases = [
 ];
 
 export function verifyCheckpoint1QueueReceipt(receipt) {
-  if (receipt?.case_set !== 'all' || receipt.scope !== 'all-eight' || receipt.execution !== 'completed' || receipt.executed_count !== checkpoint1QueueCases.length || JSON.stringify(receipt.cases) !== JSON.stringify(checkpoint1QueueCases) || new Set(receipt.cases).size !== checkpoint1QueueCases.length) throw new Error('Checkpoint1 requires exactly the eight completed queue cases');
+  if (receipt?.case_set !== 'all' || receipt.scope !== 'all-eight' || receipt.execution !== 'completed' || receipt.executed_count !== checkpoint1QueueCases.length || JSON.stringify(receipt.cases) !== JSON.stringify(checkpoint1QueueCases) || new Set(receipt.cases).size !== checkpoint1QueueCases.length || JSON.stringify(receipt.excluded_cases) !== '[]' || JSON.stringify(receipt.unresolved_owner_cases) !== JSON.stringify(unresolvedQueueCases)) throw new Error('Checkpoint1 requires exactly the eight completed queue cases and its unresolved scope');
 }
 export function verifyCheckpoint1BrowserReceipt(receipt) {
   const stats = receipt?.stats, cases = [];
@@ -35,13 +36,13 @@ export function verifyCheckpoint1BrowserReceipt(receipt) {
   visit(receipt ?? {});
   const identities = cases.map(item => JSON.stringify([item.file, item.title]));
   const expected = checkpoint1BrowserCases.map(item => JSON.stringify(item)).sort();
-  if (stats?.expected !== expected.length || stats.skipped !== 0 || stats.unexpected !== 0 || stats.flaky !== 0 || cases.length !== expected.length || new Set(identities).size !== expected.length || JSON.stringify(identities.sort()) !== JSON.stringify(expected) || cases.some(({ test }) => test.projectName !== 'chromium' || test.status !== 'expected' || test.results?.length !== 1 || test.results[0].status !== 'passed' || test.results[0].retry !== 0)) throw new Error('Checkpoint1 requires exactly ten passing Chromium cases without skips or retries');
+  if (stats?.expected !== expected.length || stats.skipped !== 0 || stats.unexpected !== 0 || stats.flaky !== 0 || cases.length !== expected.length || new Set(identities).size !== expected.length || JSON.stringify(identities.sort()) !== JSON.stringify(expected) || cases.some(({ test }) => test.projectName !== 'chromium' || test.status !== 'expected' || test.results?.length !== 1 || test.results[0].status !== 'passed' || test.results[0].retry !== 0)) throw new Error('Checkpoint1 requires exactly eleven passing Chromium cases without skips or retries');
 }
 
 // The executable plan is also the read-only --list output; keep one source of truth.
 export function postgresTestStages({ mode, nativeChecks = [], maintainedStudyProof = false }) {
   if (!Array.isArray(nativeChecks) || new Set(nativeChecks).size !== nativeChecks.length
-    || nativeChecks.some(check => !['redis-fixture-isolation', 'position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'prefix-split-placement', 'game-review-reader'].includes(check))
+    || nativeChecks.some(check => !['redis-fixture-isolation', 'position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'frozen-requeue-cycle', 'prefix-split-placement', 'game-review-reader'].includes(check))
     || nativeChecks.length && !['study','browser'].includes(mode)) throw new Error('Invalid native PostgreSQL selection');
   if (!["full", "browser", "study", "durability", "lifecycle", "lifecycle-current", "priority-historical"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
   const nativeStages = nativeChecks.map(check => check === "game-review-reader" ? "game_review_reader" : check);

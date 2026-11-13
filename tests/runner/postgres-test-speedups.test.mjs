@@ -22,19 +22,49 @@ const parse = (args) => parsePostgresTestOptions(args, {}, root);
 test("P14 checkpoint has one fixed browser and native selection", () => {
   const options = parse(["--mode", "study", "--p14-checkpoint1"]);
   assert.deepEqual(options.nativeChecks, checkpoint1NativeChecks);
-  assert.equal(checkpoint1BrowserCases.length, 10);
+  assert.equal(checkpoint1BrowserCases.length, 11);
   for (const [, title] of checkpoint1BrowserCases) assert(new RegExp(options.browserGrep).test(title));
   for (const args of [["--p14-checkpoint1"], ["--mode", "browser", "--p14-checkpoint1"], ["--mode", "study", "--p14-checkpoint1", "--browser-grep", "other"], ["--mode", "study", "--p14-checkpoint1", "--native-check", "position-grade-effects"], ["--mode", "study", "--p14-checkpoint1", "--p14-checkpoint1"]]) assert.throws(() => parse(args));
 });
+test("P14 frozen owner bridge refuses foreign or incomplete identities before connecting", () => {
+  const script = `import os,runpy
+m=runpy.run_path('backend/tests/native_study_fixture.py'); f=m['owned_postgres'].__wrapped__
+for dsn,project,revision in [('postgresql://postgres@postgres:5432/tempo','tempo-pg-regressions-1-12345678','a'*40),('postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32,'foreign','a'*40),('postgresql://postgres@localhost:5432/tempo_position_test_'+'a'*32,'tempo-pg-regressions-1-12345678','a'*40)]:
+ os.environ.update(TEMPO_NATIVE_FROZEN_BRIDGE_DSN=dsn,TEMPO_TEST_COMPOSE_PROJECT=project,TEMPO_NATIVE_CANDIDATE_REVISION=revision,TEMPO_TEST_INSTANCE='disposable')
+ try: next(f(None))
+ except RuntimeError as error: assert 'identity' in str(error)
+ else: raise AssertionError('foreign target accepted')
+class Cursor:
+ def fetchone(self): return ('tempo_position_test_'+'a'*32,'foreign-project')
+class Conn:
+ def __enter__(self): return self
+ def __exit__(self,*args): pass
+ def execute(self,*args): return Cursor()
+os.environ.update(TEMPO_NATIVE_FROZEN_BRIDGE_DSN='postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32,TEMPO_TEST_COMPOSE_PROJECT='tempo-pg-regressions-1-12345678',TEMPO_NATIVE_CANDIDATE_REVISION='a'*40,TEMPO_TEST_INSTANCE='disposable')
+f.__globals__['psycopg'].connect=lambda *args,**kwargs: Conn()
+try: next(f(None))
+except RuntimeError as error: assert 'marker differs' in str(error)
+else: raise AssertionError('foreign database marker accepted')`;
+  const result = spawnSync(resolvePython(), ["-c", script], { cwd: root, env: { ...process.env, PYTHONPATH: "backend:database" }, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
+test("P14 frozen requeue native selector is exact and cannot widen its mode", () => {
+  const options = parse(["--mode", "study", "--browser-grep", "C24", "--native-check", "frozen-requeue-cycle"]);
+  assert(postgresTestStages(options).includes("frozen-requeue-cycle"));
+  assert.throws(() => parse(["--mode", "durability", "--native-check", "frozen-requeue-cycle"]));
+  assert.throws(() => parse(["--mode", "study", "--browser-grep", "C24", "--native-check", "frozen-requeue-cycle", "--native-check", "frozen-requeue-cycle"]));
+  const bridge = readFileSync(join(root, "database/tests/position-native-pytest.py"), "utf8");
+  assert(bridge.includes("backend/tests/test_frozen_study_attempts_postgres.py::test_native_original_review_requeue_cycle_read_is_bound_and_read_only"));
+});
 test("P14 queue receipt rejects missing, foreign, duplicate and partial cases", () => {
-  const receipt = { case_set: "all", scope: "all-eight", execution: "completed", executed_count: 8, cases: [...checkpoint1QueueCases] };
+  const receipt = { case_set: "all", scope: "all-eight", execution: "completed", executed_count: 8, cases: [...checkpoint1QueueCases], excluded_cases: [], unresolved_owner_cases: [...unresolvedQueueCases] };
   verifyCheckpoint1QueueReceipt(receipt);
   for (const change of [r => { r.cases.pop(); }, r => { r.cases[0] = "foreign"; }, r => { r.cases[0] = r.cases[1]; }, r => { r.executed_count = 0; }, r => { r.execution = "starting"; }]) {
     const bad = structuredClone(receipt); change(bad); assert.throws(() => verifyCheckpoint1QueueReceipt(bad));
   }
 });
 test("P14 browser receipt rejects skipped, retried, duplicate, foreign and zero cases", () => {
-  const report = { stats: { expected: 10, skipped: 0, unexpected: 0, flaky: 0 }, suites: [{ specs: checkpoint1BrowserCases.map(([file, title]) => ({ file, title, tests: [{ projectName: "chromium", status: "expected", results: [{ status: "passed", retry: 0 }] }] })) }] };
+  const report = { stats: { expected: 11, skipped: 0, unexpected: 0, flaky: 0 }, suites: [{ specs: checkpoint1BrowserCases.map(([file, title]) => ({ file, title, tests: [{ projectName: "chromium", status: "expected", results: [{ status: "passed", retry: 0 }] }] })) }] };
   verifyCheckpoint1BrowserReceipt(report);
   for (const change of [r => { r.stats.skipped = 1; }, r => { r.suites[0].specs[0].tests[0].results[0].retry = 1; }, r => { r.suites[0].specs[0] = structuredClone(r.suites[0].specs[1]); }, r => { r.suites[0].specs[0].file = "foreign.spec.ts"; }, r => { r.suites[0].specs = []; }, r => { r.suites[0].specs[0].tests[0].results[0].status = "skipped"; }]) {
     const bad = structuredClone(report); change(bad); assert.throws(() => verifyCheckpoint1BrowserReceipt(bad));
