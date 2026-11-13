@@ -4,7 +4,7 @@ import { independentStudy } from "./study-connection";
 import { z } from "zod";
 import { API_URL, assetUrl } from "../const";
 import { readWorkspaceData } from "./workspace-data";
-import { confirmOperationResponse } from "./operation-status";
+import { confirmOriginalOperationResponse } from "./operation-status";
 import { usesLocalApi } from "../utils/local";
 import type { TacticProgress } from "./tactics-progress";
 export const tacticalCatalogSchema = z.object({
@@ -59,7 +59,7 @@ export async function setPackActivation(packIds: string[], active: boolean) {
       body: JSON.stringify({ pack_ids: packIds, active }),
     });
     const wasPending = response.status === 202;
-    const confirmedResponse = await confirmOperationResponse(response);
+    const confirmedResponse = await confirmOriginalOperationResponse(response, operationId);
     if (!confirmedResponse.ok)
       throw new Error(
         `Could not update activation (HTTP ${confirmedResponse.status}). Retry.`,

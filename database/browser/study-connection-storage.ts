@@ -1,4 +1,4 @@
-import type { RetainedAuthorityInspection, RetainedStudyExport, RetainedWorkFact } from "../../app/domain/study-authority";
+import type { AuthorityIdentity, RegisteredAuthority, RetainedAuthorityInspection, RetainedStudyExport, RetainedWorkFact } from "../../app/domain/study-authority";
 /** Existing browser storage operations; connection/authority decisions stay with Study. */
 const connectionKey = "tempo-learning-connection-v1";
 const authoritiesKey = "tempo-learning-authorities-v1";
@@ -7,14 +7,49 @@ export function sessionConnectionAvailable() { return typeof sessionStorage !== 
 export function readSessionConnection() { return sessionStorage.getItem(connectionKey); }
 export function writeSessionConnection(value: string) { sessionStorage.setItem(connectionKey, value); }
 export function removeSessionConnection() { sessionStorage.removeItem(connectionKey); }
-export function readAuthorityRegistry() { return localStorage.getItem(authoritiesKey); }
-export function writeAuthorityRegistry(value: string) { localStorage.setItem(authoritiesKey, value); }
+export function offlineStoreLocator(identity: AuthorityIdentity | null): string {
+  return identity === null ? "tempo-offline-training" : `tempo-offline-training:${encodeURIComponent(identity)}`;
+}
+
+function validateBinding(identity: string, authority: Record<string, unknown>): void {
+  if (typeof authority.origin !== "string" || typeof authority.workspace !== "string" || !authority.workspace.trim()) throw new Error("Invalid authority binding");
+  const origin = new URL(authority.origin);
+  if (!["http:", "https:"].includes(origin.protocol) || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash ||
+      origin.origin !== authority.origin || `${authority.origin}:study:${encodeURIComponent(authority.workspace)}` !== identity ||
+      authority.offlineDatabase !== offlineStoreLocator(identity)) throw new Error("Invalid authority binding");
+}
+
+function registry(): Record<string, { origin: string; workspace: string; offlineDatabase: string }> {
+  const value: unknown = JSON.parse(localStorage.getItem(authoritiesKey) ?? "{}");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid registry");
+  for (const [identity, entry] of Object.entries(value)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Invalid authority binding");
+    const authority = entry as Record<string, unknown>;
+    validateBinding(identity, authority);
+  }
+  return value as Record<string, { origin: string; workspace: string; offlineDatabase: string }>;
+}
+export function readRegisteredAuthorities(): RegisteredAuthority[] {
+  return Object.entries(registry()).map(([identity, value]) => ({ identity, origin: value.origin, workspace: value.workspace }));
+}
+export function bindAuthority(authority: RegisteredAuthority): void {
+  const existing = registry();
+  // Preserve the v1 wire layout and do not silently rebind existing records.
+  const binding = {
+    origin: authority.origin, workspace: authority.workspace, offlineDatabase: offlineStoreLocator(authority.identity),
+  };
+  validateBinding(authority.identity, binding);
+  // An existing valid identity already has this exact binding. Preserve its
+  // original serialized bytes and any retained fields on resume/recovery.
+  if (Object.hasOwn(existing, authority.identity)) return;
+  localStorage.setItem(authoritiesKey, JSON.stringify({ ...existing, [authority.identity]: binding }));
+}
 
 /** Read existing stores without upgrading, rewriting or deleting retained data. */
-export async function readRetainedStudyData(registeredOfflineDatabases: () => string[], validateStorage = false): Promise<RetainedStudyExport> {
+export async function readRetainedStudyData(validateStorage = false): Promise<RetainedStudyExport> {
   if (!globalThis.indexedDB) throw new Error("Durable Study storage is unavailable. Enable browser storage and retry.");
   const databases: Record<string, Record<string, unknown[]>> = {};
-  const registered = registeredOfflineDatabases();
+  const registered = Object.values(registry()).map(authority => authority.offlineDatabase);
   const discovered = typeof indexedDB.databases === "function" ? (await indexedDB.databases()).map(database => database.name).filter((name): name is string => Boolean(name?.startsWith("tempo-offline-training:"))) : [];
   for (const name of new Set(["tempo-study-intents", "tempo-offline-training", ...registered, ...discovered])) {
     databases[name] = await new Promise((resolve, reject) => {
@@ -61,8 +96,8 @@ export async function readRetainedStudyData(registeredOfflineDatabases: () => st
 }
 
 /** Translate existing formats without changing their data or terminal semantics. */
-export async function inspectRetainedStudyAuthority(registeredOfflineDatabases: () => string[]): Promise<RetainedAuthorityInspection> {
-  const retained = await readRetainedStudyData(registeredOfflineDatabases, true);
+export async function inspectRetainedStudyAuthority(): Promise<RetainedAuthorityInspection> {
+  const retained = await readRetainedStudyData(true);
   const facts: RetainedWorkFact[] = [];
   const record = (value: unknown): Record<string, unknown> | undefined =>
     value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -71,6 +106,10 @@ export async function inspectRetainedStudyAuthority(registeredOfflineDatabases: 
     facts.push({ authority: typeof intent?.workspace === "string" ? intent.workspace : null,
       disposition: (intent?.state === "committed" || intent?.state === "discarded") ? "terminal" : "unresolved" });
   }
+  const intentStores = new Set(["intents", "teaching", "metadata"]);
+  for (const [store, values] of Object.entries(retained.databases["tempo-study-intents"]))
+    if (!intentStores.has(store) && values.length) facts.push({ authority: null, disposition: "unknown" });
+  const offlineStores = new Set(["training", "opening_attempts", "opening_events"]);
   for (const [name, stores] of Object.entries(retained.databases)) {
     if (!name.startsWith("tempo-offline-training")) continue;
     let authority: string | null = null;
@@ -81,6 +120,8 @@ export async function inspectRetainedStudyAuthority(registeredOfflineDatabases: 
         if (decoded && encodeURIComponent(decoded) === encoded) authority = decoded;
       } catch { /* Unrecognized authority remains unconfirmed, not empty. */ }
     }
+    for (const [store, values] of Object.entries(stores))
+      if (!offlineStores.has(store) && values.length) facts.push({ authority, disposition: "unknown" });
     for (const value of stores.opening_attempts ?? []) {
       const attempt = record(value);
       facts.push({ authority, disposition: (attempt?.delivery_state === "complete" || attempt?.delivery_state === "rejected")
