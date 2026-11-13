@@ -53,8 +53,10 @@ def test_queue_recovery_selector_preserves_default_eight_and_exact_maintained_si
     all_cases = namespace["_QUEUE_RECOVERY_ALL"]
     maintained = namespace["_QUEUE_RECOVERY_MAINTAINED_SIX"]
     unresolved = namespace["_QUEUE_RECOVERY_UNRESOLVED"]
-    assert len(all_cases) == 8 and len(maintained) == 6 and len(unresolved) == 2
-    assert maintained == tuple(case for case in all_cases if case not in unresolved)
+    excluded = namespace["_QUEUE_RECOVERY_EXCLUDED"]
+    assert len(all_cases) == 8 and len(maintained) == 6 and len(unresolved) == 1
+    assert maintained == tuple(case for case in all_cases if case not in excluded)
+    assert excluded == ("test_postgres_paused_feedback_history_preserves_ordinary_study", *unresolved)
     namespace["queue_recovery_main"]([])
     assert events == list(all_cases)
     events.clear()
@@ -65,7 +67,7 @@ def test_queue_recovery_selector_preserves_default_eight_and_exact_maintained_si
     assert [receipt["execution"] for receipt in receipts] == ["starting", "completed"]
     assert receipts[-1]["scope"] == "partial"
     assert receipts[-1]["executed_count"] == 6
-    assert receipts[-1]["excluded_cases"] == list(unresolved)
+    assert receipts[-1]["excluded_cases"] == list(excluded)
     assert receipts[-1]["unresolved_owner_cases"] == list(unresolved)
 
 
@@ -209,3 +211,12 @@ def test_maintained_queue_cases_and_fixture_use_native_sql_markers():
                         assert "?" not in literal.value, (function.name, call.lineno)
                 checked += 1
     assert checked > 70
+
+
+def test_queue_recovery_paused_feedback_selection_is_exact(capsys):
+    import json
+    namespace, events = _queue_selector_namespace()
+    namespace["queue_recovery_main"](["--case-set", "paused-feedback"])
+    assert events == ["test_postgres_paused_feedback_history_preserves_ordinary_study"]
+    receipt = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert receipt["scope"] == "paused-feedback-only" and receipt["executed_count"] == 1

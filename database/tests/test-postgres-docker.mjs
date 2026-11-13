@@ -240,6 +240,16 @@ async function verifyStudyQueueReceipts(maintained = false) {
         const receipt = records.findLast(record => record.execution === 'completed');
         verifyMaintainedQueueReceipt(receipt);
         atomicJson(`test-results/native/${project}-maintained-queue.json`, {revision: candidateRevision, project, ...receipt});
+        const paused = run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+          "/source/database/tests/check_postgres_queue_attempt_recovery.py", "--case-set", "paused-feedback"],
+          {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, echoCapturedOutput: true});
+        const pausedRecords = paused.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+        const pausedReceipt = pausedRecords.findLast(record => record.execution === 'completed');
+        assert.deepEqual(pausedReceipt?.cases, ['test_postgres_paused_feedback_history_preserves_ordinary_study']);
+        assert.equal(pausedReceipt?.case_set, 'paused-feedback');
+        assert.equal(pausedReceipt?.scope, 'paused-feedback-only');
+        assert.equal(pausedReceipt?.executed_count, 1);
+        atomicJson(`test-results/native/${project}-paused-feedback.json`, {revision: candidateRevision, project, ...pausedReceipt});
       },
       restoreConsumers: () => restoreBackgroundWorkloadConsumers({
         startConsumers: services => run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...services]),

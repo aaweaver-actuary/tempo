@@ -126,14 +126,17 @@ export const maintainedQueueCases = [
   'test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery',
 ];
 export const unresolvedQueueCases = [
-  'test_postgres_real_game_obligation_admission_restart_publication_and_remediation',
   'test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe',
+];
+export const excludedQueueCases = [
+  'test_postgres_paused_feedback_history_preserves_ordinary_study',
+  ...unresolvedQueueCases,
 ];
 export function verifyMaintainedQueueReceipt(receipt) {
   if (receipt?.case_set !== 'maintained-six' || receipt.scope !== 'partial'
       || receipt.execution !== 'completed' || receipt.executed_count !== 6
       || JSON.stringify(receipt.cases) !== JSON.stringify(maintainedQueueCases)
-      || JSON.stringify(receipt.excluded_cases) !== JSON.stringify(unresolvedQueueCases)
+      || JSON.stringify(receipt.excluded_cases) !== JSON.stringify(excludedQueueCases)
       || JSON.stringify(receipt.unresolved_owner_cases) !== JSON.stringify(unresolvedQueueCases))
     throw new Error('Maintained queue proof requires all six exact cases and unresolved-owner disposition');
 }

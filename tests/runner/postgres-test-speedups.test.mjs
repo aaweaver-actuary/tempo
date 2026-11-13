@@ -8,7 +8,7 @@ import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../database/tests/postgres-test-options.mjs";
-import { assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
+import { maintainedQueueCases, unresolvedQueueCases, excludedQueueCases, verifyMaintainedQueueReceipt, assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../database/tests/postgres-test-fixture.mjs";
 import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -1501,4 +1501,15 @@ test('selected Study durability retains current history and quota proofs without
     assert(action.includes(proof), `Missing retained ${proof}`);
   assert(!action.includes('check_postgres_stalemate_swindles.py'));
   assert(postgresTestStages({mode: 'study'}).includes('study_durability'));
+});
+
+
+test("P04 maintained queue receipt distinguishes pending native replacement from unresolved owner", () => {
+  const receipt = { case_set: "maintained-six", scope: "partial", execution: "completed", executed_count: 6,
+    cases: maintainedQueueCases, excluded_cases: excludedQueueCases, unresolved_owner_cases: unresolvedQueueCases };
+  assert.equal(excludedQueueCases[0], "test_postgres_paused_feedback_history_preserves_ordinary_study");
+  assert.deepEqual(unresolvedQueueCases, ["test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe"]);
+  verifyMaintainedQueueReceipt(receipt);
+  assert.throws(() => verifyMaintainedQueueReceipt({ ...receipt, excluded_cases: unresolvedQueueCases }));
+  assert.throws(() => verifyMaintainedQueueReceipt({ ...receipt, unresolved_owner_cases: excludedQueueCases }));
 });

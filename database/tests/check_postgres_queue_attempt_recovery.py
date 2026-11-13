@@ -414,189 +414,91 @@ def _owned_queue_refresh_admission():
 
 
 @_owned_queue_refresh_admission()
-def test_postgres_real_game_obligation_admission_restart_publication_and_remediation():
-    """One published canonical miss overrides locks/caps and survives restart."""
-    if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
-        raise RuntimeError("Real-game obligation proof requires disposable PostgreSQL")
+def _exercise_ordinary_study_with_paused_history(assert_history):
     from app.services import postgres_queue_refresh as refresh
-    from app.services.real_game_feedback import MISS_REASON
-    from app.services.real_game_feedback_adapter import promote_real_game_card, has_outstanding_real_game_miss
-    from app.services.durable_tasks import claim_task, enqueue_task_in_transaction
+    with _scheduling_adapter_fixture() as (card, entry, review, operations):
+        with postgres.connection(read_only=True) as database:
+            original = dict(database.execute("SELECT id,card_id,position,cycle,status,attempt_state,attempt_failed FROM daily_queue WHERE id=%s", (entry,)).fetchone())
+            origin = dict(database.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s AND card_id=%s", (entry, card)).fetchone())
+            presentation = refresh.queue_application.presentation_rows(database, date.today().isoformat())
+            protected = refresh.queue_ordering._protected_queue_ids(presentation, urgent=True)
+            positions = {row['id']: row['position'] for row in presentation if row['id'] in protected}
+            assert entry in protected and origin['issued_as_head']
+        plan = refresh._prepare_queue_randomization(date.today().isoformat())
+        with postgres.connection() as database:
+            assert refresh._publish_queue_randomization(database, date.today().isoformat(), plan)
+            assert dict(database.execute("SELECT id,card_id,position,cycle,status,attempt_state,attempt_failed FROM daily_queue WHERE id=%s", (entry,)).fetchone()) == original
+            assert dict(database.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s AND card_id=%s", (entry, card)).fetchone()) == origin
+            current = refresh.queue_application.presentation_rows(database, date.today().isoformat())
+            assert {row['id']: row['position'] for row in current if row['id'] in protected} == positions
+        assert_history()
+        review_operation = f"paused-review-{uuid.uuid4()}"
+        operations.append(review_operation)
+        saved = execute_command(review_operation, "cards.review", review)
+        assert saved["persisted"] and execute_command(review_operation, "cards.review", review) == saved
+        with postgres.connection(read_only=True) as database:
+            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (card,)).fetchone()[0] == 1
+        assert_history()
+
+
+# Historical case: test_postgres_real_game_obligation_admission_restart_publication_and_remediation
+# SPEC November 10 pass 2 retired automatic Games admission. Accepted history
+# remains paused; its durable source and ledger are exercised below and by the
+# before/after broker restart witness in check_postgres_background_workloads.
+def test_postgres_paused_feedback_history_preserves_ordinary_study():
+    if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
+        raise RuntimeError("Paused feedback proof requires disposable PostgreSQL")
+    from app.services import postgres_queue_refresh as refresh
     os.environ["TEMPO_DATABASE_WRITE_URL"] = "postgresql://postgres@postgres:5432/tempo"
     os.environ["TEMPO_DATABASE_READ_URL"] = os.environ["TEMPO_DATABASE_WRITE_URL"]
     postgres.close_pools()
-    identifier = f"real-game-obligation-{uuid.uuid4()}"
-    card_ids = [f"{identifier}-{suffix}" for suffix in ("a-locked", "b-studied", "z-active")]
-    today = date.today().isoformat()
-    tomorrow = (date.today() + timedelta(days=1)).isoformat()
-    now = datetime.now(timezone.utc)
-    operations = []
-    snapshot = None
-    positions = []
-    saved_days = []
+    prefix = f"paused-feedback-{uuid.uuid4()}"
+    effect, operation, delivery, task = (prefix + suffix for suffix in ("-effect", "-operation", "-delivery", "-task"))
+    payload = '{ "effect": "original", "sequence": 7 }\n'
+    now = "2026-01-01T00:00:00+00:00"
+    rows = (("study_game_feedback", "effect_key", effect), ("operation_receipts", "operation_id", operation),
+            ("product_feedback_deliveries", "operation_id", delivery), ("background_tasks", "id", task))
+
+    def snapshot(database):
+        result = []
+        for table, key, value in rows:
+            source = database.execute(f"SELECT row_to_json(r)::text FROM {table} r WHERE {key}=%s", (value,)).fetchone()
+            retired = database.execute("SELECT row_to_json(r)::text FROM tempo_retired_work r WHERE source_table=%s AND source_key=%s", (table, value)).fetchone()
+            assert source and retired
+            assert database.execute(f"SELECT l.disposition='paused' AND l.source_record=to_jsonb(r) FROM tempo_retired_work l JOIN {table} r ON r.{key}=l.source_key WHERE l.source_table=%s AND l.source_key=%s", (table, value)).fetchone()[0]
+            result.append((source[0], retired[0]))
+        grades = database.execute("SELECT row_to_json(r)::text FROM reviews r WHERE card_id=%s ORDER BY id", (prefix,)).fetchall()
+        assert len(grades) == 1
+        return result, tuple(row[0] for row in grades)
+
     try:
         with postgres.connection() as database:
-            snapshot = snapshot_queue_environment(database, (today, tomorrow))
-            positions = [tuple(row) for row in database.execute("SELECT id,position FROM daily_queue WHERE queue_date IN (?,?)", (today,tomorrow))]
-            saved_days = [dict(row) for row in database.execute("SELECT * FROM daily_queue_days WHERE queue_date IN (?,?)", (today,tomorrow))]
-            database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day,canonical_prefix_revision) VALUES(?,?,'synthetic',?,0,1)", (identifier,identifier,today))
-            for index, card_id in enumerate(card_ids):
-                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,unlock_after_card_id) VALUES(?,?,'prefix',?,'[\"e2e4\"]',?,?,?,?)",
-                    (card_id,identifier,"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-                     'locked' if index == 0 else 'mature', (date.today()+timedelta(days=90)).isoformat(), None if index == 0 else today, None))
-                database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", (identifier,card_id))
-                if index:
-                    database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(?,'correct',?,0,90,'study')", (card_id,(now-timedelta(days=2)).isoformat()))
-            database.execute("UPDATE cards SET unlock_after_card_id=? WHERE id=?", (card_ids[2],card_ids[0]))
-            active_entry = database.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,-1000000) RETURNING id", (today,card_ids[2])).fetchone()[0]
-            database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES(?,'lichess','obligation',?,'rapid',1,'white','1-0',?,'[\"d2d4\"]')", (identifier,now.isoformat(),"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"))
-            database.execute("INSERT INTO game_derivation_jobs(game_id,derivation_version,published_repertoire_version,updated_at) VALUES(?,2,1,?)", (identifier,now.isoformat()))
-            for version in (1,2):
-                for index, card_id in enumerate(card_ids[:2]):
-                    database.execute("INSERT INTO repertoire_decision_events_staged(id,game_id,derivation_version,repertoire_id,card_id,ply,fen_key,expected_uci,actual_uci,outcome,played_at,updated_at) VALUES(?,?,?,?,?,?,?,'e2e4','d2d4','miss',?,?)",
-                        (f'{identifier}-{index}',identifier,version,identifier,card_id,index*2,'known',now.isoformat(),now.isoformat()))
-            before_parent = dict(database.execute("SELECT * FROM cards WHERE id=?", (card_ids[2],)).fetchone())
-            before_studied = dict(database.execute("SELECT * FROM cards WHERE id=?", (card_ids[1],)).fetchone())
-            # No exact-history match exists. Only the atomically published events are visible.
-            assert database.execute("SELECT COUNT(*) FROM current_repertoire_decision_events WHERE game_id=?", (identifier,)).fetchone()[0] == 2
-        from urllib.request import urlopen
-        with urlopen('http://api:8000/api/queue/today', timeout=10) as response:
-            issued = json.load(response)
-        assert issued['cards'][0]['queue_entry_id'] == active_entry
-        # Rehearse an upgrade with existing games, then roll back the isolated
-        # schema/task writes. Fresh installs do not need the one-time backfill.
-        migration = (Path(__file__).resolve().parents[2] / 'database/tempo_storage/ddl/migrations/041_real_game_study_obligations.sql').read_text()
-        with psycopg.connect(os.environ["TEMPO_DATABASE_WRITE_URL"]) as upgrade:
-            upgrade.execute(migration.split('INSERT INTO tempo_schema_migrations')[0])
-            backfill = upgrade.execute("SELECT state,payload_json FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone()
-            assert backfill[0] == 'queued' and json.loads(backfill[1]) == {'after_game_id':''}
-            upgrade.rollback()
-        ordinary_order_plan = refresh._prepare_queue_randomization(today)
-        with postgres.connection() as database:
-            promote_real_game_card(database,card_ids[1],today)
-            # Membership is unchanged; a prepared ordinary mix must respect the
-            # newly published priority at commit rather than overwrite it.
-            assert refresh._publish_queue_randomization(database,today,ordinary_order_plan) is False
-        plan = refresh._prepare_prioritized_openings(today)
-        locked_plan = next(item for item in plan if item['card_id'] == card_ids[0])
-        with postgres.connection() as database:
-            refresh._admit_one_prioritized_opening(database,today,locked_plan)
-            entry = database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND card_id=?", (today,card_ids[0])).fetchone()[0]
-            assert refresh._reconcile_one_unseen_entry(database,today,{'id':entry,'card_id':card_ids[0],'repertoire_id':identifier},0)
-            promote_real_game_card(database,card_ids[0],today)
-            promote_real_game_card(database,card_ids[1],today)
-            assert dict(database.execute("SELECT * FROM cards WHERE id=?", (card_ids[2],)).fetchone()) == before_parent
-            assert dict(database.execute("SELECT * FROM cards WHERE id=?", (card_ids[1],)).fetchone()) == before_studied
-            assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND card_id=?", (today,card_ids[1])).fetchone()[0] == 1
-        with postgres.connection() as database:
-            database.execute("UPDATE daily_queue SET gameplay_priority_reason=NULL WHERE queue_date=? AND card_id IN (?,?)", (today,card_ids[0],card_ids[1]))
-        stale_priority_plan = refresh._prepare_queue_randomization(today)
-        with postgres.connection() as database:
-            promote_real_game_card(database,card_ids[0],today)
-            promote_real_game_card(database,card_ids[1],today)
-            # Promotions invalidate the captured priority witness, just as in
-            # the ordinary-order case above. Publish only a freshly read plan.
-            assert refresh._publish_queue_randomization(database,today,stale_priority_plan) is False
-        # Capture the issued attempt and all protected positions before publishing:
-        # urgent obligations lead movable entries, not an already-issued head.
-        with postgres.connection(read_only=True) as database:
-            before_rows = refresh.queue_application.presentation_rows(database, today)
-            protected_ids = refresh.queue_ordering._protected_queue_ids(before_rows, urgent=True)
-            protected_positions = {row['id']: row['position'] for row in before_rows if row['id'] in protected_ids}
-            active_before = dict(database.execute("SELECT id,card_id,position,cycle,status,attempt_state,attempt_failed FROM daily_queue WHERE id=?", (active_entry,)).fetchone())
-            origin_before = dict(database.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=? AND card_id=?", (active_entry, card_ids[2])).fetchone())
-            assert active_entry in protected_ids and origin_before['issued_as_head']
-        current_priority_plan = refresh._prepare_queue_randomization(today)
-        with postgres.connection() as database:
-            assert refresh._publish_queue_randomization(database,today,current_priority_plan)
-            ordered = [dict(row) for row in database.execute("SELECT id,card_id,position FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id", (today,))]
-            ordered_ids = [row['card_id'] for row in ordered]
-            assert ordered[0]['id'] == active_entry, f"Issued head moved: {ordered_ids}"
-            assert {row['id']: row['position'] for row in ordered if row['id'] in protected_ids} == protected_positions, f"Protected positions changed: {ordered_ids}"
-            assert dict(database.execute("SELECT id,card_id,position,cycle,status,attempt_state,attempt_failed FROM daily_queue WHERE id=?", (active_entry,)).fetchone()) == active_before
-            assert dict(database.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=? AND card_id=?", (active_entry, card_ids[2])).fetchone()) == origin_before
-            movable_ids = [row['card_id'] for row in ordered if row['id'] not in protected_ids]
-            assert movable_ids[:2] == card_ids[:2], f"Urgent movable order incorrect: {ordered_ids}"
-        operation = f'{identifier}-retained-marker'
-        operations.append(operation)
-        assert execute_command(operation,'queue.attempt_failed',{'entry_id':active_entry,'card_id':card_ids[2],'expected_revision':1})['attempt_failed']
-        with postgres.connection() as database:
-            enqueue_task_in_transaction(database,'daily_queue','current',{'queue_date':tomorrow,'_queue_phase':'real_game_misses'},priority=10)
-        abandoned = claim_task('daily_queue')
-        with postgres.connection() as database:
-            database.execute("UPDATE background_tasks SET lease_expires_at=? WHERE id=?", ((now-timedelta(seconds=1)).isoformat(),abandoned['id']))
-        postgres.close_pools()
-        restarted = claim_task('daily_queue')
-        assert restarted and restarted['lease_token'] != abandoned['lease_token']
-        assert not refresh.execute_postgres_queue_refresh_slice(abandoned)
-        phases = []
-        for slice_index in range(30):
-            task = restarted if slice_index == 0 else claim_task('daily_queue')
-            if not task:
-                break
-            phases.append(task['payload'].get('_queue_phase'))
-            refresh.execute_postgres_queue_refresh_slice(task)
-        else:
-            raise AssertionError('Bounded obligation refresh did not finish')
-        assert phases.count('real_game_misses') >= 3
-        with postgres.connection() as database:
-            queued = database.execute("SELECT card_id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id", (tomorrow,)).fetchall()
-            assert [row[0] for row in queued if row[0] in card_ids[:2]] == card_ids[:2]
-            studied_entry = database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND card_id=?", (today,card_ids[1])).fetchone()[0]
-        operation = f'{identifier}-remediate'
-        operations.append(operation)
-        payload = {'card_id':card_ids[1],'review':{'outcome':'correct','guided':False,'queue_entry_id':studied_entry,'expected_revision':1,'attempt_id':operation,'recorded_at':(now+timedelta(seconds=1)).isoformat()}}
-        # Hold the production publication lock, then let an actual foreground
-        # study contend. Independent retained-attempt reads still finish.
-        with ThreadPoolExecutor(max_workers=1) as review_executor:
-            with psycopg.connect(os.environ["TEMPO_DATABASE_WRITE_URL"], row_factory=postgres.tempo_row_factory) as publication:
-                publication.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{card_ids[1]}",))
-                review_future = review_executor.submit(execute_command,operation,'cards.review',payload)
-                deadline = time.monotonic()+5
-                with psycopg.connect(os.environ["TEMPO_DATABASE_WRITE_URL"],autocommit=True) as observer:
-                    while not observer.execute("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE 'SELECT pg_advisory_xact_lock(hashtextextended%')").fetchone()[0]:
-                        if review_future.done() or time.monotonic()>deadline:
-                            raise AssertionError('Foreground review did not reach publication lock')
-                assert promote_real_game_card(postgres.PostgresConnection(publication),card_ids[1],today)
-                with postgres.connection(read_only=True) as reader:
-                    assert reader.execute("SELECT attempt_failed FROM daily_queue WHERE id=?", (active_entry,)).fetchone()[0] == 1
-                publication.commit()
-            assert review_future.result(timeout=5)['persisted']
-        assert execute_command(operation,'cards.review',payload)['persisted']
-        with postgres.connection() as database:
-            assert not has_outstanding_real_game_miss(database,card_ids[1])
-            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_ids[1],)).fetchone()[0] == 2
-            assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=? AND gameplay_priority_reason=?", (card_ids[1],MISS_REASON)).fetchone()[0] == 0
-            # A not-yet-published replacement must never create a new obligation.
-            database.execute("UPDATE repertoire_decision_events_staged SET played_at=? WHERE game_id=? AND derivation_version=2", ((now+timedelta(seconds=2)).isoformat(),identifier))
-            assert not has_outstanding_real_game_miss(database,card_ids[1])
-            database.execute("UPDATE game_derivation_jobs SET published_repertoire_version=2 WHERE game_id=?", (identifier,))
-            assert has_outstanding_real_game_miss(database,card_ids[1])
-            assert promote_real_game_card(database,card_ids[1],today)
-            assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued'", (today,card_ids[1])).fetchone()[0] == 1
-        print('PASS test_postgres_real_game_obligation_admission_restart_publication_and_remediation',flush=True)
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,'synthetic',%s)", (prefix, prefix, now))
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(%s,%s,'prefix','synthetic','[]',%s)", (prefix, prefix, now))
+            database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(%s,'correct',%s,0,7,'study')", (prefix, now))
+            database.execute("INSERT INTO product_feedback_sources(source_key,version,payload) VALUES(%s,7,%s::jsonb)", (prefix, payload))
+            database.execute("INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,payload_json,payload_hash,card_id,decision_id,received_at,status,reason,updated_at) VALUES(%s,%s,'original-source',%s,'original-digest',%s,'decision',%s,'held','original-hold',%s)", (effect, payload, payload, prefix, now, now))
+            database.execute("INSERT INTO product_feedback_deliveries(operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload) VALUES(%s,%s,%s,'encounter','pending',123,%s::jsonb)", (delivery, prefix, effect, payload))
+            database.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,attempt_count,retry_cycle,cycle_attempt_count,last_error_json) VALUES(%s,'game_evidence.product_accept','original-digest','pending',%s,3,2,1,%s)", (operation, payload, '{"original":"error"}'))
+            database.execute("""INSERT INTO background_tasks(id,kind,deduplication_key,generation,priority,state,phase,payload_json,attempt_count,max_attempts,next_attempt_at,lease_token,lease_expires_at,created_at,updated_at)
+                VALUES(%s,'study_game_feedback',%s,7,100,'leased','original',%s,2,5,%s,'original-lease','2099-01-01T00:00:00Z',%s,%s)""", (task, task, payload, now, now, now))
+            for table, key, value in rows:
+                database.execute(f"INSERT INTO tempo_retired_work(source_table,source_key,disposition,reason,source_record) SELECT %s,%s,'paused','fixture schema 64 disposition',to_jsonb(r) FROM {table} r WHERE {key}=%s", (table, value, value))
+            before = snapshot(database)
+        def assert_history():
+            with postgres.connection(read_only=True) as database:
+                assert snapshot(database) == before
+        _exercise_ordinary_study_with_paused_history(assert_history)
+        print("PASS test_postgres_paused_feedback_history_preserves_ordinary_study", flush=True)
     finally:
         with postgres.connection() as database:
-            for operation in operations:
-                database.execute('DELETE FROM operation_receipts WHERE operation_id=?',(operation,))
-            database.execute('DELETE FROM imported_games WHERE id=?',(identifier,))
-            for card_id in card_ids:
-                database.execute('DELETE FROM review_attempt_receipts WHERE card_id=?',(card_id,))
-                database.execute('DELETE FROM review_schedule_snapshots WHERE review_id IN (SELECT id FROM reviews WHERE card_id=?)',(card_id,))
-                database.execute('DELETE FROM reviews WHERE card_id=?',(card_id,))
-            database.execute('DELETE FROM repertoires WHERE id=?',(identifier,))
-            for card_id in card_ids:
-                database.execute('DELETE FROM queue_attempt_origins WHERE card_id=?',(card_id,))
-            for entry_id,position in positions:
-                database.execute('UPDATE daily_queue SET position=? WHERE id=?',(position,entry_id))
-            database.execute('DELETE FROM daily_queue_days WHERE queue_date IN (?,?)',(today,tomorrow))
-            for day in saved_days:
-                database.execute('INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(?,?,?,?)',tuple(day[column] for column in ('queue_date','seed','membership_hash','generated_at')))
-            if snapshot is not None:
-                restore_queue_environment(database,snapshot)
+            for table, key, value in rows:
+                database.execute("DELETE FROM tempo_retired_work WHERE source_table=%s AND source_key=%s", (table, value))
+                database.execute(f"DELETE FROM {table} WHERE {key}=%s", (value,))
+            database.execute("DELETE FROM product_feedback_sources WHERE source_key=%s", (prefix,))
+            database.execute("DELETE FROM reviews WHERE card_id=%s", (prefix,))
+            database.execute("DELETE FROM repertoires WHERE id=%s", (prefix,))
         postgres.close_pools()
-
-
 
 def test_retained_command_retry_preserves_immutable_identity():
     """PR142: real API issuance, lock ordering, restart and canonical receipts."""
@@ -1012,7 +914,7 @@ _QUEUE_RECOVERY_ALL = (
     "test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure",
     "test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect",
     "test_retained_command_retry_preserves_immutable_identity",
-    "test_postgres_real_game_obligation_admission_restart_publication_and_remediation",
+    "test_postgres_paused_feedback_history_preserves_ordinary_study",
     "test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe",
     "test_postgres_guided_marker_locks_displayed_revision_until_commit",
     "test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery",
@@ -1026,8 +928,12 @@ _QUEUE_RECOVERY_MAINTAINED_SIX = (
     "test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery",
 )
 _QUEUE_RECOVERY_UNRESOLVED = (
-    "test_postgres_real_game_obligation_admission_restart_publication_and_remediation",
     "test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe",
+)
+_QUEUE_RECOVERY_PAUSED = ("test_postgres_paused_feedback_history_preserves_ordinary_study",)
+_QUEUE_RECOVERY_EXCLUDED = (
+    "test_postgres_paused_feedback_history_preserves_ordinary_study",
+    *_QUEUE_RECOVERY_UNRESOLVED,
 )
 
 
@@ -1035,10 +941,10 @@ def queue_recovery_main(argv=None):
     import argparse
 
     parser = argparse.ArgumentParser(description="Owned queue recovery proof; maintained-six is partial acceptance only.")
-    parser.add_argument("--case-set", choices=("all", "maintained-six"), default="all")
+    parser.add_argument("--case-set", choices=("all", "maintained-six", "paused-feedback"), default="all")
     parser.add_argument("--list", action="store_true", help="List selected cases without executing them.")
     options = parser.parse_args(argv)
-    cases = _QUEUE_RECOVERY_ALL if options.case_set == "all" else _QUEUE_RECOVERY_MAINTAINED_SIX
+    cases = {"all": _QUEUE_RECOVERY_ALL, "maintained-six": _QUEUE_RECOVERY_MAINTAINED_SIX, "paused-feedback": _QUEUE_RECOVERY_PAUSED}[options.case_set]
     if not cases or len(set(cases)) != len(cases):
         raise RuntimeError("Queue recovery selection must be nonempty and unique")
     actions = tuple(globals()[name] for name in cases)
@@ -1047,9 +953,9 @@ def queue_recovery_main(argv=None):
     evidence = {
         "case_set": options.case_set,
         "cases": cases,
-        "scope": "partial" if options.case_set == "maintained-six" else "all-eight",
+        "scope": {"all": "all-eight", "maintained-six": "partial", "paused-feedback": "paused-feedback-only"}[options.case_set],
         "unresolved_owner_cases": _QUEUE_RECOVERY_UNRESOLVED,
-        "excluded_cases": _QUEUE_RECOVERY_UNRESOLVED if options.case_set == "maintained-six" else (),
+        "excluded_cases": _QUEUE_RECOVERY_EXCLUDED if options.case_set == "maintained-six" else (),
         "execution": "discovery-only" if options.list else "starting",
     }
     print(json.dumps(evidence, sort_keys=True))
