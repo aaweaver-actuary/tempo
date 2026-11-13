@@ -79,7 +79,7 @@ def evidence_state(database: postgres.PostgresConnection, attempt_id: str) -> po
 def entry_status(database: postgres.PostgresConnection, entry_id: int | None, card_id: str) -> postgres.TempoRow | None:
     return database.execute('SELECT status FROM daily_queue WHERE id=%s AND card_id=%s', (entry_id, card_id)).fetchone()
 
-def inherit_evidence_scope(database, entry_id, snapshot_id, repertoire_id, trained_color):
+def inherit_evidence_scope(database: postgres.PostgresConnection, entry_id: int | None, snapshot_id: int, repertoire_id: str, trained_color: str) -> None:
     database.execute_native('INSERT INTO opening_evidence_queue_contexts(queue_entry_id,presentation_snapshot_id,repertoire_id,effective_trained_color) VALUES(%s,%s,%s,%s) ON CONFLICT(queue_entry_id,presentation_snapshot_id,repertoire_id) DO UPDATE SET effective_trained_color=EXCLUDED.effective_trained_color', (entry_id, snapshot_id, repertoire_id, trained_color))
 
 def continuation_facts(database: postgres.PostgresConnection, entry_id: int, card_id: str) -> postgres.TempoRow | None:
