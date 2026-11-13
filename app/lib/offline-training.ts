@@ -1,5 +1,5 @@
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "./study-connection";
-import { confirmOperationResponse } from "./operation-status";
+import { confirmOriginalOperationResponse } from "./operation-status";
 import { queueRecordWithCompatibleOpeningEvidence } from "../domain/adapters/practice-card-adapters";
 import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
 import type { BackendQueueCard } from "../domain/transport";
@@ -248,6 +248,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
             queue_entry_id: serverEntryId, queue_cycle: attempt.queueCycle ?? 0,
             expected_review_id: expectedReviewId, hint_seen: attempt.guided }),
         });
+        response = await confirmOriginalOperationResponse(response, `phone-study:${attempt.attemptId}`, { signal: controller.signal });
       } else {
         const reviewAttemptId = attempt.attemptId ?? `phone:${attempt.localEntryId}:${attempt.completedAt}`;
         const completion = attempt.openingEvidenceCompletion
@@ -268,7 +269,6 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
           },
         });
       }
-      response = await confirmOperationResponse(response, { signal: controller.signal });
     } catch (error) {
       throw new OfflineReplayError(`Could not sync saved review. ${String(error)}`, reviewEndpoint, { cause: error });
     } finally {
@@ -296,7 +296,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
             "Idempotency-Key": `phone-assessment:${attempt.attemptId}` },
           body: JSON.stringify({ rating: attempt.selfRating }),
         });
-        assessed = await confirmOperationResponse(assessed);
+        assessed = await confirmOriginalOperationResponse(assessed, `phone-assessment:${attempt.attemptId}`);
       } catch (error) {
         throw new OfflineReplayError(`Could not sync study self-assessment. ${String(error)}`, assessmentEndpoint, { cause: error });
       }

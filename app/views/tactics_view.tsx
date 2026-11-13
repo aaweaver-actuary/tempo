@@ -18,7 +18,7 @@ import { Chessboard, type BoardTheme, type PieceSet } from "../components/chessb
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { STANDARD_FEN } from "../const";
 import { playChessMoveSound } from "../lib/move-sound";
-import { confirmOperationResponse } from "../lib/operation-status";
+import { confirmOriginalOperationResponse } from "../lib/operation-status";
 import {
   readTacticProgress,
   advanceTacticProgress,
@@ -377,7 +377,7 @@ function TacticsWorkspace({
             attemptId: retained && retained.state !== "committed" ? retained.attemptId : completedAttempt.discoveryId,
             endpoint: `${API_URL}/api/tactics/attempt`, body: retained && retained.state !== "committed" ? retained.body : body })
             : await fetch(`${API_URL}/api/tactics/attempt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-          const confirmedResponse = await confirmOperationResponse(response);
+          const confirmedResponse = independentStudy ? response : await confirmOriginalOperationResponse(response, `tactic-attempt:${completedAttempt.discoveryId}`);
           if (!confirmedResponse.ok) throw new Error();
           invalidateWorkspaceData();
           onQueueChanged();

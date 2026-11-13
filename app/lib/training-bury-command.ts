@@ -1,6 +1,6 @@
 import { readBurialOperation, writeBurialOperation, removeBurialOperation, readBurialIdentity, writeBurialIdentity, removeBurialIdentity, readPendingBurialEntry, writePendingBurialEntry, removePendingBurialEntry, readKnownBurialOperation } from "../../database/browser/adapters/practice/training-burial-command";
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "./study-connection";
-import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse, retryBlockedOperation } from "./operation-status";
+import { confirmOriginalOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse, retryBlockedOperation } from "./operation-status";
 import { executeStudyRequest, retainedStudyRequest } from "./study-command-client";
 import { studyIntentRecords } from "../../database/browser/study-intent-storage";
 
@@ -41,7 +41,7 @@ export async function buryTrainingEntry(queueEntryId: number, retry = false, ide
     // a committed command. Only its durable receipt resolves that ambiguity.
     if (response.status >= 500) {
       response = await readOperationResponse(operationId);
-    } else response = await confirmOperationResponse(response);
+    } else response = await confirmOriginalOperationResponse(response, operationId);
     if (!response.ok) {
       // Request timeouts and rate limits leave the command retriable. Other
       // 4xx responses definitively reject this logical operation.

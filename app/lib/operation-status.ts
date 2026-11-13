@@ -28,17 +28,6 @@ export class FailedOperationError extends Error {
   }
 }
 
-export async function confirmOperationResponse(response: Response, options: OperationResponseOptions = {}): Promise<Response> {
-  if (response.status !== 202) return response;
-  const binding = operationBinding(options);
-  const pending = await response.clone().json() as { operation_id?: string };
-  requireBinding(binding);
-  // Existing discovery admissions also return 202, with an intent ID that
-  // their own status endpoint confirms. Preserve that response for its caller.
-  if (!pending.operation_id) return response;
-  return readReceipt(pending.operation_id, options, binding);
-}
-
 /** Confirm a command only against the identity that was actually submitted. */
 export async function confirmOriginalOperationResponse(response: Response, expectedOperationId: string, options: OperationResponseOptions = {}): Promise<Response> {
   if (response.status !== 202) return response;

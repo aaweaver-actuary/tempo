@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { confirmOperationResponse, confirmOriginalOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "../../app/lib/operation-status";
+import { confirmOriginalOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "../../app/lib/operation-status";
 import { subscribeOperationStatusChange } from "../../app/lib/operation-status-events";
 
 vi.hoisted(() => vi.resetModules());
@@ -54,7 +54,7 @@ it.each(["foreground", "background", "custom"] as const)("operation receipt poll
     });
   });
   vi.stubGlobal("fetch", lane === "custom" ? vi.fn(() => { throw new Error("Custom fetch was ignored"); }) : request);
-  const response = confirmOperationResponse(Response.json({ operation_id: "abort-operation" }, { status: 202 }), {
+  const response = confirmOriginalOperationResponse(Response.json({ operation_id: "abort-operation", state: "queued" }, { status: 202 }), "abort-operation", {
     signal: controller.signal, background: lane === "background", ...(lane === "custom" ? { fetch: request } : {}),
   });
   const rejected = expect(response).rejects.toMatchObject({ name: "AbortError" });
@@ -71,7 +71,7 @@ it("classified operation failure preserves structured detail message and status 
       message: "409: saved result changed", detail: { code: "card_revision_changed", message: "Saved result changed" },
       status_code: 409, code: "card_revision_changed", retryable: false,
     } }));
-    const response = confirmOperationResponse(Response.json({ operation_id: "classified-operation" }, { status: 202 }), { fetch: request });
+    const response = confirmOriginalOperationResponse(Response.json({ operation_id: "classified-operation", state: "queued" }, { status: 202 }), "classified-operation", { fetch: request });
     await expect(response).rejects.toBeInstanceOf(FailedOperationError);
     await expect(response).rejects.toMatchObject({ message: "409: saved result changed", status: 409,
       code: "card_revision_changed", retryable: false, operationId: "classified-operation" });
@@ -133,13 +133,10 @@ it.each(["queued", "executing", "retrying", "pending"])("%s emits the existing s
   } finally { unsubscribe(); }
 });
 
-it("preserves null completion and discovery admission responses", async () => {
+it("preserves null completion responses", async () => {
   const completed = await readOperationResponse("original", { fetch: async () => Response.json({ state: "complete", response: null }) });
   expect(await completed.json()).toBeNull();
-  const discovery = Response.json({ intent_id: "discovery" }, { status: 202 });
-  const request = vi.fn();
-  expect(await confirmOperationResponse(discovery, { fetch: request })).toBe(discovery);
-  expect(request).not.toHaveBeenCalled();
+
 });
 
 it("propagates an ambiguous receipt transport failure unchanged", async () => {

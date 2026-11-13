@@ -45,12 +45,13 @@ it("bury transport retries retain the same identity until refresh completion", a
 });
 
 it("pending or failed burial cannot report success and completed receipts confirm the selected entry", async () => {
+  localStorage.setItem("tempo-bury-operation-42", "bury-pending");
   const fetcher = vi.fn()
-    .mockResolvedValueOnce(Response.json({ operation_id: "bury-pending" }, { status: 202 }))
+    .mockResolvedValueOnce(Response.json({ operation_id: "bury-pending", state: "queued" }, { status: 202 }))
     .mockResolvedValueOnce(Response.json({ state: "pending" }))
     .mockResolvedValueOnce(Response.json({ detail: "Queue unavailable" }, { status: 503 }))
     .mockResolvedValueOnce(Response.json({ state: "unknown" }))
-    .mockResolvedValueOnce(Response.json({ operation_id: "bury-pending" }, { status: 202 }))
+    .mockResolvedValueOnce(Response.json({ operation_id: "bury-pending", state: "queued" }, { status: 202 }))
     .mockResolvedValueOnce(Response.json({ state: "complete", response: { buried: true, queue_entry_id: 42 } }));
   vi.stubGlobal("fetch", fetcher);
   await expect(buryTrainingEntry(42)).rejects.toThrow("still pending");
@@ -100,7 +101,7 @@ it("terminal 409 burial clears its identity so a later legitimate head attempt g
 
 it("durable failed burial receipt clears its identity for a fresh independent attempt", async () => {
   const fetcher = vi.fn().mockImplementationOnce(async (_url: string, options: RequestInit) =>
-    Response.json({ operation_id: (options.headers as Record<string, string>)["Idempotency-Key"] }, { status: 202 }))
+    Response.json({ operation_id: (options.headers as Record<string, string>)["Idempotency-Key"], state: "queued" }, { status: 202 }))
     .mockResolvedValueOnce(Response.json({ state: "failed", error: { message: "Stale burial rejected" } }))
     .mockResolvedValueOnce(Response.json({ buried: true, queue_entry_id: 42 }));
   vi.stubGlobal("fetch", fetcher);
@@ -119,7 +120,7 @@ it("pending and blocked burial receipts retain their identity through retries", 
     const submittedId = (options!.headers as Record<string, string>)["Idempotency-Key"];
     if (!operationId) operationId = submittedId;
     expect(submittedId).toBe(operationId);
-    return Response.json({ operation_id: operationId }, { status: 202 });
+    return Response.json({ operation_id: operationId, state: "queued" }, { status: 202 });
   });
   vi.stubGlobal("fetch", fetcher);
   await expect(buryTrainingEntry(42)).rejects.toThrow("still pending");
@@ -196,7 +197,7 @@ it.each(["complete", "failed", "queued", "pending", "executing", "retrying", "bl
       if (url.endsWith("/bury")) {
         expect(operationId).toBe("");
         operationId = (options!.headers as Record<string, string>)["Idempotency-Key"];
-        return Response.json({ operation_id: operationId }, { status: 202 });
+        return Response.json({ operation_id: operationId, state: "queued" }, { status: 202 });
       }
       expect(url).toContain(`/operations/${operationId}`);
       if (url.endsWith("/retry")) {
@@ -253,4 +254,12 @@ it("retains legacy burial identity and body through retry and cleanup", async ()
   finishTrainingBurial(42);
   expect(localStorage.getItem("tempo-bury-operation-42")).toBeNull();
   expect(localStorage.getItem("tempo-bury-identity-42")).toBeNull();
+});
+
+it.each(["missing", "foreign"])("%s initial burial acknowledgment retains the original operation without polling", async kind => {
+  const fetcher = vi.fn(async () => Response.json(kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" }, { status: 202 }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(buryTrainingEntry(42)).rejects.toThrow("still pending");
+  expect(localStorage.getItem("tempo-bury-operation-42")).toBeTruthy();
+  expect(fetcher).toHaveBeenCalledOnce();
 });

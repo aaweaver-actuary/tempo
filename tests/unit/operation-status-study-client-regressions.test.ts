@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { createStudyClient, type StudyClientStorage } from '../../app/lib/study-connection';
-import { confirmOperationResponse, PendingOperationError, readOperationResponse, retryBlockedOperation } from '../../app/lib/operation-status';
+import { confirmOriginalOperationResponse, PendingOperationError, readOperationResponse, retryBlockedOperation } from '../../app/lib/operation-status';
 
 function storage(): StudyClientStorage {
   const registry = new Map<string, { identity: string; origin: string; workspace: string }>();
@@ -82,7 +82,7 @@ it('supplied_independent_client_rejects_a_different_receipt_identity', async () 
 });
 
 it('confirmation_captures_original_client_before_async_202_body_and_refuses_reconnect', async () => {
-  const { confirmOperationResponse } = await import('../../app/lib/operation-status');
+  const { confirmOriginalOperationResponse } = await import('../../app/lib/operation-status');
   const { subscribeOperationStatusChange } = await import('../../app/lib/operation-status-events');
   const urls: string[] = [];
   const transport: typeof fetch = async (input, init) => {
@@ -98,9 +98,9 @@ it('confirmation_captures_original_client_before_async_202_body_and_refuses_reco
   } });
   const notice = vi.fn(); const unsubscribe = subscribeOperationStatusChange(notice);
   try {
-    const confirmation = confirmOperationResponse(new Response(body, { status:202 }), { client });
+    const confirmation = confirmOriginalOperationResponse(new Response(body, { status:202 }), "original", { client });
     await client.connectStudy('https://b.example', 'beta', 'b'.repeat(40));
-    finish(new TextEncoder().encode(JSON.stringify({ operation_id:'original' })));
+    finish(new TextEncoder().encode(JSON.stringify({ operation_id:'original', state:'queued' })));
     await expect(confirmation).rejects.toThrow('authority changed');
     expect(urls.filter(url => url.includes('/api/operations/'))).toEqual([]);
     expect(notice).not.toHaveBeenCalled();
@@ -111,9 +111,9 @@ it("reports a blocked browser operation without losing its original identity", a
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
     state: "blocked", last_error: { message: "transaction budget exhausted" },
   })));
-  await expect(confirmOperationResponse(Response.json(
+  await expect(confirmOriginalOperationResponse(Response.json(
     { operation_id: "original-id", state: "queued" }, { status: 202 },
-  ))).rejects.toMatchObject({
+  ), "original-id")).rejects.toMatchObject({
     operationId: "original-id", blocked: true,
     message: expect.stringContaining("transaction budget exhausted"),
   } satisfies Partial<PendingOperationError>);

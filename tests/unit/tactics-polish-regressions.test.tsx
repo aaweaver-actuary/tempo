@@ -179,3 +179,34 @@ it("tactic Show Move, capture dialog, and Restart retain the guided attempt and 
   expect(screen.getByText("a2e6").hasAttribute("disabled")).toBe(false);
   expect(submissions).toHaveLength(1);
 });
+
+it.each(["missing", "foreign"])("%s tactic acknowledgment cannot advance the completed puzzle", async kind => {
+  const attempts: string[] = [];
+  const fetcher = vi.fn(async (input, options) => {
+    const url = String(input);
+    if (url.includes("tactics-packs")) return Response.json(records.slice(0, 25));
+    if (url.includes("tactics/catalog")) return Response.json(catalog);
+    if (url.endsWith("/api/tactics/attempt")) {
+      attempts.push(JSON.parse(options.body).attempt_id);
+      return Response.json(attempts.length === 1
+        ? (kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" })
+        : { operation_id: `tactic-attempt:${attempts[0]}`, state: "queued" }, { status: 202 });
+    }
+    if (url.includes("/api/operations/")) return Response.json({ operation_id: `tactic-attempt:${attempts[0]}`, state: "complete", response: {} });
+    return Response.json({});
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<TacticsView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />);
+  await screen.findByText("Puzzle 1 of 25");
+  fireEvent.click(screen.getByText("a2e6"));
+  fireEvent.click(screen.getByText("f7f8"));
+  await screen.findByText("Could not save this attempt. Retry to save it before continuing.");
+  expect(screen.getByText("Puzzle 1 of 25")).toBeTruthy();
+  expect(attempts).toHaveLength(1);
+  expect(fetcher.mock.calls.some(([input]) => String(input).includes("/api/operations/"))).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+  await waitFor(() => expect(attempts).toHaveLength(2));
+  expect(attempts[1]).toBe(attempts[0]);
+  await screen.findByText("Puzzle 2 of 25");
+  expect(fetcher.mock.calls.filter(([input]) => String(input).includes("/api/operations/"))).toHaveLength(1);
+});

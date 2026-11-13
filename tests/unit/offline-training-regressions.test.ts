@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { describeOfflineQueue, offlineRepeatPosition } from "../../app/lib/offline-training";
 import type { BackendQueueCard } from "../../app/domain/transport";
@@ -36,3 +35,38 @@ describe("phone queue sync status", () => {
     expect(notice).toContain("live count may differ until you reconnect");
   });
 });
+
+it.each([["submit", "missing"], ["submit", "foreign"], ["assessment", "missing"], ["assessment", "foreign"]] as const)(
+  "phone %s rejects %s acknowledgment and replays original attempt and answer", async (stage, fault) => {
+    const { vi } = await import("vitest");
+    const { openingEvidenceStorage } = await import("../fixtures/opening-evidence-storage");
+    const browserStorage = localStorage;
+    const storage = await openingEvidenceStorage();
+    vi.stubGlobal("localStorage", browserStorage);
+    const attempt = { localEntryId: 1, cardId: "phone-card", outcome: "correct", guided: false,
+      completedAt: "2026-09-26T12:05:00Z", expectedReviewId: 0, expectedRevision: 1,
+      studyId: "study", exerciseId: "exercise", attemptId: "original-attempt", answer: { kind: "choice", choice_id: "a" }, selfRating: "correct" };
+    storage.stores.training.set("prepared-daily-queue", { localDate: "2026-09-26", preparedAt: attempt.completedAt,
+      cards: [preparedCard], nextTemporaryId: 1000000, attempts: [attempt] });
+    let faulted = false; const requests: { url: string; key: string | null; body: string }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input); const assessment = url.includes("self-assess");
+      requests.push({ url, key: new Headers(init?.headers).get("Idempotency-Key"), body: String(init?.body) });
+      if (!faulted && (assessment ? "assessment" : "submit") === stage) {
+        faulted = true;
+        return Response.json(fault === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" }, { status: 202 });
+      }
+      return Response.json(assessment ? { review: { review_id: 41, requeue_entry_id: null } } :
+        { pending_self_assessment: true, review_id: null, requeue_entry_id: null });
+    }));
+    const offline = await import("../../app/lib/offline-training");
+    await expect(offline.replayOfflineAttempts()).rejects.toThrow("still pending");
+    expect((storage.stores.training.get("prepared-daily-queue") as { attempts: unknown[] }).attempts).toEqual([attempt]);
+    const result = await offline.replayOfflineAttempts();
+    expect(result?.attempts[0]).toMatchObject({ attemptId: "original-attempt", answer: attempt.answer, serverAcknowledged: true, serverReviewId: 41 });
+    expect(requests.filter(x => x.url.includes("/operations/"))).toHaveLength(0);
+    expect(requests.filter(x => x.url.includes("self-assess")).every(x => x.key === "phone-assessment:original-attempt")).toBe(true);
+    const submits = requests.filter(x => !x.url.includes("self-assess"));
+    expect(submits.every(x => x.key === "phone-study:original-attempt" && x.body === submits[0].body)).toBe(true);
+    vi.unstubAllGlobals(); vi.restoreAllMocks();
+  });
