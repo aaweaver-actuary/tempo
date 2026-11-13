@@ -154,7 +154,8 @@
             "enum": [
               "retained",
               "review",
-              "durable"
+              "durable",
+              "calendar"
             ]
           }
         }
