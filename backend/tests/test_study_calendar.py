@@ -359,3 +359,45 @@ def test_prefix_effect_uses_context_day_and_instant_but_keeps_existing_queue_ori
     assert stamps == [calendar.observed_at.isoformat()] * 2
     assert writes[1]["due_date"] == writes[1]["introduced_at"] == "2026-11-11"
     assert origins == [("2026-11-09", "short", 0)]
+
+@pytest.mark.parametrize("zone, expected", [
+    ("America/New_York", "2026-11-11"),
+    ("Pacific/Auckland", "2026-11-12"),
+])
+def test_settings_followup_uses_effective_saved_zone(monkeypatch, zone, expected):
+    from app import settings_commands
+    from app.contracts.transport.settings import Settings
+    from app.study.policy.clock import study_calendar_at
+    instant = datetime(2026, 11, 12, 2, tzinfo=timezone.utc)
+    current = Settings(timezone="Pacific/Auckland").model_dump()
+    writes, requests = [], []
+    monkeypatch.setattr(settings_commands.storage, "locked_settings", lambda _: current)
+    monkeypatch.setattr(settings_commands.storage, "store_settings", lambda db, values, columns: writes.append(values))
+    def capture(_):
+        assert writes, "settings must be saved before selecting the effective zone"
+        return study_calendar_at(instant, writes[-1]["timezone"])
+    monkeypatch.setattr(settings_commands, "capture_study_calendar", capture)
+    monkeypatch.setattr(settings_commands, "request_queue_refresh_in_transaction", lambda db, day: requests.append(day))
+    settings_commands.apply_settings(object(), settings_commands.SettingsRequest(Settings(timezone=zone), frozenset({"timezone"})))
+    assert requests == [expected]
+
+
+def test_backward_day_creates_distinct_task_preserving_leased_singleton(monkeypatch):
+    from app.services import durable_tasks
+    from tempo_storage.queue_refresh import foreground
+    original = {"id":"old", "generation":7, "state":"leased", "payload_json":json.dumps({"queue_date":"2026-11-12", "_queue_phase":"admit_due"})}
+    created = {"id":"new", "generation":1, "state":"queued", "payload_json":json.dumps({"queue_date":"2026-11-11"})}
+    before = dict(original)
+    keys, signals, events = [], [], []
+    def lock(db, **kwargs):
+        key = kwargs.get("deduplication_key", "current")
+        keys.append(key)
+        return (original, False) if key == "current" else (created, True)
+    monkeypatch.setattr(durable_tasks.storage, "lock_or_create_current_queue_task", lock)
+    monkeypatch.setattr(foreground, "signal_queue_refresh_in_transaction", lambda db, day: signals.append(day))
+    monkeypatch.setattr(durable_tasks, "_record_event", lambda *a, **kw: events.append((a, kw)))
+    monkeypatch.setattr(durable_tasks, "mark_queue_refresh_requested", lambda: None)
+    result = durable_tasks._request_current_queue_in_transaction(object(), {"queue_date":"2026-11-11"}, priority=10, max_attempts=5, delay_seconds=0, minimum_generation=0)
+    assert result == created and original == before
+    assert keys == ["current", "current-day:2026-11-11"]
+    assert signals == ["2026-11-11"] and len(events) == 1

@@ -328,21 +328,21 @@ def task_kind(database, values):
 
 def lock_or_create_current_queue_task(database, *, task_id, payload_json, priority,
                                       max_attempts, now, initial_generation=1,
-                                      next_attempt_at=None):
+                                      next_attempt_at=None, deduplication_key="current"):
     """Create or lock the singleton before taking any queue projection lock.
 
     The unique key serializes concurrent first requests.  The caller decides
     whether a pre-existing task can be coalesced and owns the transaction.
     """
     inserted = database.execute(
-        "INSERT INTO background_tasks(\n               id,kind,deduplication_key,generation,priority,state,phase,\n               payload_version,payload_json,attempt_count,max_attempts,\n               next_attempt_at,lease_token,lease_expires_at,last_error,\n               created_at,started_at,completed_at,updated_at)\n           VALUES(%s,'daily_queue','current',%s,%s,'queued','queued',1,%s,0,%s,%s,\n                  NULL,NULL,NULL,%s,NULL,NULL,%s)\n           ON CONFLICT(kind,deduplication_key) DO NOTHING RETURNING *",
-        (task_id, initial_generation, priority, payload_json, max_attempts,
+        "INSERT INTO background_tasks(\n               id,kind,deduplication_key,generation,priority,state,phase,\n               payload_version,payload_json,attempt_count,max_attempts,\n               next_attempt_at,lease_token,lease_expires_at,last_error,\n               created_at,started_at,completed_at,updated_at)\n           VALUES(%s,'daily_queue',%s,%s,%s,'queued','queued',1,%s,0,%s,%s,\n                  NULL,NULL,NULL,%s,NULL,NULL,%s)\n           ON CONFLICT(kind,deduplication_key) DO NOTHING RETURNING *",
+        (task_id, deduplication_key, initial_generation, priority, payload_json, max_attempts,
          next_attempt_at or now, now, now),
     ).fetchone()
     if inserted is not None:
         return inserted, True
     statement = _TASK_BY_KIND_SQL + " FOR UPDATE"
-    task = database.execute(statement, ("daily_queue", "current")).fetchone()
+    task = database.execute(statement, ("daily_queue", deduplication_key)).fetchone()
     if task is None:
         raise RuntimeError("Current queue task disappeared while acquiring its lock")
     return task, False
@@ -354,6 +354,6 @@ def update_locked_queue_task_payload(database, *, task_id, generation, payload_j
     Caller must hold the task row lock and validate its day and active state.
     """
     return database.execute(
-        "UPDATE background_tasks SET payload_json=%s\n           WHERE id=%s AND generation=%s AND kind='daily_queue'\n             AND deduplication_key='current' AND state IN ('queued','leased','retrying')",
+        "UPDATE background_tasks SET payload_json=%s\n           WHERE id=%s AND generation=%s AND kind='daily_queue'\n             AND state IN ('queued','leased','retrying')",
         (payload_json, task_id, generation),
     ).rowcount == 1

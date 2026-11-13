@@ -52,12 +52,22 @@ def bury_attempt_card(database, queue_date, entry_id):
     database.execute("UPDATE daily_queue SET status='buried'\n           WHERE (queue_date=%s OR id=%s) AND status!='complete'\n             AND card_id=(SELECT card_id FROM daily_queue WHERE id=%s)", (queue_date, entry_id, entry_id))
     database.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,status)\n        SELECT %s,original.card_id,\n            (SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue q\n             WHERE q.queue_date=%s AND q.card_id=original.card_id),\n            (SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue q WHERE q.queue_date=%s),'buried'\n        FROM daily_queue original WHERE original.id=%s AND original.queue_date<>%s\n          AND NOT EXISTS(SELECT 1 FROM daily_queue held\n              WHERE held.queue_date=%s AND held.card_id=original.card_id AND held.status='buried')", (queue_date, queue_date, queue_date, entry_id, queue_date, queue_date))
 
-def lock_current_queue_task(database):
-    current_task_lock_sql = "SELECT id,state,payload_json,last_error FROM background_tasks\n           WHERE kind='daily_queue' AND deduplication_key='current' FOR UPDATE"
+def lock_current_queue_task(database, queue_date=None):
+    # Always acquire the singleton first; the per-day task, when present, is
+    # locked before its projection just as it is by a queue worker.
+    import json
+    current_task_lock_sql = "SELECT id,state,payload_json,last_error FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current' FOR UPDATE"
     active_task = database.execute(current_task_lock_sql).fetchone()
-    if active_task is None and True:
+    if active_task is None:
         database.execute_native('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ('tempo:daily-queue:current:ensure',))
         active_task = database.execute(current_task_lock_sql).fetchone()
+    if queue_date and active_task:
+        day = json.loads(active_task["payload_json"]).get("queue_date")
+        if day and day != queue_date:
+            return database.execute(
+                "SELECT id,state,payload_json,last_error FROM background_tasks WHERE kind='daily_queue' AND deduplication_key=%s FOR UPDATE",
+                ("current-day:" + queue_date,),
+            ).fetchone()
     return active_task
 
 def current_projection(database, queue_date, active_task):

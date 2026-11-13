@@ -285,9 +285,27 @@ def _request_current_queue_in_transaction(
     )
     previous_payload = json.loads(task["payload_json"])
     previous_day = previous_payload.get("queue_date") or payload["queue_date"]
+    task_key = "current"
+    if not created and previous_day != payload["queue_date"]:
+        # Preserve the accepted singleton and its lease. Distinct calendar days
+        # coalesce separately under the same daily_queue worker and fences.
+        task_key = "current-day:" + payload["queue_date"]
+        task, created = storage.lock_or_create_current_queue_task(
+            database,
+            task_id=str(uuid.uuid4()),
+            payload_json=json.dumps(payload, separators=(",", ":")),
+            priority=priority,
+            max_attempts=max_attempts,
+            now=_iso(now),
+            initial_generation=minimum_generation + 1,
+            next_attempt_at=_iso(now + timedelta(seconds=delay_seconds)),
+            deduplication_key=task_key,
+        )
+        previous_payload = json.loads(task["payload_json"])
+        previous_day = previous_payload.get("queue_date") or payload["queue_date"]
+        if previous_day != payload["queue_date"]:
+            raise RuntimeError("Queue day key disagrees with its accepted payload")
     started = created
-    if not created and previous_day > payload["queue_date"]:
-        return dict(task)
     if (
         not created
         and previous_day == payload["queue_date"]
@@ -310,7 +328,7 @@ def _request_current_queue_in_transaction(
             (
                 task["id"],
                 "daily_queue",
-                "current",
+                task_key,
                 max(int(task["generation"]) + 1, minimum_generation + 1),
                 priority,
                 json.dumps(payload, separators=(",", ":")),
@@ -856,7 +874,7 @@ def serialize_task(row) -> dict:
         "age_seconds": age_seconds,
         "last_error": row["last_error"],
     }
-    if row["kind"] == "daily_queue" and row["deduplication_key"] == "current":
+    if row["kind"] == "daily_queue" and (row["deduplication_key"] == "current" or row["deduplication_key"].startswith("current-day:")):
         phases = {
             "unlock_opening",
             "block_opening",
@@ -925,7 +943,7 @@ def annotate_queue_projection_workers(projections, tasks, today):
         task.get("queue_date")
         for task in tasks
         if task.get("kind") == "daily_queue"
-        and task.get("deduplication_key") == "current"
+        and (task.get("deduplication_key") == "current" or str(task.get("deduplication_key", "")).startswith("current-day:"))
         and task.get("state") in {"queued", "leased", "retrying"}
     }
     return [
