@@ -29,11 +29,18 @@ test('real Study worker publishes deliberately malformed optional manifest diagn
     // Observe the actual Worker instance and messages; the constructor and computation remain real.
     await page.addInitScript(() => {
       const NativeWorker = window.Worker;
-      (window as any).__fe10WorkerReplies = [];
+      (window as any).__fe10WorkerEvents = [];
+      let workerId = 0;
       window.Worker = class extends NativeWorker {
         constructor(...args: ConstructorParameters<typeof Worker>) {
           super(...args);
-          this.addEventListener('message', event => (window as any).__fe10WorkerReplies.push(event.data));
+          const id = ++workerId;
+          const send = this.postMessage.bind(this);
+          this.postMessage = ((message: any, ...rest: any[]) => {
+            (window as any).__fe10WorkerEvents.push({ workerId: id, direction: 'request', data: message });
+            return (send as any)(message, ...rest);
+          }) as typeof this.postMessage;
+          this.addEventListener('message', event => (window as any).__fe10WorkerEvents.push({ workerId: id, direction: 'reply', data: event.data }));
         }
       };
     });
@@ -57,14 +64,29 @@ test('real Study worker publishes deliberately malformed optional manifest diagn
     await expect.poll(() => injected, { timeout: 60_000 }).toBe(true);
     await expect(page.getByText('P12 first move')).toBeVisible();
     await expect(page.getByLabel('Coordinates or UCI move')).toBeEnabled();
-    await expect.poll(() => page.evaluate(() => (window as any).__fe10WorkerReplies.some((reply: any) =>
-      reply.diagnostics?.some((issue: any) => issue.source === 'opening evidence' && String(issue.message).includes('invalid manifest')))),
+    await expect.poll(() => page.evaluate(() => (window as any).__fe10WorkerEvents.some((event: any) =>
+      event.direction === 'reply' && event.data.diagnostics?.some((issue: any) => issue.source === 'opening evidence' && String(issue.message).includes('invalid manifest')))),
       { timeout: 30_000 }).toBe(true);
     const notice = page.locator('details.data-diagnostics-notice');
     await expect(notice).toBeVisible();
     await notice.locator('summary').click();
     await expect(notice).toContainText('opening evidence');
     await expect(notice).toContainText('invalid manifest');
+    const bad = await page.evaluate(() => (window as any).__fe10WorkerEvents.find((event: any) =>
+      event.direction === 'reply' && event.data.diagnostics?.some((issue: any) => issue.source === 'opening evidence' && String(issue.message).includes('invalid manifest'))));
+    // Normal navigation back to Train requests the unmodified current queue.
+    // Match request and reply IDs on the same worker to prove its next queue
+    // computation clears the prior per-task diagnostic.
+    const priorEvents = await page.evaluate(() => (window as any).__fe10WorkerEvents.length as number);
+    await navigate(page, 'Settings');
+    await navigate(page, 'Train');
+    await expect.poll(() => page.evaluate(({ workerId, priorEvents }) => {
+      const events = (window as any).__fe10WorkerEvents.slice(priorEvents);
+      return events.some((event: any) => event.workerId === workerId && event.direction === 'request' && event.data.task?.kind === 'queue' &&
+        events.some((reply: any) => reply.workerId === workerId && reply.direction === 'reply' && reply.data.id === event.data.id &&
+          Array.isArray(reply.data.diagnostics) && reply.data.diagnostics.length === 0 && !reply.data.error));
+    }, { workerId: bad.workerId, priorEvents }), { timeout: 60_000 }).toBe(true);
+    await expect(page.getByText('P12 first move')).toBeVisible();
     const snapshot = fixture('snapshot');
     expect(snapshot.reviews).toHaveLength(0);
     expect(snapshot.origins).toContainEqual([seeded.entries[0], `${prefix}-card-0`, 1, 1]);
