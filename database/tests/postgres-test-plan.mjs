@@ -3,7 +3,7 @@ export function postgresTestStages({ mode, nativeChecks = [], maintainedStudyPro
   if (!Array.isArray(nativeChecks) || new Set(nativeChecks).size !== nativeChecks.length
     || nativeChecks.some(check => !['redis-fixture-isolation', 'position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'prefix-split-placement', 'game-review-reader'].includes(check))
     || nativeChecks.length && !['study','browser'].includes(mode)) throw new Error('Invalid native PostgreSQL selection');
-  if (!["full", "browser", "study", "durability", "lifecycle", "lifecycle-current"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
+  if (!["full", "browser", "study", "durability", "lifecycle", "lifecycle-current", "priority-historical"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
   const nativeStages = nativeChecks.map(check => check === "game-review-reader" ? "game_review_reader" : check);
   if (maintainedStudyProof) {
     if (mode !== "study" || nativeChecks.length) throw new Error("Invalid maintained Study proof selection");
@@ -16,6 +16,7 @@ export function postgresTestStages({ mode, nativeChecks = [], maintainedStudyPro
   if (mode === "lifecycle-current") {
     return ["compose_config", "image_build", "maintenance_cli", "deployment_lifecycle_current", "cleanup"];
   }
+  if (mode === "priority-historical") return ["compose_config", "image_build", "priority_postgres_startup", "priority_historical_rollback", "cleanup"];
   const durabilityStages = [
     "background_budget", "operation_recovery", "schema_migrations", "background_diagnostics",
     ...(mode === "full" ? ["deployment_lifecycle"] : []), "background_workloads",

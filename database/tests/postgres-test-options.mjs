@@ -44,8 +44,8 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
   if (options.browserFile && options.browserGrep) {
     throw new Error("Choose one browser focus: --browser-file or --browser-grep");
   }
-  if (options.mode !== null && !["full", "browser", "study", "durability", "lifecycle", "lifecycle-current"].includes(options.mode)) {
-    throw new Error("--mode must be full, browser, study, durability, lifecycle, or lifecycle-current");
+  if (options.mode !== null && !["full", "browser", "study", "durability", "lifecycle", "lifecycle-current", "priority-historical"].includes(options.mode)) {
+    throw new Error("--mode must be full, browser, study, durability, lifecycle, lifecycle-current, or priority-historical");
   }
   if (options.skipBrowser && options.mode !== null && options.mode !== "durability") {
     throw new Error("--skip-browser cannot be combined with a mode other than durability");
@@ -53,7 +53,8 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
   const hasBrowserFocus = Boolean(options.browserFile || options.browserGrep);
   options.mode ??= options.skipBrowser ? "durability" : hasBrowserFocus ? "browser" : "full";
   if (options.nativeChecks?.length && !['study','browser'].includes(options.mode)) throw new Error('Native checks require study or browser mode');
-  options.skipBrowser = ["durability", "lifecycle", "lifecycle-current"].includes(options.mode);
+  options.skipBrowser = ["durability", "lifecycle", "lifecycle-current", "priority-historical"].includes(options.mode);
+  if (options.mode === "priority-historical" && (environment.TEMPO_PG_STALE_DELIVERY_ONLY === "1" || environment.TEMPO_RELEASE_CANDIDATE_MODE || options.nativeChecks?.length || options.maintainedStudyProof)) throw new Error("Historical priority proof requires its fixed selection");
   if (hasBrowserFocus && !["browser", "study"].includes(options.mode)) {
     throw new Error("Browser focus cannot be combined with non-browser mode or --skip-browser; use --mode browser");
   }

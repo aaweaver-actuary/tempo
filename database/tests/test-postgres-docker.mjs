@@ -15,7 +15,7 @@ import { requireOriginalOperationReceipt, originalPrefixSplitRows, assertDisposa
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
-import { checkLifecycleSource, readSchema62Bridge } from "../../scripts/lifecycle-source-preflight.mjs";
+import { checkLifecycleSource, readSchema62Bridge, readSchema65Baseline } from "../../scripts/lifecycle-source-preflight.mjs";
 import { buildMaterials, normalizeCandidateBake, writeCandidateReceipt, verifyCandidateReceipt } from "../../scripts/release-candidate-artifacts.mjs";
 import { inspectImmutableImageSet } from "../../scripts/tempo-runtime.mjs";
 import { verifyTempoCliLifecycle } from "../../scripts/check-tempo-cli.mjs";
@@ -34,7 +34,8 @@ if (options.list) {
     unresolved_owner_cases: stages.includes("study_durability") ? unresolvedQueueCases : [],
     historical_priority_rollback: stages.includes("study_durability") ? "not executed" : undefined,
     study_durability_cases: stages.includes("study_durability") ? ["foreground_study", "prefix_split_http_accept_replay", "prefix_split_http_restart_replay", "study_burial_quota", "blocked_burial_recovery"] : [],
-    lifecycle_current_cases: options.mode === "lifecycle-current" ? ["current65_baseline", "current65_before_write", "current65_interrupted", "current65_unresolved_refusal", "current65_mismatched_guard", "current65_retry_original", "current65_repeat", "current65_recreate", "current65_original_replay"] : [] }, null, 2));
+    lifecycle_current_cases: options.mode === "lifecycle-current" ? ["current65_baseline", "current65_before_write", "current65_interrupted", "current65_unresolved_refusal", "current65_mismatched_guard", "current65_retry_original", "current65_repeat", "current65_recreate", "current65_original_replay"] : [],
+    priority_historical_cases: options.mode === "priority-historical" ? ["test_postgres_priority_index_only_rollback_preserves_accepted_reviews"] : [] }, null, 2));
   process.exit(0);
 }
 
@@ -71,6 +72,7 @@ if (stages.includes("deployment_lifecycle") || stages.includes("deployment_lifec
     throw new Error("Automatic historical image preparation does not support inherited Docker host or TLS overrides; supply an explicit historical manifest or use a named context.");
   checkLifecycleSource({ profile: options.mode === "lifecycle-current" ? "current65" : "full" });
 }
+if (options.mode === "priority-historical") checkLifecycleSource({ profile: "current65" });
 
 // Docker Desktop only shares the project checkout, so the short-lived secret
 if (!process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN)
@@ -1193,7 +1195,7 @@ const actions = {
       run("docker", ["tag", borrowedCandidate.maintenance, maintenanceImage]);
     } else {
       if (candidateMode === "produce") candidateSuiteTags.push(...candidateRoles.map(role => `${project}-${role}`));
-      await managedComposeBuild(() => execFileSync('docker',[...compose,'build','--print'],{encoding:'utf8',env:environment}),
+      await managedComposeBuild(() => execFileSync('docker',[...compose,'build','--print', ...(options.mode === 'priority-historical' ? ['schema'] : [])],{encoding:'utf8',env:environment}),
       args => run('docker', candidateMetadataPath ? [...args, "--metadata-file", candidateMetadataPath] : args,
         candidateMetadataPath ? { env: { ...environment, BUILDX_METADATA_PROVENANCE: "min" } } : {}));
     }
@@ -1241,6 +1243,11 @@ const actions = {
     run("docker", [...compose, "up", "--no-build", "-d"]);
     await waitForReady();
   },
+  priority_postgres_startup: async () => {
+    await waitForStudyQuiet();
+    run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", "--wait", "postgres"]);
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema"], { timeout: 180_000 });
+  },
   service_health: async () => {
     const runningContainers = spawnSync("docker", [...compose, "ps", "--format", "json"],
       { encoding: "utf8", env: environment });
@@ -1270,6 +1277,45 @@ const actions = {
   operation_recovery: async () => {
     await runAllocatedNativeProof('/source/database/tests/check_postgres_operation_recovery.py',
       'test_postgres_operation_recovery_uses_bounded_maintenance_allocation');
+  },
+  priority_historical_rollback: async () => {
+    {
+      assertDevelopmentProjectOwned(project);
+      const baseline = readSchema65Baseline(environment).manifest;
+      if (baseline.kind !== "installed-receipt") throw new Error("Historical proof requires the registered schema65 image receipt");
+      const image = JSON.parse(run("docker", ["image", "inspect", baseline.images.migration], { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8" }).stdout)[0];
+      assert.equal(image.Id, baseline.images.migration); assert.equal(image.Os, "linux"); assert.equal(image.Architecture, "arm64");
+      assert.equal(image.Config?.Labels?.["org.opencontainers.image.revision"], baseline.revision);
+      const sentinel = `tempo_priority_sentinel_${randomBytes(16).toString("hex")}`;
+      const evidenceDirectory = resolve(process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance", "priority-historical", project);
+      mkdirSync(evidenceDirectory, { recursive: true, mode: 0o700 });
+      const override = join(secretsDirectory, "priority-historical-image.json");
+      atomicJson(override, { services: { schema: { image: baseline.images.migration,
+        environment: { TEMPO_POSTGRES_ADMIN_URL: `postgresql://postgres@postgres:5432/${sentinel}` } } } });
+      const fixture = "/source/database/tests/check_postgres_study_priority.py";
+      const schema = (...args) => run("docker", [...compose, "-f", priorityResourceLimits, "run", "--rm", "--no-deps", "-e", `TEMPO_TEST_COMPOSE_PROJECT=${project}`, "schema", "python", fixture, "--owned-stack", ...args], { timeout: 180_000 });
+      let failure;
+      try {
+        schema("--sentinel-create", sentinel);
+        // The immutable predecessor maintenance image owns initialization to 65.
+        run("docker", [...compose, "-f", priorityResourceLimits, "-f", override, "run", "--rm", "--no-deps", "schema", "database/tooling/apply_postgres_migrations.py"], { timeout: 180_000 });
+        run("docker", [...compose, "-f", priorityResourceLimits, "run", "--rm", "--no-deps", "-e", `TEMPO_TEST_COMPOSE_PROJECT=${project}`, "--volume", `${evidenceDirectory}:/evidence`, "schema", "python", fixture, "--owned-stack", "--historical-only", "--sentinel-db", sentinel, "--evidence", "/evidence"], { timeout: 180_000 });
+        const report = JSON.parse(readFileSync(join(evidenceDirectory, "native.json"), "utf8"));
+        const identity = "test_postgres_priority_index_only_rollback_preserves_accepted_reviews", result = report.cases?.[identity];
+        assert.equal(report.complete, true); assert.equal(report.historical_only, true); assert.deepEqual(Object.keys(report.cases), [identity]);
+        assert.deepEqual(result.schema_path, [49, 48, 49]); assert.equal(result.accepted_reviews_retained, 60);
+        assert.equal(result.sentinel_schema, 65); assert.equal(result.sentinel_exact_rows_unchanged, true);
+        assert.equal(result.historical_fixture_exact_rows_unchanged, true); assert.equal(result.original_ledger_unchanged, true);
+        assert.deepEqual(result.priority_indexes, ["idx_operation_retry_due", "idx_operation_lease_due", "idx_operation_queue_due"]);
+      } catch (error) { failure = error; }
+      finally {
+        try { schema("--sentinel-drop", sentinel); }
+        catch (error) { failure = failure ? new AggregateError([failure, error], "Historical proof and sentinel cleanup failed") : error; }
+      }
+      if (failure) throw failure;
+      atomicJson(join(evidenceDirectory, "assembly.json"), { revision: candidateRevision, predecessor_revision: baseline.revision,
+        predecessor_receipt_sha256: baseline.provenance.receipt_sha256, predecessor_image: baseline.images.migration, project, sentinel, sentinel_cleanup: true, complete: true });
+    }
   },
   schema_migrations: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",

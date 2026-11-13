@@ -14,9 +14,69 @@ import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
 import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
 import { validatePostgresScenarios } from "../../scripts/ci-run-layer.mjs";
 import { stopApplicationsAndVerifyWorkerSignals } from "../../database/tests/redis/check-redis-readiness.mjs";
+import { resolvePython } from "../../scripts/resolve-python.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const parse = (args) => parsePostgresTestOptions(args, {}, root);
+
+test("P08 historical rollback selects exactly one case and rejects mixed selectors", () => {
+  const options = parse(["--mode", "priority-historical"]);
+  assert.deepEqual(postgresTestStages(options), ["compose_config", "image_build", "priority_postgres_startup", "priority_historical_rollback", "cleanup"]);
+  assert.equal(options.skipBrowser, true);
+  for (const args of [["--mode", "priority-historical", "--browser-grep", "anything"], ["--mode", "priority-historical", "--native-check", "position-grade-effects"], ["--mode", "priority-historical", "--maintained-study-proof"], ["--mode", "priority-historical", "--skip-browser"]]) assert.throws(() => parse(args));
+  assert.throws(() => parsePostgresTestOptions(["--mode", "priority-historical"], { TEMPO_PG_STALE_DELIVERY_ONLY: "1" }, root));
+});
+
+test("P08 proof failure still runs the owning cleanup stage", async () => {
+  const stages = postgresTestStages(parse(["--mode", "priority-historical"])), calls = [];
+  const actions = Object.fromEntries(stages.map(stage => [stage, async () => { calls.push(stage); if (stage === "priority_historical_rollback") throw new Error("fixture failure"); }]));
+  await assert.rejects(executePostgresTestPlan(stages, actions, async (_name, action) => action()), /fixture failure/);
+  assert.equal(calls.at(-1), "cleanup");
+});
+
+test("P08 historical stage binds installed image and always attempts owned sentinel cleanup", () => {
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf("  priority_historical_rollback: async () => {");
+  const end = source.indexOf("  schema_migrations: async () => {", start);
+  const stage = source.slice(start, end);
+  assert(start >= 0 && end > start);
+  assert.match(stage, /baseline\.kind !== "installed-receipt"/);
+  assert.match(stage, /baseline\.images\.migration/);
+  assert.match(stage, /finally\s*\{[\s\S]*--sentinel-drop/);
+  assert.match(stage, /sentinel_schema, 65/);
+  assert.match(stage, /accepted_reviews_retained, 60/);
+  const startupStart = source.indexOf("  priority_postgres_startup: async () => {");
+  const startupEnd = source.indexOf("  service_health: async () => {", startupStart);
+  const startup = source.slice(startupStart, startupEnd);
+  assert(startupStart >= 0 && startupEnd > startupStart);
+  assert.match(startup, /"--wait", "postgres"/);
+  assert.match(startup, /"--no-deps", "schema"/);
+  assert(!startup.includes('"api"') && !startup.includes('"redis"') && !startup.includes('"web"'));
+  assert.match(source, /options\.mode === 'priority-historical' \? \['schema'\] : \[\]/);
+});
+
+test("P08 strict historical copy contract refuses a changed source schema", () => {
+  const script = `import runpy
+m=runpy.run_path('database/tests/check_postgres_study_priority.py')
+f=m['require_copy_contract']; f.__globals__['table_contract']=lambda database, table: (database, table)
+try: f('current','historical')
+except RuntimeError as error: assert 'Schema or foreign keys differ' in str(error)
+else: raise AssertionError('Mismatched copy was accepted')`;
+  const result = spawnSync(resolvePython(), ["-c", script], { cwd: root, env: { ...process.env, PYTHONPATH: "backend:database" }, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("P08 sentinel refuses foreign database and project identities before connecting", () => {
+  const script = `import os,runpy
+m=runpy.run_path('database/tests/check_postgres_study_priority.py'); f=m['require_owned_sentinel']
+for name,project in [('live','tempo-pg-regressions-1-12345678'),('tempo_priority_sentinel_'+'a'*32,'tempo')]:
+ os.environ['TEMPO_TEST_COMPOSE_PROJECT']=project
+ try: f('must-not-connect',name)
+ except RuntimeError: pass
+ else: raise AssertionError('foreign target accepted')`;
+  const result = spawnSync(resolvePython(), ["-c", script], { cwd: root, env: { ...process.env, PYTHONPATH: "backend:database" }, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
 
 test("disposable_health_probe_does_not_hold_foreground_admission", () => {
   const composeSource = readFileSync(join(root, "docker-compose.postgres.test.yml"), "utf8");
