@@ -5,6 +5,7 @@ calling these functions. This adapter never opens or commits a connection.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -84,11 +85,15 @@ def lock_attempt(database: PostgresConnection, attempt_id: str) -> bool:
     return bool(row and row[0])
 
 
-def acceptance_clock(database):
+def acceptance_clock(database: PostgresConnection) -> tuple[datetime, str]:
     row = database.execute_native("SELECT statement_timestamp(),timezone FROM settings WHERE id=1", ()).fetchone()
     if not row:
         raise ValueError("study_timezone_unavailable")
-    return row[0], row[1]
+    observed: object = row[0]
+    timezone_name: object = row[1]
+    if not isinstance(observed, datetime) or not isinstance(timezone_name, str):
+        raise ValueError("invalid_study_acceptance_clock")
+    return observed, timezone_name
 
 
 def grade_receipt(database, event_id):

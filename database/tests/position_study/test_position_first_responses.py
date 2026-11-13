@@ -6,6 +6,31 @@ from types import SimpleNamespace as NS
 
 import pytest
 
+
+@pytest.mark.parametrize("zone", ["UTC", "local", "unknown/zone"])
+def test_acceptance_clock_preserves_database_instant_and_timezone(zone):
+    from tempo_storage.study import position_first_responses as owner
+    instant = datetime(2026, 11, 13, 1, 2, tzinfo=timezone.utc)
+    calls = []
+    class Database:
+        def execute_native(self, sql, parameters):
+            calls.append((sql, parameters))
+            return NS(fetchone=lambda: (instant, zone))
+    assert owner.acceptance_clock(Database()) == (instant, zone)
+    assert calls == [("SELECT statement_timestamp(),timezone FROM settings WHERE id=1", ())]
+
+
+@pytest.mark.parametrize("row,error", [(None, "study_timezone_unavailable"),
+    (("not a datetime", "UTC"), "invalid_study_acceptance_clock"),
+    ((datetime(2026, 1, 1, tzinfo=timezone.utc), None), "invalid_study_acceptance_clock")])
+def test_acceptance_clock_rejects_missing_or_invalid_driver_values(row, error):
+    from tempo_storage.study import position_first_responses as owner
+    class Database:
+        def execute_native(self, *_):
+            return NS(fetchone=lambda: row)
+    with pytest.raises(ValueError, match=f"^{error}$"):
+        owner.acceptance_clock(Database())
+
 from app.study import position_checkpoint as evidence
 from tempo_storage.study import position_first_responses as storage
 
