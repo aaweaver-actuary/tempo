@@ -409,11 +409,14 @@ class LearningReviewAdapter:
         )
 
     def finish_position_receipt(self, command: ReviewCommand, context: ReviewContext, result: ReviewResult) -> None:
+        attempt = self._review_attempt
+        if attempt is None:
+            raise RuntimeError("Position review has no resolved queue attempt")
         payload = result.current_mapping()
         storage.save_continuation(self.database, json.dumps(payload), command.attempt_id)
         self.retain_completion(
             command,
-            self._review_attempt,
+            attempt,
             json.dumps(
                 {
                     **payload,

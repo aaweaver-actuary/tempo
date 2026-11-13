@@ -46,6 +46,46 @@ def names(store):
     return [call[0] for call in store.calls]
 
 
+def test_position_receipt_requires_resolved_attempt_before_any_write(monkeypatch):
+    from app.services import learning_review_adapter as adapter_module
+
+    adapter = adapter_module.LearningReviewAdapter(object(), None)
+    monkeypatch.setattr(adapter_module.storage, "save_continuation", lambda *_: pytest.fail("unexpected receipt write"))
+    monkeypatch.setattr(adapter_module.storage, "retain_completion", lambda *_: pytest.fail("unexpected attempt write"))
+    result = review.ReviewResult.from_dict({"persisted": True, "queue_entry_id": 1, "review_id": 2})
+    with pytest.raises(RuntimeError, match="no resolved queue attempt"):
+        adapter.finish_position_receipt(_fixture.command(), _fixture.CONTEXT, result)
+
+
+@pytest.mark.parametrize("recovered", [False, True])
+def test_position_receipt_retains_exact_resolved_attempt_and_original_identity(monkeypatch, recovered):
+    from app import queue_attempt_origins
+    from app.services import learning_review_adapter as adapter_module
+
+    database = object()
+    adapter = adapter_module.LearningReviewAdapter(database, None)
+    attempt = replace(_fixture.Capabilities().attempt, recovered=recovered)
+    adapter._review_attempt = attempt
+    command = _fixture.command(recorded_at=_fixture.NOW.isoformat())
+    result = review.ReviewResult.from_dict({"persisted": True, "queue_entry_id": attempt.id,
+                                            "review_id": 2, "extra": [3, 1]})
+    events = []
+    monkeypatch.setattr(adapter_module.storage, "save_continuation", lambda *args: events.append(("receipt", args)))
+    monkeypatch.setattr(adapter_module.storage, "retain_completion", lambda *args: events.append(("queue", args)))
+    monkeypatch.setattr(queue_attempt_origins, "retain_recovered_completion", lambda *args: events.append(("origin", args)))
+    adapter.finish_position_receipt(command, _fixture.CONTEXT, result)
+    payload = result.current_mapping()
+    complete = json.dumps({**payload, "_request": {"outcome": command.outcome, "guided": command.guided},
+                           "_recorded_at": _fixture.CONTEXT.reviewed_at.isoformat(), "_attempt_id": command.attempt_id})
+    assert events[:2] == [("receipt", (database, json.dumps(payload), command.attempt_id)),
+                          ("queue", (database, complete, attempt.id, command.card_id))]
+    if recovered:
+        assert events[2:] == [("origin", (database, {"id": attempt.id, "card_id": attempt.card_id,
+                                                    "revision": attempt.revision}, complete))]
+    else:
+        assert len(events) == 2
+
+
 def test_original_receipt_replay_and_changed_completion_clock_conflict():
     store = PositionStore()
     command = _fixture.command(
