@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {allocatedNativeProofSource,postgresProofAllocations,verifyRestoredPostgresConsumers} from "./postgres-maintenance-proof.mjs";
 import { withDevelopmentStartup, reconcileDevelopmentStartup, assertDevelopmentProjectOwned, composeResourceLimits, managedBuild, recordBudgetResource, runWithDevelopmentBudget, managedComposeBuild, resourceBudgets, waitForStudyQuiet } from '../../scripts/development-budget.mjs';
 import { randomBytes } from "node:crypto";
-import { spawnSync, execFileSync } from "node:child_process";
+import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { createServer } from "node:net";
 import { accessSync, chmodSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -436,7 +436,53 @@ async function pollForConfirmation(response, expectedOperationId) {
 }
 
 async function waitForStudyableImport(...argumentsList) {
-  return measureScenario.detail("import_publication", "readiness", () => pollForStudyableImport(...argumentsList));
+  let observer;
+  if (options.p14Checkpoint1) {
+    try {
+      const owned = assertDevelopmentProjectOwned(project);
+      const api = owned.filter(c => c.Config?.Labels?.['com.docker.compose.service'] === 'api' && c.State?.Running);
+      assert.equal(api.length, 1, 'P14 observer requires the owned running API');
+      const image = candidateInspect(api[0].Image);
+      assert.equal(image.Config.Labels['org.opencontainers.image.revision'], candidateRevision);
+      const source = readFileSync('database/tests/p14-queue-progress-observer.py', 'utf8');
+      const child = spawn('docker', ['exec', '-i', '-e', `TEMPO_P14_OBSERVER_PROJECT=${project}`,
+        api[0].Id, 'timeout', '60s', 'python', '-c', source], {env: environment, stdio: ['pipe', 'pipe', 'pipe']});
+      observer = {child, output: '', error: null, overflow: false};
+      child.on('error', error => { observer.error = error.name; });
+      child.stdout.on('data', chunk => {
+        if (observer.output.length + chunk.length > 2_000_000) observer.overflow = true;
+        else observer.output += chunk.toString();
+      });
+      // Never retain stderr: driver errors may contain connection credentials.
+      child.stderr.resume();
+      child.stdin.on('error', error => { observer.error = error.name; });
+      observer.done = new Promise(resolve => child.once('close', code => resolve(code)));
+    } catch (error) {
+      try { atomicJson(`test-results/native/${project}-p14-queue-observer.json`, {revision:candidateRevision, project, diagnostic_error:error.name}); }
+      catch { console.error('P14 queue observer evidence unavailable'); }
+    }
+  }
+  try {
+    return await measureScenario.detail("import_publication", "readiness", () => pollForStudyableImport(...argumentsList));
+  } finally {
+    if (observer) {
+      try {
+        observer.child.stdin.end();
+        let timer;
+        const timeout = new Promise(resolve => { timer = setTimeout(() => resolve('timeout'), 65000); });
+        const exit = await Promise.race([observer.done, timeout]);
+        clearTimeout(timer);
+        if (exit === 'timeout') observer.child.kill('SIGTERM');
+        atomicJson(`test-results/native/${project}-p14-queue-observer.json`, {
+          revision:candidateRevision, project, observer_exit:exit, diagnostic_error:observer.error,
+          overflow:observer.overflow, samples:observer.output.split('\n').filter(Boolean).map(line => JSON.parse(line)),
+        });
+      } catch (error) {
+        // Diagnostics must never replace the Study outcome or change its deadline.
+        console.error(`P14 queue observer unavailable: ${error.name}`);
+      }
+    }
+  }
 }
 
 async function pollForStudyableImport(repertoireId) {

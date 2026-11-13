@@ -26,6 +26,15 @@ test("P14 checkpoint has one fixed browser and native selection", () => {
   for (const [, title] of checkpoint1BrowserCases) assert(new RegExp(options.browserGrep).test(title));
   for (const args of [["--p14-checkpoint1"], ["--mode", "browser", "--p14-checkpoint1"], ["--mode", "study", "--p14-checkpoint1", "--browser-grep", "other"], ["--mode", "study", "--p14-checkpoint1", "--native-check", "position-grade-effects"], ["--mode", "study", "--p14-checkpoint1", "--p14-checkpoint1"]]) assert.throws(() => parse(args));
 });
+test("P14 queue observer rejects a foreign project before connecting", () => {
+  const result = spawnSync(resolvePython(), ["database/tests/p14-queue-progress-observer.py"], {
+    cwd: root, env: { ...process.env, TEMPO_TEST_INSTANCE: "disposable", TEMPO_P14_OBSERVER_PROJECT: "foreign" },
+    encoding: "utf8", timeout: 5000,
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /AssertionError/);
+  assert.equal(result.stdout, "");
+});
 test("P14 frozen owner bridge refuses foreign or incomplete identities before connecting", () => {
   const script = `import os,runpy
 os.environ['PGPASSFILE']='/run/secrets/admin_pgpass'
