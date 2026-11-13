@@ -2,6 +2,69 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "position-annotation-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/annotation_commands.py#save_position_annotation"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "position-annotation-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/annotation_commands.py"
+      ],
+      "ownershipRole": "Register and apply position annotation command",
+      "dependencyNotes": [
+        "Registers repertoires.annotation.save at import; task composition imports this module. Uses authored-repertoire transport, python-chess FEN validation, UTC clock and caller-provided PostgreSQL connection."
+      ],
+      "censusScope": "annotation"
+    },
+    {
+      "id": "position-annotation-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/commands",
+      "publicExports": [
+        "database/tempo_storage/commands/annotations.py#repertoire_for_update",
+        "database/tempo_storage/commands/annotations.py#delete_position_annotation",
+        "database/tempo_storage/commands/annotations.py#save_position_annotation"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/commands/annotations.py"
+      ],
+      "ownershipRole": "Lock repertoire and persist position annotation",
+      "dependencyNotes": [
+        "Caller-transaction SQL locks the repertoire and deletes or upserts its position annotation; transaction and annotation decisions remain caller-owned."
+      ],
+      "censusScope": "annotation"
+    },
+    {
       "id": "teaching-state-command",
       "type": "integration",
       "maintainer": "Tempo",

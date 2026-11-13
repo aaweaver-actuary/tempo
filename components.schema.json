@@ -159,7 +159,8 @@
               "prefix_split",
               "readiness",
               "settings",
-              "teaching"
+              "teaching",
+              "annotation"
             ]
           }
         }

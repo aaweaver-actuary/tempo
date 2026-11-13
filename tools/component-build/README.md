@@ -359,8 +359,15 @@ The command registers `cards.teaching.record` and is imported by task compositio
 the adapter locks the active card and inserts or replays the timestamp under the
 caller transaction. The transport, gateway and composition remain external edges.
 
-At this base revision, 217 of 291 tracked Python files in those trees remain
-outside the combined 74-file selections. The registry alone assigns owners;
+A ninth selection maps the existing position-annotation command and SQL adapter.
+The command validates FEN and registers `repertoires.annotation.save`; task
+composition imports it. The adapter locks a repertoire and deletes or upserts
+annotations in the caller transaction. Gateway, transport and task composition
+remain external. The inherited legacy command fixture remains unresolved; this
+map does not qualify runtime behavior.
+
+At this base revision, 215 of 291 tracked Python files in those trees remain
+outside the combined 76-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
