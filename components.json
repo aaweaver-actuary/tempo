@@ -2,6 +2,216 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "study-queue-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/queue_application.py#reconcile_unseen_queue",
+        "backend/app/services/queue_application.py#admit_prioritized_opening_cards",
+        "backend/app/services/queue_application.py#seed_queue",
+        "backend/app/services/queue_application.py#materialize_daily_queue",
+        "backend/app/services/queue_application.py#requeue",
+        "backend/app/services/queue_application.py#request_queue_refresh_in_transaction"
+      ],
+      "dependencies": [
+        "queue-application-admission-storage",
+        "queue-application-eligibility-storage",
+        "queue-application-publication-storage",
+        "queue-application-requeue-storage",
+        "queue-application-seeding-storage",
+        "study-queue-order-receipt",
+        "queue-ordering-facade",
+        "tactics-catalog-service",
+        "durable-task-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/queue_application.py"
+      ],
+      "ownershipRole": "Coordinate Study queue application",
+      "dependencyNotes": [
+        "Uses caller transactions and existing queue admission, frozen order, graph progression and presentation owners; prepared/current source fences and durable refresh remain with their existing owners."
+      ],
+      "censusScope": "queue_application"
+    },
+    {
+      "id": "queue-application-admission-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/queue_refresh/application",
+      "publicExports": [
+        "database/tempo_storage/queue_refresh/application/admission.py#unseen_opening_page",
+        "database/tempo_storage/queue_refresh/application/admission.py#product_source_facts",
+        "database/tempo_storage/queue_refresh/application/admission.py#product_current_queue_facts",
+        "database/tempo_storage/queue_refresh/application/admission.py#lock_product_admission",
+        "database/tempo_storage/queue_refresh/application/admission.py#introduction_source_binding"
+      ],
+      "dependencies": [
+        "study-queue-position-lock"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/queue_refresh/application/admission.py",
+        "database/tempo_storage/queue_refresh/application/__init__.py"
+      ],
+      "ownershipRole": "Read and fence opening admission facts",
+      "dependencyNotes": [
+        "Caller-transaction SQL reads bounded source, queue and route facts; optional shared source locks, graph advisory fence and card/day admission locks support caller revalidation."
+      ],
+      "censusScope": "queue_application"
+    },
+    {
+      "id": "queue-application-eligibility-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/queue_refresh/application",
+      "publicExports": [
+        "database/tempo_storage/queue_refresh/application/eligibility.py#locked_opening_page",
+        "database/tempo_storage/queue_refresh/application/eligibility.py#ready_unlock_candidates",
+        "database/tempo_storage/queue_refresh/application/eligibility.py#unlock_eligible_cards"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/queue_refresh/application/eligibility.py"
+      ],
+      "ownershipRole": "Read and update queue eligibility",
+      "dependencyNotes": [
+        "Caller-transaction SQL locks bounded opening candidates and updates eligibility and queue entry state; progression predicate and policy remain external."
+      ],
+      "censusScope": "queue_application"
+    },
+    {
+      "id": "queue-application-publication-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/queue_refresh/application",
+      "publicExports": [
+        "database/tempo_storage/queue_refresh/application/publication.py#apply_position",
+        "database/tempo_storage/queue_refresh/application/publication.py#save_plan",
+        "database/tempo_storage/queue_refresh/application/publication.py#quarantine_candidates",
+        "database/tempo_storage/queue_refresh/application/publication.py#begin_projection",
+        "database/tempo_storage/queue_refresh/application/publication.py#publish_projection"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/queue_refresh/application/publication.py"
+      ],
+      "ownershipRole": "Write queue plan and projection",
+      "dependencyNotes": [
+        "Caller-transaction SQL writes positions, plan, diagnostics and projection and reads quarantine candidates; caller owns ordering, validation and publication decision."
+      ],
+      "censusScope": "queue_application"
+    },
+    {
+      "id": "queue-application-requeue-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/queue_refresh/application",
+      "publicExports": [
+        "database/tempo_storage/queue_refresh/application/requeue.py#next_cycle",
+        "database/tempo_storage/queue_refresh/application/requeue.py#next_position",
+        "database/tempo_storage/queue_refresh/application/requeue.py#shift_positions",
+        "database/tempo_storage/queue_refresh/application/requeue.py#append_attempt",
+        "database/tempo_storage/queue_refresh/application/requeue.py#set_review_admission"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/queue_refresh/application/requeue.py"
+      ],
+      "ownershipRole": "Persist repeat queue entries",
+      "dependencyNotes": [
+        "Caller-transaction SQL reads next cycle and positions and writes repeat attempt/admission; availability and order decisions remain external."
+      ],
+      "censusScope": "queue_application"
+    },
+    {
+      "id": "queue-application-seeding-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/queue_refresh/application",
+      "publicExports": [
+        "database/tempo_storage/queue_refresh/application/seeding.py#opening_allowance",
+        "database/tempo_storage/queue_refresh/application/seeding.py#due_cards",
+        "database/tempo_storage/queue_refresh/application/seeding.py#append_due_card",
+        "database/tempo_storage/queue_refresh/application/seeding.py#new_study_cards",
+        "database/tempo_storage/queue_refresh/application/seeding.py#append_study_card"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/queue_refresh/application/seeding.py"
+      ],
+      "ownershipRole": "Read and seed due Study work",
+      "dependencyNotes": [
+        "Caller-transaction SQL reads allowance and due/new cards and appends eligible work; application owns selection and scheduling decisions."
+      ],
+      "censusScope": "queue_application"
+    },
+    {
       "id": "study-queue-order-policy",
       "type": "integration",
       "maintainer": "Tempo",

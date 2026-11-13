@@ -457,8 +457,16 @@ defer, queue refresh and main/task/placement are existing edges. This map is not
 native qualification. The eight queue, three PGN, three legacy and one retained
 mutation fixture failures remain unresolved.
 
-At this base revision, 158 of 291 tracked Python files in those trees remain
-outside the combined 133-file selections. The registry alone assigns owners;
+A twenty-second selection maps Study queue application coordination and its
+admission, eligibility, publication, repeat and seeding SQL. Prepared source and
+queue facts, graph and card/day locks, caller transactions and existing order,
+Tactics, frozen-order and durable-task edges remain visible. This is a source map,
+not native qualification. The eight queue, three PGN, three legacy and one retained
+mutation fixture failures remain unresolved. The queue admission boundary fixture
+also fails on missing `resolve_opportunity`; it is not runtime proof.
+
+At this base revision, 151 of 291 tracked Python files in those trees remain
+outside the combined 140-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

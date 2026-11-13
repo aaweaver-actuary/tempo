@@ -172,7 +172,8 @@
               "repertoire_controls",
               "tactics",
               "queue_commands",
-              "queue_order"
+              "queue_order",
+              "queue_application"
             ]
           }
         }
