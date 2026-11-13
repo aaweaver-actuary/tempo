@@ -4,6 +4,7 @@ import importlib.util
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import tempo_learning_review as review
@@ -34,7 +35,7 @@ class PositionStore(_fixture.Capabilities):
     def save_position_receipt(self, command, context, result):
         self.save_receipt(command, context, result)
 
-    def apply_position_effects(self, command, context, result):
+    def apply_position_effects(self, command, context, result, completion):
         self.event("position_effects")
 
     def finish_position_receipt(self, command, context, result):
@@ -43,6 +44,218 @@ class PositionStore(_fixture.Capabilities):
 
 def names(store):
     return [call[0] for call in store.calls]
+
+
+@pytest.mark.parametrize("raw", [' [1, {"unknown": true}] ', 'null', '"old"'])
+def test_review_entrypoint_and_reconciliation_keep_opaque_original_result(monkeypatch, raw):
+    from app import review_commands
+    from app.services import learning_review_adapter as owner
+
+    original = review.ReviewResult.from_original(raw)
+    monkeypatch.setattr(owner.learning, "submit_review", lambda *_args: original)
+    database = object()
+    payload = {"card_id": "card-a", "review": {"outcome": "correct", "attempt_id": "original"}}
+    assert owner.submit_legacy_review(database, payload) == json.loads(raw)
+    assert original.payload_json == raw
+    operations = []
+    monkeypatch.setattr(review_commands.storage, "begin_reconciliation", lambda db: operations.append(("begin", db)))
+    monkeypatch.setattr(review_commands.storage, "release_reconciliation", lambda db: operations.append(("release", db)))
+    monkeypatch.setattr(review_commands.storage, "rollback_reconciliation", lambda db: pytest.fail("unexpected rollback"))
+    assert review_commands.reconcile_review(database, payload) == json.loads(raw)
+    assert operations == [("begin", database), ("release", database)]
+    assert original.payload_json == raw
+
+
+def test_reconciliation_adapter_preserves_retained_payload_and_normalization(monkeypatch):
+    from app.services import learning_review_adapter as owner
+
+    raw = '{ "persisted": true, "review_id": null, "queue_entry_id": 1, "requeue_entry_id": null, "reconciliation": "history_only", "extra": [3, 1] }'
+    retained = owner.RetainedReconciliation(raw)
+    adapter = owner.LearningReviewAdapter(object(), None, observed_at=_fixture.NOW,
+        policy_provider=lambda: SimpleNamespace(timezone="UTC", light_first_interval_days=7))
+    seen = []
+    monkeypatch.setattr(owner, "reconcile_completed_review", lambda *args, **kwargs: seen.append(kwargs["attempt_id"]) or retained)
+    result = adapter.reconcile_completed(_fixture.command(), _fixture.Capabilities().attempt, _fixture.CONTEXT,
+                                         attempt_id="attempt-a", guided=False, revision=1)
+    assert seen == ["attempt-a"] and retained.result_json == raw
+    assert result.as_dict() == json.loads(raw) and result.as_dict()["extra"] == [3, 1]
+    assert result.payload_json == json.dumps(json.loads(raw))
+
+
+@pytest.mark.parametrize("attempt_id", ["", "other"])
+def test_reconciliation_adapter_rejects_missing_or_foreign_original_before_owner(monkeypatch, attempt_id):
+    from app.services import learning_review_adapter as owner
+    adapter = owner.LearningReviewAdapter(object(), None)
+    monkeypatch.setattr(owner, "reconcile_completed_review", lambda *_args, **_kwargs: pytest.fail("unexpected reconciliation"))
+    with pytest.raises(review.ReviewConflict) as caught:
+        adapter.reconcile_completed(_fixture.command(), _fixture.Capabilities().attempt, _fixture.CONTEXT,
+                                    attempt_id=attempt_id, guided=False, revision=1)
+    assert caught.value.code == "queue_attempt_unprovable"
+
+
+@pytest.mark.parametrize("raw,error", [("{", json.JSONDecodeError), ('[1,2]', ValueError), ('{"persisted":true}', ValueError)])
+def test_reconciliation_adapter_retains_existing_malformed_receipt_failures(monkeypatch, raw, error):
+    from app.services import learning_review_adapter as owner
+
+    adapter = owner.LearningReviewAdapter(object(), None, observed_at=_fixture.NOW,
+        policy_provider=lambda: SimpleNamespace(timezone="UTC", light_first_interval_days=7))
+    retained = owner.RetainedReconciliation(raw)
+    monkeypatch.setattr(owner, "reconcile_completed_review", lambda *_args, **_kwargs: retained)
+    with pytest.raises(error):
+        adapter.reconcile_completed(_fixture.command(), _fixture.Capabilities().attempt, _fixture.CONTEXT,
+                                    attempt_id="attempt-a", guided=False, revision=1)
+    assert retained.result_json == raw
+
+
+@pytest.mark.parametrize("defect", ["missing_fence", "foreign_writer", "attempt", "card", "revision", "entry", "divergent_receipt", "null_review", "original_receipt"])
+def test_position_effect_authority_rejects_unbound_original_before_grade(monkeypatch, defect):
+    from app.services import learning_review_adapter as owner
+    from app.study.position_learning import grade_effects
+
+    database = object()
+    adapter = owner.LearningReviewAdapter(database, None)
+    plan = SimpleNamespace(attempt_id="attempt-a", original_card_id="card-a", original_card_revision=1,
+                           queue_entry_id=1, decision_slots=(object(),))
+    adapter._position_fence = SimpleNamespace(database=database, preparation=SimpleNamespace(plan=plan))
+    evidence = _fixture.completion()
+    command = _fixture.command(completion=evidence)
+    result = review.ReviewResult.from_dict({"persisted": True, "queue_entry_id": 1, "review_id": 7, "idempotent": False})
+    if defect == "missing_fence": adapter._position_fence = None
+    elif defect == "foreign_writer": adapter._position_fence.database = object()
+    elif defect == "attempt": command = replace(command, attempt_id="foreign")
+    elif defect == "card": command = replace(command, card_id="foreign")
+    elif defect == "revision": evidence = replace(evidence, card_revision=2)
+    elif defect == "entry": evidence = replace(evidence, queue_entry_id=2)
+    elif defect == "divergent_receipt": result = replace(result, current=replace(result.current, review_id=8))
+    elif defect == "null_review": result = review.ReviewResult.from_dict({"persisted": True, "queue_entry_id": 1, "review_id": None})
+    elif defect == "original_receipt": result = review.ReviewResult.from_original('["opaque"]')
+    monkeypatch.setattr(grade_effects, "apply_in_borrowed_transaction", lambda *_args, **_kwargs: pytest.fail("unexpected grade"))
+    with pytest.raises(review.ReviewFailure) as caught:
+        adapter.apply_position_effects(command, _fixture.CONTEXT, result, evidence)
+    assert caught.value.status_code == 409 and caught.value.code == "opening_evidence_conflict"
+
+
+@pytest.mark.parametrize("hold", [False, True])
+def test_position_effect_uses_original_authority_after_writer_and_source_fence(monkeypatch, hold):
+    from app.services import learning_review_adapter as owner
+    from app.study import position_checkpoint
+    from app.study.position_learning import grade_effects
+    from tempo_evidence_math.position_learning import Hold
+    from tempo_storage.study import position_first_responses
+
+    database, calls = object(), []
+    plan = SimpleNamespace(attempt_id="attempt-a", original_card_id="card-a", original_card_revision=1,
+                           queue_entry_id=1, decision_slots=(object(),))
+    fence = SimpleNamespace(database=database, preparation=SimpleNamespace(plan=plan))
+    adapter = owner.LearningReviewAdapter(database, None)
+    adapter._position_fence = fence
+    evidence = _fixture.completion()
+    command = _fixture.command(completion=evidence)
+    result = review.ReviewResult.from_dict({"persisted": True, "queue_entry_id": 1, "review_id": 7, "idempotent": False})
+    inputs = SimpleNamespace(attempt_id="attempt-a", event_ids=("event",), owner_epoch="epoch", authored_digest="digest")
+    monkeypatch.setattr(position_first_responses, "acceptance_clock", lambda db: (_fixture.NOW, "UTC"))
+    monkeypatch.setattr(position_checkpoint, "position_completion_inputs", lambda *args: calls.append("inputs") or inputs)
+    monkeypatch.setattr(position_checkpoint, "fence_position_completion", lambda *args: calls.append("fence"))
+    def apply(db, attempt_id, event_ids, **kwargs):
+        calls.append(("grade", db, attempt_id, event_ids, kwargs["completion"]))
+        return Hold("source_hold") if hold else []
+    monkeypatch.setattr(grade_effects, "apply_in_borrowed_transaction", apply)
+    if hold:
+        with pytest.raises(review.ReviewFailure) as caught:
+            adapter.apply_position_effects(command, _fixture.CONTEXT, result, evidence)
+        assert caught.value.code == "opening_evidence_conflict"
+    else:
+        adapter.apply_position_effects(command, _fixture.CONTEXT, result, evidence)
+    assert calls == ["inputs", "fence", ("grade", database, "attempt-a", ("event",),
+        grade_effects.CompletionAuthority("attempt-a", 1, "card-a", 1, 7))]
+
+
+@pytest.mark.parametrize("attempt_id", [None, "", "different-attempt"])
+def test_position_lock_rejects_unbound_attempt_before_queue_or_attempt_lock(monkeypatch, attempt_id):
+    from app.services import learning_review_adapter as adapter_module
+    from tempo_storage.study import position_first_responses as positions
+
+    adapter = adapter_module.LearningReviewAdapter(object(), None)
+    adapter._position_fence = SimpleNamespace(preparation=SimpleNamespace(plan=SimpleNamespace(attempt_id="original")))
+    monkeypatch.setattr(positions, "lock_original_queue", lambda *_: pytest.fail("unexpected queue lock"))
+    monkeypatch.setattr(positions, "lock_attempt", lambda *_: pytest.fail("unexpected attempt lock"))
+    with pytest.raises(review.ReviewFailure) as caught:
+        adapter.lock_position_attempt(replace(_fixture.command(), attempt_id=attempt_id))
+    assert caught.value.status_code == 409 and caught.value.code == "opening_evidence_conflict"
+
+
+@pytest.mark.parametrize("queue_available,attempt_available", [(True, True), (False, True), (True, False)])
+def test_position_lock_uses_original_queue_then_exact_attempt(monkeypatch, queue_available, attempt_available):
+    from app.services import learning_review_adapter as adapter_module
+    from tempo_storage.study import position_first_responses as positions
+
+    database, plan = object(), SimpleNamespace(attempt_id="original")
+    adapter = adapter_module.LearningReviewAdapter(database, None)
+    adapter._position_fence = SimpleNamespace(preparation=SimpleNamespace(plan=plan))
+    locks = []
+    monkeypatch.setattr(positions, "lock_original_queue", lambda *args: locks.append(("queue", args)) or queue_available)
+    monkeypatch.setattr(positions, "lock_attempt", lambda *args: locks.append(("attempt", args)) or attempt_available)
+    command = replace(_fixture.command(), attempt_id="original")
+    if queue_available and attempt_available:
+        adapter.lock_position_attempt(command)
+    else:
+        with pytest.raises(review.ReviewFailure) as caught:
+            adapter.lock_position_attempt(command)
+        assert caught.value.status_code == 409 and caught.value.code == "opening_evidence_conflict"
+    assert locks == [("queue", (database, plan))] + (
+        [("attempt", (database, "original"))] if queue_available else []
+    )
+
+
+def test_position_lock_requires_existing_fence_before_any_lock(monkeypatch):
+    from app.services import learning_review_adapter as adapter_module
+    from tempo_storage.study import position_first_responses as positions
+
+    monkeypatch.setattr(positions, "lock_original_queue", lambda *_: pytest.fail("unexpected queue lock"))
+    monkeypatch.setattr(positions, "lock_attempt", lambda *_: pytest.fail("unexpected attempt lock"))
+    with pytest.raises(review.ReviewFailure) as caught:
+        adapter_module.LearningReviewAdapter(object(), None).lock_position_attempt(_fixture.command())
+    assert caught.value.status_code == 409 and caught.value.code == "opening_evidence_conflict"
+
+
+def test_position_receipt_requires_resolved_attempt_before_any_write(monkeypatch):
+    from app.services import learning_review_adapter as adapter_module
+
+    adapter = adapter_module.LearningReviewAdapter(object(), None)
+    monkeypatch.setattr(adapter_module.storage, "save_continuation", lambda *_: pytest.fail("unexpected receipt write"))
+    monkeypatch.setattr(adapter_module.storage, "retain_completion", lambda *_: pytest.fail("unexpected attempt write"))
+    result = review.ReviewResult.from_dict({"persisted": True, "queue_entry_id": 1, "review_id": 2})
+    with pytest.raises(RuntimeError, match="no resolved queue attempt"):
+        adapter.finish_position_receipt(_fixture.command(), _fixture.CONTEXT, result)
+
+
+@pytest.mark.parametrize("recovered", [False, True])
+def test_position_receipt_retains_exact_resolved_attempt_and_original_identity(monkeypatch, recovered):
+    from app import queue_attempt_origins
+    from app.services import learning_review_adapter as adapter_module
+
+    database = object()
+    adapter = adapter_module.LearningReviewAdapter(database, None)
+    attempt = replace(_fixture.Capabilities().attempt, recovered=recovered)
+    adapter._review_attempt = attempt
+    command = _fixture.command(recorded_at=_fixture.NOW.isoformat())
+    result = review.ReviewResult.from_dict({"persisted": True, "queue_entry_id": attempt.id,
+                                            "review_id": 2, "extra": [3, 1]})
+    events = []
+    monkeypatch.setattr(adapter_module.storage, "save_continuation", lambda *args: events.append(("receipt", args)))
+    monkeypatch.setattr(adapter_module.storage, "retain_completion", lambda *args: events.append(("queue", args)))
+    monkeypatch.setattr(queue_attempt_origins, "retain_recovered_completion", lambda *args: events.append(("origin", args)))
+    adapter.finish_position_receipt(command, _fixture.CONTEXT, result)
+    payload = result.current_mapping()
+    complete = json.dumps({**payload, "_request": {"outcome": command.outcome, "guided": command.guided},
+                           "_recorded_at": _fixture.CONTEXT.reviewed_at.isoformat(), "_attempt_id": command.attempt_id})
+    assert events[:2] == [("receipt", (database, json.dumps(payload), command.attempt_id)),
+                          ("queue", (database, complete, attempt.id, command.card_id))]
+    if recovered:
+        assert events[2:] == [("origin", (database, {"id": attempt.id, "card_id": attempt.card_id,
+                                                    "revision": attempt.revision}, complete))]
+    else:
+        assert len(events) == 2
 
 
 def test_original_receipt_replay_and_changed_completion_clock_conflict():
@@ -253,10 +466,10 @@ def test_production_adapter_translates_owner_schedule_and_reconciliation_without
     from app.services import learning_review_adapter as adapter_module
     from tempo_learning_review.models import ScheduleSnapshot, ReconciledReview
 
-    adapter = object.__new__(adapter_module.LearningReviewAdapter)
-    adapter.database = object()
-    adapter._command_timezone = 'America/New_York'
-    adapter._command_time = _fixture.NOW
+    adapter = adapter_module.LearningReviewAdapter(
+        object(), None, observed_at=_fixture.NOW,
+        policy_provider=lambda: SimpleNamespace(timezone='America/New_York', light_first_interval_days=7),
+    )
     owner_result = _fixture.Capabilities().scheduled
     reconciliation = {'persisted': True, 'review_id': None, 'queue_entry_id': 1,
         'requeue_entry_id': None, 'reconciliation': 'history_only', 'warning': 'retained', 'competing_review': None}
@@ -266,11 +479,11 @@ def test_production_adapter_translates_owner_schedule_and_reconciliation_without
     monkeypatch.setattr(adapter_module, 'training_timing_stage', lambda *_: nullcontext())
     monkeypatch.setattr(adapter_module, 'apply_scheduling_review', lambda *args, **kwargs: owner_result.copy())
     monkeypatch.setattr(adapter_module, 'card_schedule_state', lambda *args: snapshot.copy())
-    monkeypatch.setattr(adapter_module, 'reconcile_completed_review', lambda *args, **kwargs: reconciliation.copy())
+    monkeypatch.setattr(adapter_module, 'reconcile_completed_review', lambda *args, **kwargs: adapter_module.FreshReconciliation(reconciliation.copy()))
     command, context = _fixture.command(), _fixture.CONTEXT
     policy = review.ReviewPolicy('America/New_York', 7)
     assert adapter.schedule(command, context, outcome='correct', guided=False, policy=policy).as_dict() == owner_result
     captured = adapter.schedule_snapshot(command.card_id)
     assert isinstance(captured, ScheduleSnapshot) and captured.as_dict() == snapshot
-    result = adapter.reconcile_completed(command, _fixture.Capabilities().attempt, context, guided=False, revision=1)
+    result = adapter.reconcile_completed(command, _fixture.Capabilities().attempt, context, attempt_id=command.attempt_id, guided=False, revision=1)
     assert isinstance(result, ReconciledReview) and result.as_dict() == reconciliation

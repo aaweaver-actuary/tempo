@@ -1,7 +1,9 @@
 """Legacy review policy, lock selection and deferred effects borrow fixed storage."""
 
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import date, datetime, timezone
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +11,124 @@ from app.services import learning_review_adapter as review
 
 DAY = date(2026, 10, 21)
 NOW = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize("valid_only,value,expected", [
+    (True, 0, 0), (True, 8, 8), (False, None, None), (False, 9, 9),
+])
+def test_latest_review_id_preserves_sql_null_and_identity(valid_only, value, expected):
+    calls = []
+    class Database:
+        def execute(self, sql, parameters):
+            calls.append((sql, parameters))
+            return SimpleNamespace(fetchone=lambda: (value,))
+    adapter = review.LearningReviewAdapter(Database(), None)
+    assert adapter.latest_review_id("card", valid_only=valid_only) == expected
+    assert calls == [(("SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=%s AND invalidated_at IS NULL"
+                       if valid_only else "SELECT MAX(id) FROM reviews WHERE card_id=%s"), ("card",))]
+
+
+@pytest.mark.parametrize("valid_only,row", [(True, (None,)), (True, (True,)), (False, ("9",)), (False, None)])
+def test_latest_review_id_rejects_invalid_storage_fact(valid_only, row):
+    class Database:
+        def execute(self, *_):
+            return SimpleNamespace(fetchone=lambda: row)
+    with pytest.raises(TypeError):
+        review.LearningReviewAdapter(Database(), None).latest_review_id("card", valid_only=valid_only)
+
+
+@pytest.mark.parametrize("failure", ["policy", "day"])
+def test_calendar_capture_is_atomic_after_failed_initialization(monkeypatch, failure):
+    calls = []
+    def policy():
+        calls.append("policy")
+        if failure == "policy" and calls.count("policy") == 1:
+            raise RuntimeError("policy unavailable")
+        return SimpleNamespace(timezone="America/New_York", light_first_interval_days=3)
+
+    original_day = review.learning.review_day_at
+    def day(*args):
+        calls.append("day")
+        if failure == "day" and calls.count("day") == 1:
+            raise RuntimeError("day unavailable")
+        return original_day(*args)
+
+    monkeypatch.setattr(review.learning, "review_day_at", day)
+    adapter = review.LearningReviewAdapter(None, None, observed_at=NOW, policy_provider=policy)
+    with pytest.raises(RuntimeError):
+        adapter._capture_command_day()
+    assert adapter._command_calendar is None
+    captured = adapter._capture_command_day()
+    assert (captured.observed_at, captured.local_day, captured.policy.timezone) == (
+        NOW, DAY, "America/New_York")
+    assert adapter._capture_command_day() is captured
+    assert calls.count("policy") == 2
+
+
+def test_calendar_context_preserves_recorded_review_day_and_captured_policy():
+    from tempo_learning_review.models import ReviewCommand
+
+    adapter = review.LearningReviewAdapter(
+        None, None, observed_at=NOW,
+        policy_provider=lambda: SimpleNamespace(timezone="America/New_York", light_first_interval_days=3),
+    )
+    command = ReviewCommand("card", "correct", False, 4, "2026-10-21T02:00:00Z", None, None, "attempt", "{}")
+    context = adapter.context(command)
+    assert context.local_day == DAY
+    assert context.reviewed_at == datetime(2026, 10, 21, 2, tzinfo=timezone.utc)
+    assert context.review_day == date(2026, 10, 20)
+    assert adapter.policy() is adapter._capture_command_day().policy
+
+
+@pytest.mark.parametrize("method", ["save_receipt", "save_position_receipt"])
+def test_receipt_insert_uses_validated_facts_and_preserves_payload(monkeypatch, method):
+    from tempo_learning_review.models import ReviewResult
+
+    payload = {"persisted": True, "queue_entry_id": 4, "review_id": None,
+               "idempotent": True, "unknown": {"original": [3, 2, 1]}}
+    result = ReviewResult.from_dict(payload)
+    calls = []
+    monkeypatch.setattr(review.storage, "insert_receipt", lambda *args: calls.append(args))
+    database = object()
+    command = SimpleNamespace(attempt_id="original-attempt", card_id="card",
+                              outcome="correct", guided=False, recorded_at=None)
+    getattr(review.LearningReviewAdapter(database, None), method)(
+        command, SimpleNamespace(reviewed_at=NOW), result
+    )
+    assert calls == [(database, "original-attempt", "card", 4, "correct", 0, None,
+                      None, "canonical", None,
+                      json.dumps(payload) if method == "save_receipt" else "{}")]
+
+
+@pytest.mark.parametrize("method", ["save_receipt", "save_position_receipt"])
+@pytest.mark.parametrize("changes", [
+    {"queue_entry_id": 5}, {"review_id": 9}, {"requeue_entry_id": 8},
+    {"idempotent": False}, {"reconciliation": "different"}, {"persisted": False},
+])
+def test_receipt_insert_rejects_divergent_typed_facts_before_write(monkeypatch, method, changes):
+    from tempo_learning_review.models import ReviewResult
+
+    result = ReviewResult.from_dict({"persisted": True, "queue_entry_id": 4,
+                                     "review_id": 7, "idempotent": True})
+    assert result.current is not None
+    forged = replace(result, current=replace(result.current, **changes))
+    monkeypatch.setattr(review.storage, "insert_receipt", lambda *_: pytest.fail("unexpected write"))
+    command = SimpleNamespace(attempt_id="original", card_id="card", outcome="correct",
+                              guided=False, recorded_at=None)
+    with pytest.raises(ValueError, match="receipt facts"):
+        getattr(review.LearningReviewAdapter(None, None), method)(
+            command, SimpleNamespace(reviewed_at=NOW), forged
+        )
+
+
+def test_opaque_original_receipt_is_not_decoded_for_new_insertion(monkeypatch):
+    from tempo_learning_review.models import ReviewResult
+
+    original = ReviewResult.from_original(' ["historical", {"extra": 1}] ')
+    monkeypatch.setattr(review.storage, "insert_receipt", lambda *_: pytest.fail("unexpected write"))
+    with pytest.raises(ValueError, match="current review result"):
+        review.LearningReviewAdapter(None, None).save_receipt(None, None, original)
+    assert original.payload_json == ' ["historical", {"extra": 1}] '
 
 
 def test_injected_policy_never_opens_settings_read(monkeypatch):
@@ -204,9 +324,24 @@ def test_evidence_revision_authority_keeps_current_or_retained_completed_revisio
         completion=SimpleNamespace(card_revision=2),
     )
     assert (
-        review.LearningReviewAdapter(None, None).evidence_revision_allowed(command)
+        review.LearningReviewAdapter(None, None).evidence_revision_allowed(command, command.completion)
         is allowed
     )
+
+
+def test_evidence_persistence_uses_the_validated_original_completion(monkeypatch):
+    from app.study import position_checkpoint
+    from tempo_learning_review.models import EvidenceCompletion
+
+    database = object()
+    evidence = EvidenceCompletion("original-attempt", "card", 4, True, 2, '{ "event": "original" }')
+    adapter = review.LearningReviewAdapter(database, None, prepared_manifest={"manifest": "original"})
+    calls = []
+    monkeypatch.setattr(position_checkpoint, "persist_checkpoint", lambda *args, **kwargs: calls.append((args, kwargs)))
+    adapter.persist_evidence(SimpleNamespace(), evidence)
+    assert calls == [((database, {"checkpoint": {"event": "original"},
+                                 "prepared_manifest": {"manifest": "original"}}),
+                      {"completing_review": True})]
 
 
 def test_postgres_maturity_signals_through_atomic_task_owner(monkeypatch):
@@ -260,3 +395,76 @@ def test_receipt_write_precedes_late_current_revision_and_remediation_settlement
         command, SimpleNamespace(reviewed_at=NOW), dict(queue_entry_id=4, review_id=7)
     )
     assert events == ["receipt", "revision", ("settle", 2)]
+
+
+def test_queue_attempt_projection_keeps_null_admission_and_default_revision():
+    from tempo_storage.postgres import TempoRow
+
+    raw = '{ "persisted": true, "unknown": [1, 2] }'
+    row = TempoRow(
+        ("id", "card_id", "queue_date", "cycle", "admission_kind", "attempt_failed", "status", "review_result_json"),
+        (4, "card", DAY.isoformat(), 1, None, 0, "complete", raw),
+    )
+    result = review.LearningReviewAdapter(None, None)._attempt(row)
+    assert result.id == 4 and result.card_id == "card" and result.queue_date == DAY.isoformat()
+    assert result.cycle == 1 and result.admission_kind is None and result.revision == 0
+    assert result.attempt_failed is False and result.status == "complete" and result.recovered is False
+    assert result.review_result_json == raw
+
+
+def test_queue_attempt_recovery_preserves_original_revision_and_receipt(monkeypatch):
+    from app import queue_attempt_origins
+
+    raw = '{"unknown":{"ordered":[3,2,1]},"persisted":true}'
+    original = dict(id=9, card_id="card", queue_date=DAY.isoformat(), cycle=2,
+                    admission_kind=None, revision=7, attempt_failed=1, status="complete",
+                    review_result_json=raw, _recovered=True)
+    monkeypatch.setattr(queue_attempt_origins, "recover_queue_entry", lambda *_: original)
+    result = review.LearningReviewAdapter(None, None).recover_attempt(SimpleNamespace(card_id="card"))
+    assert result.id == 9 and result.card_id == "card" and result.queue_date == DAY.isoformat()
+    assert result.cycle == 2 and result.admission_kind is None and result.revision == 7
+    assert result.attempt_failed is True and result.status == "complete" and result.recovered is True
+    assert result.review_result_json == raw
+
+
+def test_missing_queue_attempt_remains_none_and_invalid_row_fails_closed(monkeypatch):
+    monkeypatch.setattr(review.storage, "first_queued_attempt", lambda *_: None)
+    adapter = review.LearningReviewAdapter(None, None)
+    assert adapter.find_attempt(SimpleNamespace(card_id="card", queue_entry_id=None), SimpleNamespace(local_day=DAY)) is None
+    invalid = dict(id="not-an-id", card_id="card", queue_date=DAY.isoformat(), cycle=0,
+                   admission_kind=None, attempt_failed=0, status="queued", review_result_json=None)
+    with pytest.raises(ValueError, match="Invalid retained queue attempt facts"):
+        adapter._attempt(invalid)
+
+
+def test_queue_attempt_recovery_preserves_original_conflict(monkeypatch):
+    from app import queue_attempt_origins
+    from app.contracts.review_conflicts import ReviewConflict
+
+    original = ReviewConflict("queue_attempt_unprovable", "Original attempt is unavailable.")
+    def reject(*_args):
+        raise original
+    monkeypatch.setattr(queue_attempt_origins, "recover_queue_entry", reject)
+    with pytest.raises(ReviewConflict) as error:
+        review.LearningReviewAdapter(None, None).recover_attempt(SimpleNamespace(card_id="card"))
+    assert error.value is original
+
+
+@pytest.mark.parametrize("value", [0, 123])
+def test_last_queue_id_retains_empty_and_existing_aggregate_values(value):
+    calls = []
+    class Database:
+        def execute(self, query, parameters):
+            calls.append((query, parameters))
+            return SimpleNamespace(fetchone=lambda: (value,))
+    assert review.storage.last_queue_id(Database(), "2026-10-21") == value
+    assert calls == [("SELECT COALESCE(MAX(id),0) FROM daily_queue WHERE queue_date=%s", ("2026-10-21",))]
+
+
+@pytest.mark.parametrize("row", [None, (None,), (True,), ("123",)])
+def test_last_queue_id_rejects_invalid_driver_facts(row):
+    class Database:
+        def execute(self, *_):
+            return SimpleNamespace(fetchone=lambda: row)
+    with pytest.raises(TypeError):
+        review.storage.last_queue_id(Database(), "2026-10-21")

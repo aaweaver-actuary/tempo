@@ -1,6 +1,7 @@
 """One auditable scheduling transaction for study and gameplay evidence."""
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
 from tempo_storage.postgres import PostgresConnection
 
 from datetime import date, datetime
@@ -14,6 +15,9 @@ from .scheduler import schedule_review, unlock_ready
 from app.study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
 from app.study.queue_placement import ensure_card_queued_after
 
+if TYPE_CHECKING:
+    from .scheduling_review_contracts import SchedulingReviewResult
+
 
 def apply_scheduling_review(
     database: PostgresConnection,
@@ -26,7 +30,7 @@ def apply_scheduling_review(
     light_first_interval_days: int,
     reviewed_at: datetime,
     review_day: date,
-) -> dict:
+) -> SchedulingReviewResult:
     from .scheduling_review_application import (
         apply_scheduling_review as apply_review_to_store,
     )

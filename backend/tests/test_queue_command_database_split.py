@@ -13,6 +13,71 @@ from tempo_storage import postgres
 from tempo_storage.commands import queue as storage
 
 
+@pytest.mark.parametrize("after,selected,expected_position,shift", [
+    (None, None, 9, False), (0, 0, 0, True), (4, None, 9, True), (-2, 3, 3, True),
+])
+def test_requeue_preserves_offset_zero_fallback_and_write_order(monkeypatch, after, selected, expected_position, shift):
+    from app.services import queue_application as owner
+    events, database = [], object()
+    monkeypatch.setattr(owner, "capture_daily_queue_order", lambda *args: events.append(("capture", args)) or "order")
+    monkeypatch.setattr(owner.requeue_storage, "next_cycle", lambda *args: events.append(("cycle", args)) or 7)
+    monkeypatch.setattr(owner.requeue_storage, "next_position", lambda *args: events.append(("tail", args)) or 9)
+    monkeypatch.setattr(owner.requeue_storage, "position_at_offset", lambda *args: events.append(("offset", args)) or selected)
+    monkeypatch.setattr(owner.requeue_storage, "shift_positions", lambda *args: events.append(("shift", args)))
+    monkeypatch.setattr(owner.requeue_storage, "append_attempt", lambda *args: events.append(("insert", args)) or 51)
+    monkeypatch.setattr(owner.requeue_storage, "set_review_admission", lambda *args: events.append(("admission", args)))
+    monkeypatch.setattr(owner, "preserve_daily_queue_order", lambda *args, **kwargs: events.append(("preserve", args, kwargs)))
+    assert owner.requeue(database, "day", "card", after, "guided") == 51
+    assert [e[0] for e in events] == (["capture", "cycle", "tail", "insert", "admission", "preserve"] if after is None else
+        ["capture", "cycle", "offset"] + (["tail"] if selected is None else []) + ["shift", "insert", "admission", "preserve"])
+    assert ("insert", (database, "day", "card", 7, expected_position, "guided")) in events
+    assert (("shift", (database, "day", expected_position)) in events) is shift
+    assert events[-1] == ("preserve", (database, "day"), {"previous": "order"})
+    if after is not None:
+        assert ("offset", (database, "day", owner.MISS_REASON, max(0, after))) in events
+
+
+@pytest.mark.parametrize("row,expected", [(None, None), ((0,), 0), ((8,), 8)])
+def test_requeue_offset_storage_distinguishes_missing_row_from_zero(monkeypatch, row, expected):
+    from tempo_storage.queue_refresh.application import requeue
+    calls = []
+    monkeypatch.setattr(requeue, "available_attempt_sql", lambda _: "SELECT q.id FROM daily_queue q")
+    class Database:
+        def execute(self, sql, parameters):
+            calls.append((sql, parameters))
+            return type("Cursor", (), {"fetchone": lambda self: row})()
+    assert requeue.position_at_offset(Database(), "day", "reason", 4) == expected
+    assert calls == [("SELECT q.position FROM daily_queue q ORDER BY q.position,q.id LIMIT 1 OFFSET %s", ("day", 4))]
+
+
+@pytest.mark.parametrize("method,args", [("next_cycle", ("day", "card")), ("next_position", ("day",)),
+                                         ("append_attempt", ("day", "card", 1, 2, "guided"))])
+@pytest.mark.parametrize("row", [None, (None,), (True,), ("9",)])
+def test_requeue_storage_rejects_missing_or_invalid_required_integer(method, args, row):
+    from tempo_storage.queue_refresh.application import requeue
+    class Database:
+        def execute(self, *_):
+            return type("Cursor", (), {"fetchone": lambda self: row})()
+    with pytest.raises(TypeError):
+        getattr(requeue, method)(Database(), *args)
+
+
+def test_requeue_storage_cycle_includes_origins_and_returns_inserted_identity():
+    from tempo_storage.queue_refresh.application import requeue
+    calls, values = [], iter([(8,), (52,)])
+    class Database:
+        def execute(self, sql, parameters):
+            calls.append((sql, parameters))
+            return type("Cursor", (), {"fetchone": lambda self: next(values)})()
+    database = Database()
+    assert requeue.next_cycle(database, "day", "card") == 8
+    assert requeue.append_attempt(database, "day", "card", 8, 3, "guided") == 52
+    assert "UNION ALL SELECT cycle FROM queue_attempt_origins" in calls[0][0]
+    assert calls[0][1] == ("day", "card", "day", "card")
+    assert calls[1][0].endswith("RETURNING id")
+    assert calls[1][1] == ("day", "card", 8, 3, "guided")
+
+
 def test_queue_command_policy_has_no_sql_or_driver_operations():
     for node in ast.walk(ast.parse(Path(queue_commands.__file__).read_text())):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):

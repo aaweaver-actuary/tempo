@@ -33,7 +33,7 @@ class ReviewRequest(BaseModel):
     opening_evidence_completion: OpeningEvidenceCheckpoint | None = None
     prepared_next: PreparedNextIdentity | None = None
 
-    def durable_payload(self):
+    def durable_payload(self) -> dict[str, object]:
         # Adding optional handoff metadata cannot change legacy delivery hashes.
         omitted = {
             name

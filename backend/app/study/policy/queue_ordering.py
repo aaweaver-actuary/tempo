@@ -37,6 +37,11 @@ class QueueOrderingRow(TypedDict):
     urgent_effect_id: NotRequired[str]
 
 
+class QueueOrderProvenance(TypedDict):
+    fingerprint: str
+    frozen_token: list[str | int | None]
+
+
 class SavedQueueOrder(TypedDict):
     seed: int
     membership_hash: str
@@ -61,7 +66,7 @@ def queue_order_fingerprint(membership_hash: str, frozen_token) -> str:
     return PRESENTATION_VERSION + ":" + _digest([membership_hash, list(frozen_token)])
 
 
-def queue_order_provenance(rows, saved, frozen_token):
+def queue_order_provenance(rows, saved, frozen_token) -> QueueOrderProvenance | None:
     fingerprint = queue_order_fingerprint(queue_membership_hash(rows), frozen_token)
     if saved and saved["membership_hash"] == fingerprint:
         return {"fingerprint": fingerprint, "frozen_token": list(frozen_token)}

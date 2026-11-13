@@ -19,6 +19,15 @@ IMMUTABLE_CONFLICTS = frozenset(
 )
 
 
+class QueueHeadIssueResult(TypedDict):
+    """Existing writer result; durable transport states have a separate owner."""
+    issued: bool
+    reason: NotRequired[str]
+    position_study_mode: NotRequired[Literal["position"]]
+    position_presentation: NotRequired[dict[str, object] | None]
+    position_study_hold: NotRequired[str | None]
+
+
 def issuance_operation_id(payload: dict, generation: int = 0) -> str:
     if type(generation) is not int or not 0 <= generation <= MAX_GENERATION:
         raise ValueError("Queue issuance retry generation is exhausted or invalid")

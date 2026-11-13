@@ -63,9 +63,9 @@ def test_adapter_captures_once_and_reconciliation_reuses_clock_zone_and_day(monk
     received = {}
     def reconcile(*args, **kwargs):
         received.update(kwargs)
-        return {"persisted": True, "review_id": None, "queue_entry_id": 4, "requeue_entry_id": None, "reconciliation": "history_only"}
+        return reconciliation.FreshReconciliation({"persisted": True, "review_id": None, "queue_entry_id": 4, "requeue_entry_id": None, "reconciliation": "history_only"})
     monkeypatch.setattr(adapter_module, "reconcile_completed_review", reconcile)
-    adapter.reconcile_completed(command, SimpleNamespace(id=4), context, guided=False, revision=2)
+    adapter.reconcile_completed(command, SimpleNamespace(id=4), context, attempt_id="attempt", guided=False, revision=2)
     assert received["observed_at"] == observed
     assert received["local_day"] == context.local_day
     assert received["completed_at"] == context.reviewed_at
@@ -93,7 +93,7 @@ def test_reconciliation_without_recorded_events_uses_captured_fallback(monkeypat
     monkeypatch.setattr(reconciliation,"unlock_legacy_children_after_review",lambda db,card,day,state:unlocked.append((day,state)))
     monkeypatch.setattr(storage,"retain_attempt_receipt",lambda db,**kw:receipts.append(kw))
     result = reconciliation.reconcile_completed_review(object(),"card",4,**arguments())
-    assert result["reconciliation"] == "computer_fallback"
+    assert result.payload["reconciliation"] == "computer_fallback"
     assert inserted[0]["reviewed_at"] == "2026-11-12T02:00:00+00:00"
     assert due == ["2026-11-12"]
     assert unlocked == [("2026-11-11","learning")]
@@ -111,7 +111,21 @@ def test_original_reconciliation_receipt_returns_without_calendar_conversion(mon
     monkeypatch.setattr(reconciliation,"_review_day",unexpected)
     monkeypatch.setattr(reconciliation,"card_schedule_state",unexpected)
     args=arguments();args["completed_at"]=moment
-    assert reconciliation.reconcile_completed_review(object(),"card",4,**args)==result
+    saved = reconciliation.reconcile_completed_review(object(),"card",4,**args)
+    assert isinstance(saved, reconciliation.RetainedReconciliation)
+    assert saved.result_json == prior["result_json"] and json.loads(saved.result_json) == result
+
+
+def test_retained_reconciliation_rejects_different_original_identity_before_handoff(monkeypatch):
+    from fastapi import HTTPException
+
+    prior = dict(card_id="other", queue_entry_id=4, outcome="correct", guided=0,
+                 completed_at=None, result_json=' {"old": true} ')
+    monkeypatch.setattr(reconciliation.storage, "review_attempt_receipt", lambda *args: prior)
+    monkeypatch.setattr(reconciliation, "card_schedule_state", lambda *args: pytest.fail("unexpected schedule read"))
+    with pytest.raises(HTTPException) as caught:
+        reconciliation.reconcile_completed_review(object(), "card", 4, **arguments())
+    assert caught.value.status_code == 409 and prior["result_json"] == ' {"old": true} '
 
 
 def test_composition_captures_one_clock_and_settings_read(monkeypatch):

@@ -5,6 +5,12 @@ calling these functions. This adapter never opens or commits a connection.
 """
 from __future__ import annotations
 
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tempo_storage.postgres import PostgresConnection
+
 
 def issued_record(database, attempt_id):
     return database.execute_native(
@@ -33,7 +39,7 @@ def insert(database, envelope, digest, payload_json, accepted_at):
     ).fetchone()
 
 
-def has_position_tables(database):
+def has_position_tables(database: PostgresConnection) -> bool:
     row = database.execute_native("SELECT to_regclass('public.study_position_issued_plans') IS NOT NULL", ()).fetchone()
     return bool(row and row[0])
 
@@ -71,7 +77,7 @@ def lock_original_queue(database, plan):
             and rows[0]['admission_repertoire_id'] == plan.target.key.repertoire_id)
 
 
-def lock_attempt(database, attempt_id):
+def lock_attempt(database: PostgresConnection, attempt_id: str) -> bool:
     row = database.execute_native(
         "SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))",
         ("tempo:position-attempt:" + attempt_id,),
@@ -79,11 +85,15 @@ def lock_attempt(database, attempt_id):
     return bool(row and row[0])
 
 
-def acceptance_clock(database):
+def acceptance_clock(database: PostgresConnection) -> tuple[datetime, str]:
     row = database.execute_native("SELECT statement_timestamp(),timezone FROM settings WHERE id=1", ()).fetchone()
     if not row:
         raise ValueError("study_timezone_unavailable")
-    return row[0], row[1]
+    observed: object = row[0]
+    timezone_name: object = row[1]
+    if not isinstance(observed, datetime) or not isinstance(timezone_name, str):
+        raise ValueError("invalid_study_acceptance_clock")
+    return observed, timezone_name
 
 
 def grade_receipt(database, event_id):

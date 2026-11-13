@@ -14,7 +14,7 @@ from .services.study_calendar import capture_study_calendar
 from .study.policy.observation_summary import observation_counts
 
 from tempo_storage.authored_repertoires.card_deletion import storage
-from tempo_storage.authored_repertoires.card_deletion.storage import is_card_deleted
+from tempo_storage.authored_repertoires.card_deletion.storage import is_card_deleted as is_card_deleted
 
 RETAINED_REPERTOIRE_ID = "__retained_cards__"
 SYSTEM_REPERTOIRE_IDS = (
