@@ -1,6 +1,7 @@
 """Bounded essential opening selection and durable phase policy without PostgreSQL."""
 
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import json
 
 import chess
@@ -128,11 +129,27 @@ def test_study_opening_validation_rejects_invalid_published_content(moves, color
 @pytest.fixture
 def phase_harness(monkeypatch):
     saved = {}
+    instant = datetime(2026, 10, 13, 12, tzinfo=timezone.utc)
+
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant if tz else instant.replace(tzinfo=None)
+
+    class Writer:
+        def execute(self, statement, parameters=()):
+            assert statement == "SELECT timezone FROM settings WHERE id=1 FOR SHARE"
+            assert parameters == ()
+            saved["timezone_locked"] = True
+            return self
+
+        def fetchone(self):
+            return ("UTC",)
 
     @contextmanager
     def section(*, background):
         assert background
-        yield object()
+        yield Writer()
 
     def advance(database, task, *, next_phase, next_payload):
         saved.update(phase=next_phase, payload=next_payload)
@@ -141,7 +158,11 @@ def phase_harness(monkeypatch):
     monkeypatch.setattr(worker.postgres, "configured", lambda: True)
     monkeypatch.setattr(worker.activity_gate, "wait_for_foreground", lambda: None)
     monkeypatch.setattr(worker, "connection", section)
-    monkeypatch.setattr(worker, "lock_current_slice", lambda database, task: True)
+    monkeypatch.setattr(worker, "datetime", FixedClock)
+    def lock_slice(database, task):
+        assert saved.pop("timezone_locked", False), "timezone must be fenced before the task lease"
+        return True
+    monkeypatch.setattr(worker, "lock_current_slice", lock_slice)
     monkeypatch.setattr(worker, "advance_task_slice_in_transaction", advance)
     return saved
 

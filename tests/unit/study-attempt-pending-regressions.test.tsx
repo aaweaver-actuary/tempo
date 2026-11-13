@@ -296,3 +296,21 @@ it.each([false, true])("pr285_rejected_answer_self_assessment_replacement_uses_n
   expect(records.find(record => record.state === "discarded")).toMatchObject({ requestId: ratings[0].key, payload: { body: { rating: "correct" } } });
   mounted.unmount();
 });
+
+it('B31 issued Study reload supplies its exact queue identity only after ordinary presentation is unavailable', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  const fen = new Chess().fen();
+  const card: PracticeCard = { id: asCardId('queue-recovery'), kind: 'study', title: 'Study', subtitle: '', startingFen: asFenString(fen),
+    moves: [], userMoveTarget: 1, backendId: asCardId('retained-card'), queueEntryId: asQueueEntryId(17), queueCycle: 3, revision: 2 };
+  const requests: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input); requests.push(url);
+    if (url.endsWith('/present')) return Response.json({ detail: 'Exercise unavailable' }, { status: 404 });
+    if (url.includes('/present?')) return Response.json({ id: 'exercise', revision: 2, type: 'explanation', prompt: 'Retained prompt', hint: '', fen });
+    throw new Error(`Unexpected request ${url}`);
+  }));
+  render(<StudyExerciseRunner studyId="study" exerciseId="exercise" card={card} boardTheme="brown" pieceSet="cburnett" />);
+  await screen.findByText('Retained prompt');
+  const query = new URL(requests[1], 'http://localhost').searchParams;
+  expect(Object.fromEntries(query)).toEqual({ card_id: 'retained-card', queue_entry_id: '17', queue_cycle: '3', revision: '2' });
+});

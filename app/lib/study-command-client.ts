@@ -145,6 +145,32 @@ export async function retainedStudyRequest(scope: string, parentAttemptId?: stri
     receipt: retained.receipt, state: retained.state, practiceBoundary: snapshot.value } : undefined;
 }
 
+
+/** Find only an unambiguous saved self-assessment parent after a failed presentation read. */
+export async function retainedPendingStudyPresentation(studyId: string, exerciseId: string, endpoint: string,
+  queue?: { cardId: string; entryId: number; cycle: number; revision: number }): Promise<string | undefined> {
+  const store = await studyIntentStore();
+  const records = await store.list("study-command");
+  if (!isStudyIntentStoreCurrent(store)) throw new Error("Study authority changed while locating the original attempt.");
+  const prefix = `study:${studyId}:${exerciseId}:${queue?.entryId ?? "practice"}:`;
+  const candidates: string[] = [];
+  for (const record of records) {
+    const saved = record.payload as FrozenStudyRequest | undefined;
+    const body = saved?.body;
+    const receipt = record.receipt as { attempt_id?: unknown; pending_self_assessment?: unknown } | undefined;
+    if (record.endpoint !== endpoint || record.state !== "committed" || !saved?.scope?.startsWith(prefix) ||
+        saved.scope !== `${prefix}${record.revision}` || !Number.isSafeInteger(record.revision) || !record.revision ||
+        body?.context !== (queue ? "review" : "practice") || body.attempt_id !== record.attemptId || body.revision !== record.revision ||
+        (queue && (body.card_id !== queue.cardId || body.queue_entry_id !== queue.entryId || body.queue_cycle !== queue.cycle || record.revision !== queue.revision)) ||
+        receipt?.attempt_id !== record.attemptId || receipt.pending_self_assessment !== true) continue;
+    const boundary = await store.boundary(boundaryKey(saved.scope), scopeSelector(saved.scope));
+    if (!isStudyIntentStoreCurrent(store)) throw new Error("Study authority changed while locating the original attempt.");
+    if (record.sequence > boundary.value) candidates.push(record.attemptId);
+  }
+  if (candidates.length > 1) throw new Error("Multiple retained Study attempts need review before recovery.");
+  return candidates[0];
+}
+
 let recovery: { store: IntentStore; signal: AbortSignal | undefined; promise: Promise<void> } | undefined;
 /** Bounded, persistent round-robin recovery, including commands no longer in the issued queue. */
 export async function recoverStudyRequests(signal?: AbortSignal): Promise<void> {
