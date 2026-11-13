@@ -32,6 +32,10 @@ def fixture_database():
     verify_owned_target(target)
     if owned_target(os.environ) != target:
         raise RuntimeError('Fixture target changed during identity verification')
+    # Bind the real process gate only after every configured DSN and the
+    # read-only cluster/database identity have passed the owned-target fence.
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     try:
         yield target
     finally:
@@ -42,14 +46,14 @@ def fixture_database():
 def case(fixture_database):
     identity, day = 'queue-port-' + uuid.uuid4().hex, date.today().isoformat()
     with postgres.connection() as database:
-        database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(?,?,'fixture',?,1)", (identity, identity, day))
+        database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(%s,%s,'fixture',%s,1)", (identity, identity, day))
         for suffix in ('a', 'b', 'head'):
-            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,state,due_date,content_type) VALUES(?,?,'prefix',?,'[\"e2e4\"]','white','new',?,'opening')", (identity+'-'+suffix, identity, FEN, day))
-            database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)', (identity, identity+'-'+suffix))
-        database.execute("UPDATE cards SET state='learning',introduced_at=?,due_date=? WHERE id=?",
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,state,due_date,content_type) VALUES(%s,%s,'prefix',%s,'[\"e2e4\"]','white','new',%s,'opening')", (identity+'-'+suffix, identity, FEN, day))
+            database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)', (identity, identity+'-'+suffix))
+        database.execute("UPDATE cards SET state='learning',introduced_at=%s,due_date=%s WHERE id=%s",
                          ((date.today()-timedelta(days=1)).isoformat(), (date.today()+timedelta(days=7)).isoformat(), identity+'-head'))
-        head = database.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,0) RETURNING id', (day, identity+'-head')).fetchone()[0]
-        database.execute('UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=?', (head,))
+        head = database.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(%s,%s,0) RETURNING id', (day, identity+'-head')).fetchone()[0]
+        database.execute('UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=%s', (head,))
     yield dict(identity=identity, day=day, head=head)
 
 
@@ -57,7 +61,7 @@ def lock_candidates(database, case):
     # Match the established card-before-day order. The application/adapter do
     # not invent a competing lock or own the caller's transaction.
     for suffix in ('a', 'b'):
-        database.execute('SELECT id FROM cards WHERE id=? FOR UPDATE', (case['identity']+'-'+suffix,))
+        database.execute('SELECT id FROM cards WHERE id=%s FOR UPDATE', (case['identity']+'-'+suffix,))
     lock_queue_date_for_position(database, case['day'])
 
 
@@ -72,16 +76,16 @@ def test_native_adapter_failure_rolls_back_card_queue_and_unissued_origin(case, 
                 original(day, card_id)
                 observed.append(database.execute(
                     'SELECT c.state,origin.issued_as_head FROM cards c '
-                    'JOIN queue_attempt_origins origin ON origin.card_id=c.id WHERE c.id=?', (card_id,),
+                    'JOIN queue_attempt_origins origin ON origin.card_id=c.id WHERE c.id=%s', (card_id,),
                 ).fetchone())
                 raise RuntimeError('after native admission effects')
             monkeypatch.setattr(adapter, 'retain_unseen', fail)
             queue_admission.admit_prioritized_opening_cards(adapter, case['day'], {case['identity']: 1}, 0)
     assert [tuple(row) for row in observed] == [('learning', 0)]
     with postgres.connection(read_only=True) as database:
-        assert tuple(database.execute('SELECT state,introduced_at FROM cards WHERE id=?', (case['identity']+'-a',)).fetchone()) == ('new', None)
-        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id IN (?,?)', (case['identity']+'-a', case['identity']+'-b')).fetchone()[0] == 0
-        assert database.execute('SELECT COUNT(*) FROM queue_attempt_origins WHERE card_id IN (?,?)', (case['identity']+'-a', case['identity']+'-b')).fetchone()[0] == 0
+        assert tuple(database.execute('SELECT state,introduced_at FROM cards WHERE id=%s', (case['identity']+'-a',)).fetchone()) == ('new', None)
+        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id IN (%s,%s)', (case['identity']+'-a', case['identity']+'-b')).fetchone()[0] == 0
+        assert database.execute('SELECT COUNT(*) FROM queue_attempt_origins WHERE card_id IN (%s,%s)', (case['identity']+'-a', case['identity']+'-b')).fetchone()[0] == 0
 
 
 def test_native_existing_card_day_locks_serialize_admission_without_moving_issued_head(case, monkeypatch):
@@ -92,18 +96,17 @@ def test_native_existing_card_day_locks_serialize_admission_without_moving_issue
     identity, day = case['identity'], case['day']
     with postgres.connection() as database:
         for repertoire_id in (identity+'-owner-z', identity+'-owner-a'):
-            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,'fixture',?)", (repertoire_id, repertoire_id, day))
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,'fixture',%s)", (repertoire_id, repertoire_id, day))
         rows = [(identity+'-cross-z-shared', identity+'-owner-z', '["e2e4"]', 'new'),
                 (identity+'-cross-a-private', identity+'-owner-a', '["e2e4","e7e5","g1f3"]', 'new'),
                 *[(identity+f'-cross-m-rejected-{index:02}', identity+'-owner-z', '["e2e4"]', 'locked') for index in range(18)]]
         for card_id, repertoire_id, moves, state in rows:
-            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,?,?,?)", (card_id, repertoire_id, FEN, moves, state, day))
-        database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)', (identity+'-owner-a', identity+'-cross-z-shared'))
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(%s,%s,'prefix',%s,%s,%s,%s)", (card_id, repertoire_id, FEN, moves, state, day))
+        database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)', (identity+'-owner-a', identity+'-cross-z-shared'))
         adapter = QueueAdmissionAdapter(database)
         legacy_rows = database.execute(
-            f'WITH active_miss AS ({queue_application.outstanding_miss_query(database)}) '
-            + _PRIORITY_OPENING_CANDIDATE_BODY,
-            (adapter.miss_reason, day, day, day, day),
+            _PRIORITY_OPENING_CANDIDATE_BODY,
+            (day, day),
         ).fetchall()
         limits = {identity:1, identity+'-owner-a':1, identity+'-owner-z':1}
         legacy = plan_prioritized_opening_admissions(adapter.annotate_openings(legacy_rows),
@@ -115,15 +118,15 @@ def test_native_existing_card_day_locks_serialize_admission_without_moving_issue
         barrier.wait(timeout=10)
         with postgres.connection() as database:
             lock_candidates(database, case)
-            maximum = database.execute('SELECT MAX(position) FROM daily_queue WHERE queue_date=?', (case['day'],)).fetchone()[0]
+            maximum = database.execute('SELECT MAX(position) FROM daily_queue WHERE queue_date=%s', (case['day'],)).fetchone()[0]
             return queue_admission.admit_prioritized_opening_cards(QueueAdmissionAdapter(database), case['day'], {case['identity']: 1}, maximum)
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = [future.result(timeout=20) for future in [executor.submit(admit), executor.submit(admit)]]
     assert len(set(results)) == 1 and results[0] > 0
     with postgres.connection(read_only=True) as database:
         assert QueueAdmissionAdapter(database).introduced_count(case['day'], case['identity']) == 1
-        assert database.execute('SELECT position FROM daily_queue WHERE id=?', (case['head'],)).fetchone()[0] == 0
-        assert [tuple(row) for row in database.execute('SELECT card_id,issued_as_head FROM queue_attempt_origins WHERE card_id IN (?,?) ORDER BY card_id', (case['identity']+'-a', case['identity']+'-head'))] == [(case['identity']+'-a', 0), (case['identity']+'-head', 1)]
+        assert database.execute('SELECT position FROM daily_queue WHERE id=%s', (case['head'],)).fetchone()[0] == 0
+        assert [tuple(row) for row in database.execute('SELECT card_id,issued_as_head FROM queue_attempt_origins WHERE card_id IN (%s,%s) ORDER BY card_id', (case['identity']+'-a', case['identity']+'-head'))] == [(case['identity']+'-a', 0), (case['identity']+'-head', 1)]
 
 
 def test_native_capacity_witness_is_rechecked_after_publication_change(case, monkeypatch):
@@ -131,12 +134,12 @@ def test_native_capacity_witness_is_rechecked_after_publication_change(case, mon
     identity, day = case['identity'], case['day']
     with postgres.connection() as database:
         database.execute('UPDATE settings SET study_only_mode=0 WHERE id=1')
-        database.execute("UPDATE cards SET state='learning',introduced_at=? WHERE id=?", (day, identity+'-a'))
-        database.execute("UPDATE cards SET state='locked' WHERE id=?", (identity+'-b',))
-        database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,'Route','white',?,'[\"e2e4\",\"e7e5\",\"g1f3\"]',?)", (identity+'-line', identity, FEN, day))
-        database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(?,1,'ready',?)", (identity, day))
+        database.execute("UPDATE cards SET state='learning',introduced_at=%s WHERE id=%s", (day, identity+'-a'))
+        database.execute("UPDATE cards SET state='locked' WHERE id=%s", (identity+'-b',))
+        database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,'Route','white',%s,'[\"e2e4\",\"e7e5\",\"g1f3\"]',%s)", (identity+'-line', identity, FEN, day))
+        database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready',%s)", (identity, day))
         for index, suffix in enumerate(('a', 'b')):
-            database.execute('INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json) VALUES(?,1,?,?,?,?,?,?,?,\'white\',?,?,?,?)',
+            database.execute('INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json) VALUES(%s,1,%s,%s,%s,%s,%s,%s,%s,\'white\',%s,%s,%s,%s)',
                 (identity, identity+'-line', index, identity+'-'+suffix, identity+'-a' if index else None,
                  FEN, FEN, json.dumps(['e2e4'] if not index else ['g1f3']),
                  'decision' if index else 'prefix', index, index, json.dumps([FEN])))
@@ -147,25 +150,131 @@ def test_native_capacity_witness_is_rechecked_after_publication_change(case, mon
         from dataclasses import asdict
         proposal = dict(card_id=identity+'-b', repertoire_id=identity, reason=None, capacity_route=asdict(routes[0][1]))
         assert adapter.capacity_route_valid(proposal, day)
-        database.execute('UPDATE opening_graph_publications SET generation=2 WHERE repertoire_id=?', (identity,))
+        database.execute('UPDATE opening_graph_publications SET generation=2 WHERE repertoire_id=%s', (identity,))
         assert not adapter.capacity_route_valid(proposal, day)
-        assert not database.execute('SELECT 1 FROM daily_queue WHERE card_id=?', (identity+'-b',)).fetchone()
+        assert not database.execute('SELECT 1 FROM daily_queue WHERE card_id=%s', (identity+'-b',)).fetchone()
 
 
 def test_native_requeue_retains_historical_origin_cycle_and_caller_rollback(case):
     card_id, day = case['identity']+'-head', case['day']
     with postgres.connection() as database:
-        database.execute('SELECT id FROM cards WHERE id=? FOR UPDATE', (card_id,))
+        database.execute('SELECT id FROM cards WHERE id=%s FOR UPDATE', (card_id,))
         lock_queue_date_for_position(database, day)
-        database.execute('DELETE FROM daily_queue WHERE id=?', (case['head'],))
+        database.execute('DELETE FROM daily_queue WHERE id=%s', (case['head'],))
         first = queue_application.requeue(database, day, card_id, None, 'failed')
         second = queue_application.requeue(database, day, card_id, None, 'fresh')
-        assert tuple(database.execute('SELECT cycle,admission_kind FROM daily_queue WHERE id=?', (second,)).fetchone()) == (2, 'review')
+        assert tuple(database.execute('SELECT cycle,admission_kind FROM daily_queue WHERE id=%s', (second,)).fetchone()) == (2, 'review')
         # Native transaction control belongs to the native fixture, not the
         # legacy SQLite-statement translator (which rewrites SAVEPOINT as an alias).
         database.execute_native('SAVEPOINT caller_repeat')
         rolled_back = queue_application.requeue(database, day, card_id, None, 'fresh')
         database.execute_native('ROLLBACK TO SAVEPOINT caller_repeat')
         database.execute_native('RELEASE SAVEPOINT caller_repeat')
-        assert not database.execute('SELECT 1 FROM queue_attempt_origins WHERE queue_entry_id=?', (rolled_back,)).fetchone()
-        assert [tuple(row) for row in database.execute('SELECT queue_entry_id,issued_as_head FROM queue_attempt_origins WHERE card_id=? ORDER BY cycle', (card_id,))] == [(case['head'], 1), (first, 0), (second, 0)]
+        assert not database.execute('SELECT 1 FROM queue_attempt_origins WHERE queue_entry_id=%s', (rolled_back,)).fetchone()
+        assert [tuple(row) for row in database.execute('SELECT queue_entry_id,issued_as_head FROM queue_attempt_origins WHERE card_id=%s ORDER BY cycle', (card_id,))] == [(case['head'], 1), (first, 0), (second, 0)]
+
+
+def test_active_slice_admission_rolls_back_queue_card_and_origin(case, monkeypatch):
+    """The phased owner retains the legacy atomicity assertion on its own writer."""
+    from app.services import postgres_queue_refresh as refresh
+    from tempo_storage.queue_refresh import admissions
+    identity, day = case['identity'], case['day']
+    planned = {'card_id': identity+'-a', 'repertoire_id': identity, 'reason': None}
+    observed = []
+    original = admissions.keep_unseen_introduction
+    def fail_after_admission(database, queue_date, card_id):
+        original(database, queue_date, card_id)
+        observed.append(tuple(database.execute(
+            'SELECT c.state, origin.issued_as_head FROM cards c '
+            'JOIN queue_attempt_origins origin ON origin.card_id=c.id WHERE c.id=%s', (card_id,),
+        ).fetchone()))
+        raise RuntimeError('after active admission effects')
+    with pytest.raises(RuntimeError, match='after active admission effects'):
+        with postgres.connection() as database, monkeypatch.context() as patch:
+            patch.setattr(admissions, 'keep_unseen_introduction', fail_after_admission)
+            refresh._admit_one_prioritized_opening(database, day, planned)
+    assert observed == [('learning', 0)]
+    with postgres.connection(read_only=True) as database:
+        assert tuple(database.execute('SELECT state,introduced_at FROM cards WHERE id=%s', (identity+'-a',)).fetchone()) == ('new', None)
+        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s', (identity+'-a',)).fetchone()[0] == 0
+        assert database.execute('SELECT COUNT(*) FROM queue_attempt_origins WHERE card_id=%s', (identity+'-a',)).fetchone()[0] == 0
+        assert tuple(database.execute('SELECT position,issued_as_head FROM daily_queue JOIN queue_attempt_origins ON queue_entry_id=daily_queue.id WHERE daily_queue.id=%s', (case['head'],)).fetchone()) == (0, 1)
+
+
+def test_active_slice_rechecks_limit_and_preserves_issued_head(case):
+    from app.services import postgres_queue_refresh as refresh
+    identity, day = case['identity'], case['day']
+    first = {'card_id': identity+'-a', 'repertoire_id': identity, 'reason': None}
+    second = {'card_id': identity+'-b', 'repertoire_id': identity, 'reason': None}
+    with postgres.connection() as database:
+        assert refresh._admit_one_prioritized_opening(database, day, first) is True
+        assert refresh._admit_one_prioritized_opening(database, day, first) is False
+        assert refresh._admit_one_prioritized_opening(database, day, second) is False
+    with postgres.connection(read_only=True) as database:
+        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id IN (%s,%s)', (identity+'-a', identity+'-b')).fetchone()[0] == 1
+        assert tuple(database.execute('SELECT position,issued_as_head FROM daily_queue JOIN queue_attempt_origins ON queue_entry_id=daily_queue.id WHERE daily_queue.id=%s', (case['head'],)).fetchone()) == (0, 1)
+        assert tuple(database.execute('SELECT state,introduced_at FROM cards WHERE id=%s', (identity+'-b',)).fetchone()) == ('new', None)
+
+
+def test_active_generated_presentation_preserves_history_and_does_not_consume_opening_allowance(case):
+    """A frozen generated card is neither reset nor counted as a new opening."""
+    from app.services import postgres_queue_refresh as refresh
+    from tempo_storage.queue_refresh import openings, reads
+    identity, day = case['identity'], case['day']
+    generated = identity + '-b'
+    old_day = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
+    with postgres.connection() as database:
+        database.execute("INSERT INTO study_recombination_changes(command_id,digest,change_json,receipt_json) VALUES(%s,'fixture','{}'::jsonb,'{}'::jsonb)", (identity,))
+        database.execute("INSERT INTO study_recombination_presentations(presentation_id,command_id,result_json) VALUES(%s,%s,'{}'::jsonb)", (generated, identity))
+        database.execute("UPDATE cards SET state='learning',introduced_at=%s,interval_days=7 WHERE id=%s", (old_day, generated))
+        # No current-day queue entry: this would otherwise be a stale reset candidate.
+        refresh.queue_application._reset_stale_opening_introductions(database, day)
+        assert tuple(database.execute('SELECT state,introduced_at,interval_days FROM cards WHERE id=%s', (generated,)).fetchone()) == ('learning', old_day, 7)
+        database.execute("UPDATE cards SET introduced_at=%s WHERE id=%s", (day, generated))
+        entry = database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,1,'review',%s) RETURNING id", (day, generated, identity)).fetchone()[0]
+    with postgres.connection(read_only=True) as database:
+        before = tuple(database.execute('SELECT c.state,c.introduced_at,c.interval_days,q.status,o.issued_as_head FROM cards c JOIN daily_queue q ON q.card_id=c.id JOIN queue_attempt_origins o ON o.queue_entry_id=q.id WHERE q.id=%s', (entry,)).fetchone())
+        assert openings.remaining_allowance(database, day, identity)[0] == 1
+        assert openings.admitted_count(database, day, identity) == 0
+        assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=%s', (generated,)).fetchone()[0] == 0
+    # Exclude other fixtures' entries so this read discriminates the generated candidate.
+    with postgres.connection(read_only=True) as database:
+        processed = [row[0] for row in database.execute('SELECT id FROM daily_queue WHERE queue_date=%s AND id<>%s', (day, entry)).fetchall()]
+    assert not reads.unseen_candidate(day, processed)
+    assert reads.reviewed_introductions(identity, day)[0][0] == 0
+    planned = {'card_id': identity+'-a', 'repertoire_id': identity, 'reason': None}
+    with postgres.connection() as database:
+        assert refresh._admit_one_prioritized_opening(database, day, planned) is True
+        assert refresh._admit_one_prioritized_opening(database, day, planned) is False
+    with postgres.connection(read_only=True) as database:
+        after = tuple(database.execute('SELECT c.state,c.introduced_at,c.interval_days,q.status,o.issued_as_head FROM cards c JOIN daily_queue q ON q.card_id=c.id JOIN queue_attempt_origins o ON o.queue_entry_id=q.id WHERE q.id=%s', (entry,)).fetchone())
+        assert after == before
+        assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=%s', (generated,)).fetchone()[0] == 0
+        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s', (identity+'-a',)).fetchone()[0] == 1
+
+
+def test_active_study_route_rejects_stale_publication_then_accepts_current_once(case):
+    """A prepared occurrence is fenced against the exact current publication."""
+    from app.services import postgres_queue_refresh as refresh
+    identity, day = case['identity'], case['day']
+    card, line = identity+'-a', identity+'-line'
+    moves = '["e2e4"]'
+    with postgres.connection() as database:
+        database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,'Route','white',%s,%s,%s)", (line, identity, FEN, moves, day))
+        database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready',%s)", (identity, day))
+        database.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json) VALUES(%s,1,%s,0,%s,NULL,%s,%s,%s,'white','prefix',0,0,'[]')", (identity, line, card, FEN, FEN, moves))
+        occurrence = {'card_id': card, 'repertoire_id': identity, 'reason': None, 'study_route': {
+            'generation': 1, 'line_id': line, 'decision_index': 0, 'content': [FEN, moves, 'white', FEN, moves]}}
+        assert refresh._study_opening_route_still_valid(database, occurrence, day)
+        # Republish the exact route under a new generation after proposal capture.
+        database.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json) VALUES(%s,2,%s,0,%s,NULL,%s,%s,%s,'white','prefix',0,0,'[]')", (identity, line, card, FEN, FEN, moves))
+        database.execute('UPDATE opening_graph_publications SET generation=2 WHERE repertoire_id=%s', (identity,))
+        assert refresh._admit_one_prioritized_opening(database, day, occurrence) is False
+        assert tuple(database.execute('SELECT state,introduced_at FROM cards WHERE id=%s', (card,)).fetchone()) == ('new', None)
+        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s', (card,)).fetchone()[0] == 0
+        assert database.execute('SELECT COUNT(*) FROM queue_attempt_origins WHERE card_id=%s', (card,)).fetchone()[0] == 0
+        current = {**occurrence, 'study_route': {**occurrence['study_route'], 'generation': 2}}
+        assert refresh._admit_one_prioritized_opening(database, day, current) is True
+        assert refresh._admit_one_prioritized_opening(database, day, current) is False
+        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s', (card,)).fetchone()[0] == 1
+        assert tuple(database.execute('SELECT position,issued_as_head FROM daily_queue JOIN queue_attempt_origins ON queue_entry_id=daily_queue.id WHERE daily_queue.id=%s', (case['head'],)).fetchone()) == (0, 1)
