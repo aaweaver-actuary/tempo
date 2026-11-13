@@ -7008,3 +7008,5 @@ and marker checks, cleanup failure, environment/pool restoration and retained
 split assertions. They use fakes and do not constitute native PostgreSQL,
 browser, migration or installed acceptance; those require the admitted real
 finite native selections and their non-skipped execution receipts.
+
+- PGN import receipt/card projections or receipt lock use the wrong SQL: `backend/tests/test_pgn_import_storage_boundary.py::test_retained_import_storage_preserves_full_receipt_tuple_and_raw_json`, `::test_current_import_card_identity_projections_preserve_empty_and_existing_rows`, and `::test_current_import_receipt_lock_preserves_original_identity_and_opaque_writer`. In-process mutation controls reject incorrect projection/relations and a no-op lock. These borrowed-driver tests do not prove native SQL or locking.

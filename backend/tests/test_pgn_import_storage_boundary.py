@@ -15,6 +15,7 @@ import ast
 from datetime import date
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -220,16 +221,31 @@ def test_retained_import_storage_preserves_full_receipt_tuple_and_raw_json():
     ]
     assert events == [("raw", 1), ("raw", 2)]
     assert database.native_calls == []
+    for statement, _ in database.raw_calls:
+        normalized = " ".join(statement.lower().split())
+        match = re.fullmatch(r"select (.+?) from (\w+) where (.+)", normalized)
+        assert match, normalized
+        assert tuple(field.strip() for field in match[1].split(",")) == columns
+        assert match[2] == "operation_receipts"
+        assert re.fullmatch(r"operation_id\s*=\s*%s", match[3]), match[3]
 
 
 def test_current_import_card_identity_projections_preserve_empty_and_existing_rows():
     # The retired approval preview's seven fields/order have no current caller.
     # Import admission consumes existing/deleted identities, not approval previews.
-    database = Borrowed([], replies=[Rows(rows=[("a",), ("z",)]), Rows(rows=[])])
-    identifiers = ["z", "a"]
+    database = Borrowed([], replies=[Rows(rows=[("a",), ("z",)]), Rows(rows=[("deleted",)]), Rows(rows=[]), Rows(rows=[])])
+    identifiers = ["z", "deleted", "a"]
+    empty = []
     assert tuple(storage.existing_card_ids(database, identifiers)) == (("a",), ("z",))
-    assert tuple(storage.deleted_card_ids(database, identifiers)) == ()
-    assert [parameters for _, parameters in database.native_calls] == [(identifiers,), (identifiers,)]
+    assert tuple(storage.deleted_card_ids(database, identifiers)) == (("deleted",),)
+    assert tuple(storage.existing_card_ids(database, empty)) == ()
+    assert tuple(storage.deleted_card_ids(database, empty)) == ()
+    assert [parameters for _, parameters in database.native_calls] == [(identifiers,), (identifiers,), (empty,), (empty,)]
+    for (statement, _), (column, relation) in zip(database.native_calls,
+        [("id", "cards"), ("card_id", "deleted_cards"), ("id", "cards"), ("card_id", "deleted_cards")]):
+        normalized = " ".join(statement.lower().split())
+        match = re.fullmatch(r"select (\w+) from (\w+) where (\w+)\s*=\s*any\(\s*%s\s*::\s*text\[\]\s*\)", normalized)
+        assert match and match.groups() == (column, relation, column), normalized
     assert database.raw_calls == []
 
 
@@ -253,6 +269,9 @@ def test_current_import_receipt_lock_preserves_original_identity_and_opaque_writ
     assert not hasattr(writer, "commit") and not hasattr(writer, "connection")
     assert receipts.lock_operation(writer, "original-operation") is None
     assert [parameters for _, parameters in database.raw_calls] == [("original-operation",)]
+    (statement, _), = database.raw_calls
+    normalized = " ".join(statement.lower().split())
+    assert re.fullmatch(r"select pg_advisory_xact_lock\(\s*hashtextextended\(\s*%s\s*,\s*0\s*\)\s*\)", normalized), normalized
     assert database.native_calls == []
 
 
