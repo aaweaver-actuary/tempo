@@ -35,7 +35,7 @@ class PositionStore(_fixture.Capabilities):
     def save_position_receipt(self, command, context, result):
         self.save_receipt(command, context, result)
 
-    def apply_position_effects(self, command, context, result):
+    def apply_position_effects(self, command, context, result, completion):
         self.event("position_effects")
 
     def finish_position_receipt(self, command, context, result):
@@ -44,6 +44,69 @@ class PositionStore(_fixture.Capabilities):
 
 def names(store):
     return [call[0] for call in store.calls]
+
+
+@pytest.mark.parametrize("defect", ["missing_fence", "foreign_writer", "attempt", "card", "revision", "entry", "divergent_receipt", "null_review", "original_receipt"])
+def test_position_effect_authority_rejects_unbound_original_before_grade(monkeypatch, defect):
+    from app.services import learning_review_adapter as owner
+    from app.study.position_learning import grade_effects
+
+    database = object()
+    adapter = owner.LearningReviewAdapter(database, None)
+    plan = SimpleNamespace(attempt_id="attempt-a", original_card_id="card-a", original_card_revision=1,
+                           queue_entry_id=1, decision_slots=(object(),))
+    adapter._position_fence = SimpleNamespace(database=database, preparation=SimpleNamespace(plan=plan))
+    evidence = _fixture.completion()
+    command = _fixture.command(completion=evidence)
+    result = review.ReviewResult.from_dict({"persisted": True, "queue_entry_id": 1, "review_id": 7, "idempotent": False})
+    if defect == "missing_fence": adapter._position_fence = None
+    elif defect == "foreign_writer": adapter._position_fence.database = object()
+    elif defect == "attempt": command = replace(command, attempt_id="foreign")
+    elif defect == "card": command = replace(command, card_id="foreign")
+    elif defect == "revision": evidence = replace(evidence, card_revision=2)
+    elif defect == "entry": evidence = replace(evidence, queue_entry_id=2)
+    elif defect == "divergent_receipt": result = replace(result, current=replace(result.current, review_id=8))
+    elif defect == "null_review": result = review.ReviewResult.from_dict({"persisted": True, "queue_entry_id": 1, "review_id": None})
+    elif defect == "original_receipt": result = review.ReviewResult.from_original('["opaque"]')
+    monkeypatch.setattr(grade_effects, "apply_in_borrowed_transaction", lambda *_args, **_kwargs: pytest.fail("unexpected grade"))
+    with pytest.raises(review.ReviewFailure) as caught:
+        adapter.apply_position_effects(command, _fixture.CONTEXT, result, evidence)
+    assert caught.value.status_code == 409 and caught.value.code == "opening_evidence_conflict"
+
+
+@pytest.mark.parametrize("hold", [False, True])
+def test_position_effect_uses_original_authority_after_writer_and_source_fence(monkeypatch, hold):
+    from app.services import learning_review_adapter as owner
+    from app.study import position_checkpoint
+    from app.study.position_learning import grade_effects
+    from tempo_evidence_math.position_learning import Hold
+    from tempo_storage.study import position_first_responses
+
+    database, calls = object(), []
+    plan = SimpleNamespace(attempt_id="attempt-a", original_card_id="card-a", original_card_revision=1,
+                           queue_entry_id=1, decision_slots=(object(),))
+    fence = SimpleNamespace(database=database, preparation=SimpleNamespace(plan=plan))
+    adapter = owner.LearningReviewAdapter(database, None)
+    adapter._position_fence = fence
+    evidence = _fixture.completion()
+    command = _fixture.command(completion=evidence)
+    result = review.ReviewResult.from_dict({"persisted": True, "queue_entry_id": 1, "review_id": 7, "idempotent": False})
+    inputs = SimpleNamespace(attempt_id="attempt-a", event_ids=("event",), owner_epoch="epoch", authored_digest="digest")
+    monkeypatch.setattr(position_first_responses, "acceptance_clock", lambda db: (_fixture.NOW, "UTC"))
+    monkeypatch.setattr(position_checkpoint, "position_completion_inputs", lambda *args: calls.append("inputs") or inputs)
+    monkeypatch.setattr(position_checkpoint, "fence_position_completion", lambda *args: calls.append("fence"))
+    def apply(db, attempt_id, event_ids, **kwargs):
+        calls.append(("grade", db, attempt_id, event_ids, kwargs["completion"]))
+        return Hold("source_hold") if hold else []
+    monkeypatch.setattr(grade_effects, "apply_in_borrowed_transaction", apply)
+    if hold:
+        with pytest.raises(review.ReviewFailure) as caught:
+            adapter.apply_position_effects(command, _fixture.CONTEXT, result, evidence)
+        assert caught.value.code == "opening_evidence_conflict"
+    else:
+        adapter.apply_position_effects(command, _fixture.CONTEXT, result, evidence)
+    assert calls == ["inputs", "fence", ("grade", database, "attempt-a", ("event",),
+        grade_effects.CompletionAuthority("attempt-a", 1, "card-a", 1, 7))]
 
 
 @pytest.mark.parametrize("attempt_id", [None, "", "different-attempt"])

@@ -209,7 +209,7 @@ def submit_review(store: ReviewSubmissionStore, command: ReviewCommand, context_
     if completion:
         store.complete_evidence(command, result)
         if position and not prior and result.current is not None and result.current.idempotent is False:
-            store.apply_position_effects(command, context, result)
+            store.apply_position_effects(command, context, result, completion)
             store.finish_position_receipt(command, context, result)
             _, request_json = _request_binding(command, context)
             store.bind_receipt(command, request_json)

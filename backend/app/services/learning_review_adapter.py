@@ -608,8 +608,22 @@ class LearningReviewAdapter:
                 position_checkpoint_events(self.database, self._position_fence),
             )
 
-    def apply_position_effects(self, command: ReviewCommand, context: ReviewContext, result: ReviewResult) -> None:
-        payload = result.current_mapping()
+    def apply_position_effects(self, command: ReviewCommand, context: ReviewContext, result: ReviewResult, completion: EvidenceCompletion) -> None:
+        try:
+            _, current = result.current_receipt()
+        except ValueError as error:
+            raise learning.ReviewFailure(409, "Position completion receipt is invalid", code="opening_evidence_conflict") from error
+        fence = self._position_fence
+        if fence is None or fence.database is not self.database:
+            raise learning.ReviewFailure(409, "Position completion writer fence is unavailable", code="opening_evidence_conflict")
+        plan = fence.preparation.plan
+        if (completion != command.completion or not command.attempt_id or command.attempt_id != plan.attempt_id
+            or completion.attempt_id != command.attempt_id or completion.card_id != command.card_id
+            or command.card_id != plan.original_card_id or completion.card_revision != plan.original_card_revision
+            or completion.queue_entry_id != plan.queue_entry_id or command.queue_entry_id != plan.queue_entry_id
+            or current.queue_entry_id != plan.queue_entry_id or not completion.complete
+            or current.idempotent is not False or current.review_id is None):
+            raise learning.ReviewFailure(409, "Position completion differs from its original attempt or receipt", code="opening_evidence_conflict")
         from app.study.position_learning.grade_effects import CompletionAuthority, apply_in_borrowed_transaction
         from tempo_storage.study.position_first_responses import (
             acceptance_clock,
@@ -620,10 +634,9 @@ class LearningReviewAdapter:
             position_completion_inputs,
         )
 
-        plan = self._position_fence.preparation.plan
         now, timezone_name = acceptance_clock(self.database)
         inputs = position_completion_inputs(
-            self._position_fence, self._position_receipts
+            fence, self._position_receipts
         )
         if len(inputs.event_ids) != len(plan.decision_slots):
             raise learning.ReviewFailure(
@@ -631,24 +644,15 @@ class LearningReviewAdapter:
                 "Position completion is missing a first response",
                 code="opening_evidence_conflict",
             )
-        if (
-            command.queue_entry_id != plan.queue_entry_id
-            or payload["queue_entry_id"] != plan.queue_entry_id
-        ):
-            raise learning.ReviewFailure(
-                409,
-                "Position completion differs from its original queue entry",
-                code="opening_evidence_conflict",
-            )
         fence_position_completion(
-            self.database, self._position_fence, self._position_receipts
+            self.database, fence, self._position_receipts
         )
         authority = CompletionAuthority(
             command.attempt_id,
             plan.queue_entry_id,
             command.card_id,
-            command.completion.card_revision,
-            payload["review_id"],
+            completion.card_revision,
+            current.review_id,
         )
         effects = apply_in_borrowed_transaction(
             self.database,

@@ -28,7 +28,7 @@ class PositionStore(_fixture.Capabilities):
     def lock_position_attempt(self, command):
         self.event("attempt_lock")
 
-    def apply_position_effects(self, command, context, result):
+    def apply_position_effects(self, command, context, result, completion):
         self.event("position_effects")
 
     def save_position_receipt(self, command, context, result):
