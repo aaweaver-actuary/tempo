@@ -7,22 +7,16 @@ import {
   useBoardShellStore,
 } from "../../app/state/board-shell-store";
 
-const board = vi.hoisted(() => ({
-  set: vi.fn(),
-  destroy: vi.fn(),
-  redrawAll: vi.fn(),
-  setAutoShapes: vi.fn(),
-  setShapes: vi.fn(),
-}));
-const createBoard = vi.hoisted(() =>
-  vi.fn((element: unknown, config: unknown) => {
-    void element;
-    void config;
-    return board;
-  }),
-);
-
-vi.mock("@lichess-org/chessground", () => ({ Chessground: createBoard }));
+const board = vi.hoisted(() => ({ destroy: vi.fn() }));
+const createBoard = vi.hoisted(() => vi.fn());
+vi.mock("@tempo/board-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tempo/board-ui")>();
+  const React = await import("react");
+  return { ...actual, Board: React.forwardRef<import("@tempo/board-ui").BoardHandle, import("@tempo/board-ui").BoardProps>((props, ref) => {
+    React.useEffect(() => { createBoard(); return () => board.destroy(); }, []);
+    return React.createElement(actual.Board, { ...props, ref });
+  }) };
+});
 vi.mock("../../app/lib/move-sound", () => ({
   playMoveSound: vi.fn(),
   playChessMoveSound: vi.fn(),
@@ -30,11 +24,7 @@ vi.mock("../../app/lib/move-sound", () => ({
 
 beforeEach(() => {
   createBoard.mockClear();
-  board.set.mockClear();
   board.destroy.mockClear();
-  board.redrawAll.mockClear();
-  board.setAutoShapes.mockClear();
-  board.setShapes.mockClear();
   useBoardShellStore.setState((state) => ({
     ...state,
     board: {
@@ -58,7 +48,7 @@ beforeEach(() => {
   }));
 });
 
-it("persistent board shell reuses one Chessground instance across board owner switches", () => {
+it("persistent board shell reuses one public Board instance across board owner switches", () => {
   vi.stubGlobal(
     "ResizeObserver",
     class {

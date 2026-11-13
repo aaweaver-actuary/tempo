@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Chess, type Square } from "chess.js";
-import type { Config } from "@lichess-org/chessground/config";
+import type { BoardProps } from "@tempo/board-ui";
 import { Chessboard } from "../../app/components/board/chessboard";
 import { PersistentBoardShell } from "../../app/components/board/persistent-board-shell";
 import { PositionSolutionBoard, PositionSolutionTabs } from "../../app/components/position-solution-editor";
@@ -11,10 +11,18 @@ import { playChessMoveSound, playMoveSound } from "../../app/lib/move-sound";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import StudyExerciseRunner from "../../app/views/study_exercise_runner";
 
-const boardApi = vi.hoisted(() => ({ state: { dom: { bounds: { clear: vi.fn() } } }, set: vi.fn(),
-  cancelMove: vi.fn(), destroy: vi.fn(), redrawAll: vi.fn(), setAutoShapes: vi.fn(), setShapes: vi.fn() }));
-const createBoard = vi.hoisted(() => vi.fn((element: unknown, config: Config) => { void element; void config; return boardApi; }));
-vi.mock("@lichess-org/chessground", () => ({ Chessground: createBoard }));
+const boardApi = vi.hoisted(() => ({ cancelMove: vi.fn() }));
+const createBoard = vi.hoisted(() => vi.fn());
+const currentBoard = vi.hoisted(() => ({ props: undefined as BoardProps | undefined }));
+vi.mock("@tempo/board-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tempo/board-ui")>();
+  const React = await import("react");
+  return { ...actual, Board: React.forwardRef<import("@tempo/board-ui").BoardHandle, BoardProps>((props, ref) => {
+    currentBoard.props = props;
+    React.useEffect(() => { createBoard(); }, []);
+    return React.createElement(actual.Board, { ...props, ref });
+  }) };
+});
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), playChessMoveSound: vi.fn() }));
 
 beforeEach(() => {
@@ -25,10 +33,9 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 function playBoardInput(from: Square, to: Square) {
-  const configuration = boardApi.set.mock.calls.findLast(([config]) => (config as Config).movable?.events?.after)?.[0] as Config | undefined;
-  const after = configuration?.movable?.events?.after ?? createBoard.mock.calls.at(-1)?.[1].movable?.events?.after;
-  expect(after).toBeTypeOf("function");
-  act(() => after!(from, to, { premove: false }));
+  const props = currentBoard.props!;
+  const event = { from, to, positionIdentity: props.positionIdentity, positionRevision: props.positionRevision };
+  act(() => (props.mode === "free" ? props.onFreeMove : props.onMove)?.(event));
 }
 
 const whitePromotionFen = "7k/P7/8/8/8/8/8/7K w - - 0 1";
