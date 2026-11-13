@@ -18,8 +18,9 @@ describe("authored study grader shared v1 parity", () => {
 });
 
 it("validates Python-compatible FEN without rewriting the frozen snapshot", () => {
-  const testCase = cases.find((item) => item.name === "fen_fullmove_zero")!;
-  const snapshot = { schema_version: 1, grader_version: 1, exercise_id: "exercise", revision: 1,
-    fen: testCase.fen, specification: testCase.specification };
-  expect(studySnapshotSchema.parse(snapshot).fen).toBe(testCase.fen);
+  for (const testCase of cases.filter((item) => item.name.startsWith("fen_fullmove_") && item.expected_validation_stage === "graded")) {
+    const snapshot = { schema_version: 1, grader_version: 1, exercise_id: "exercise", revision: 1,
+      fen: testCase.fen, specification: testCase.specification };
+    expect(studySnapshotSchema.parse(snapshot).fen).toBe(testCase.fen);
+  }
 });

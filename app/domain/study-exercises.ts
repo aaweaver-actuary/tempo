@@ -55,7 +55,7 @@ function boardFen(fen: string): string {
   const fields = fen.trim().split(/\s+/);
   const defaults = ["", "w", "-", "-", "0", "1"];
   for (let index = fields.length; index < defaults.length; index++) fields.push(defaults[index]);
-  if (fields[5] === "0") fields[5] = "1";
+  if (/^[+-]?0+$/.test(fields[5])) fields[5] = "1";
   return fields.join(" ");
 }
 
