@@ -388,8 +388,13 @@ export function validateReductionTools(manifest, root = repository, python = pro
   const mapped=manifest.components.filter(c=>c.status==="mapped" && c.ownedFiles);
   if (!owner || owner.status!=="mapped" || !Array.isArray(owner.resourceRoles)) throw new Error("Missing reduction tooling owner");
   if (new Set(owner.ownedFiles).size!==owner.ownedFiles.length || owner.ownedFiles.length!==tracked.length || owner.ownedFiles.some(p=>!tracked.includes(p))) throw new Error("Reduction tooling inventory missing, duplicate or stale");
-  const roles={"tools/reduction/audit.py":"source-census","tools/reduction/check_links.py":"source-link-audit","tools/reduction/path_audit.py":"historical-diff-audit"};
-  if (owner.resourceRoles.length!==tracked.length || new Set(owner.resourceRoles).size!==tracked.length || tracked.some(p=>!roles[p] || !owner.resourceRoles.includes(p+"#"+roles[p]))) throw new Error("Invalid reduction tooling role");
+  const allowedRoles=new Set(["source-census","source-link-audit","historical-diff-audit"]), roles=new Map();
+  for (const entry of owner.resourceRoles) {
+    const parts=typeof entry === "string" ? entry.split("#") : [];
+    if (parts.length!==2 || !owner.ownedFiles.includes(parts[0]) || !allowedRoles.has(parts[1]) || roles.has(parts[0])) throw new Error("Invalid reduction tooling role");
+    roles.set(parts[0],parts[1]);
+  }
+  if (roles.size!==tracked.length || tracked.some(p=>!roles.has(p) || !p.endsWith(".py"))) throw new Error("Invalid reduction tooling role");
   for (const p of tracked) if (p.split("/").some(x=>!x || x==="." || x==="..") || !existsSync(resolve(root,p)) || !inside(realpathSync(root),realpathSync(resolve(root,p))) || mapped.filter(c=>c.ownedFiles.includes(p)).length!==1) throw new Error("Invalid or overlapping reduction tooling source");
   const code=`import ast,json,pathlib,sys
 root=pathlib.Path(sys.argv[1])

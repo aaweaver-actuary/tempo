@@ -105,6 +105,8 @@ test("T02 historical reduction tools reject missing, duplicate, stale, role and 
   assert.throws(()=>validateReductionTools(change((_,o)=>o.ownedFiles.push(o.ownedFiles[0])),repository,python),/missing, duplicate or stale/);
   assert.throws(()=>validateReductionTools(change((_,o)=>o.ownedFiles[0]="../foreign.py"),repository,python),/missing, duplicate or stale/);
   assert.throws(()=>validateReductionTools(change((_,o)=>o.resourceRoles[0]+="-wrong"),repository,python),/tooling role/);
+  const revised=change((_,o)=>{const [path]=o.resourceRoles[0].split("#");o.resourceRoles[0]=path+"#source-link-audit";});
+  assert.deepEqual(validateReductionTools(revised,repository,python),{files:3});
   assert.throws(()=>validateReductionTools(change((b,o)=>b.components.find(c=>c.id==="integration").ownedFiles.push(o.ownedFiles[0])),repository,python),/overlapping/);
 });
 test("T02 historical reduction tool guard discovers new files and parses without execution", context => {
@@ -122,6 +124,11 @@ test("T02 historical reduction tool guard discovers new files and parses without
   const added="tools/reduction/new_audit.py";writeFileSync(join(root,added),"");
   assert.equal(spawnSync("git",["-C",root,"add",added],{cwd:root}).status,0);
   assert.throws(()=>validateReductionTools(original,root,python),/missing, duplicate or stale/);
+  const registered=structuredClone(original), newOwner=registered.components.find(c=>c.id==="historical-reduction-audit-tooling");
+  newOwner.ownedFiles.push(added);newOwner.resourceRoles.push(added+"#source-census");
+  assert.deepEqual(validateReductionTools(registered,root,python),{files:4});
+  newOwner.resourceRoles[newOwner.resourceRoles.length-1]=added+"#unsupported";
+  assert.throws(()=>validateReductionTools(registered,root,python),/tooling role/);
 });
 test("T02 DDL source version rejects empty, missing, duplicate and mismatched history", () => {
   const files = Array.from({length:66}, (_,i) => String(i+1).padStart(3,"0") + "_example.sql");
