@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources } from "../check-components.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources, validateReductionTools } from "../check-components.mjs";
 import { validateOwnedPaths, selectComponents } from "../selection.mjs";
 import { validateMigrationInventory } from "../../../database/tooling/check-migration-inventory.mjs";
 
@@ -98,6 +98,31 @@ for (const [scope, path] of [["retained", "backend/app/contracts/new_contract.py
     assert.throws(() => validateCensusOwnership(original, scope, paths), /found 0/);
   });
 }
+test("T02 historical reduction tools reject missing, duplicate, stale, role and overlap", () => {
+  assert.deepEqual(validateReductionTools(original,repository,python),{files:3});
+  const change=(fn)=>{const bad=structuredClone(original),owner=bad.components.find(c=>c.id==="historical-reduction-audit-tooling");fn(bad,owner);return bad;};
+  assert.throws(()=>validateReductionTools(change((_,o)=>o.ownedFiles.pop()),repository,python),/missing, duplicate or stale/);
+  assert.throws(()=>validateReductionTools(change((_,o)=>o.ownedFiles.push(o.ownedFiles[0])),repository,python),/missing, duplicate or stale/);
+  assert.throws(()=>validateReductionTools(change((_,o)=>o.ownedFiles[0]="../foreign.py"),repository,python),/missing, duplicate or stale/);
+  assert.throws(()=>validateReductionTools(change((_,o)=>o.resourceRoles[0]+="-wrong"),repository,python),/tooling role/);
+  assert.throws(()=>validateReductionTools(change((b,o)=>b.components.find(c=>c.id==="integration").ownedFiles.push(o.ownedFiles[0])),repository,python),/overlapping/);
+});
+test("T02 historical reduction tool guard discovers new files and parses without execution", context => {
+  const root=mkdtempSync(join(tmpdir(),"tempo-reduction-source-"));context.after(()=>rmSync(root,{recursive:true,force:true}));
+  assert.equal(spawnSync("git",["-C",root,"init","-q"],{cwd:root}).status,0);
+  const owner=original.components.find(c=>c.id==="historical-reduction-audit-tooling");
+  for(const file of owner.ownedFiles){mkdirSync(join(root,file,".."),{recursive:true});cpSync(join(repository,file),join(root,file));}
+  assert.equal(spawnSync("git",["-C",root,"add","tools/reduction"],{cwd:root}).status,0);
+  assert.deepEqual(validateReductionTools(original,root,python),{files:3});
+  const target=join(root,owner.ownedFiles[0]), sentinel=join(root,"executed");
+  writeFileSync(target,`from pathlib import Path\nPath(${JSON.stringify(sentinel)}).write_text("unsafe")\n`);
+  assert.deepEqual(validateReductionTools(original,root,python),{files:3}); assert.equal(existsSync(sentinel),false);
+  writeFileSync(target,"def invalid(:\n"); assert.throws(()=>validateReductionTools(original,root,python),/source parse failed/);
+  cpSync(join(repository,owner.ownedFiles[0]),target);
+  const added="tools/reduction/new_audit.py";writeFileSync(join(root,added),"");
+  assert.equal(spawnSync("git",["-C",root,"add",added],{cwd:root}).status,0);
+  assert.throws(()=>validateReductionTools(original,root,python),/missing, duplicate or stale/);
+});
 test("T02 DDL source version rejects empty, missing, duplicate and mismatched history", () => {
   const files = Array.from({length:66}, (_,i) => String(i+1).padStart(3,"0") + "_example.sql");
   const schema = "POSTGRES_SCHEMA_VERSION = 66\n";

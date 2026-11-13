@@ -8903,6 +8903,39 @@
         "database/tooling/apply_postgres_migrations.py#migration-operator",
         "database/tooling/check-migration-inventory.mjs#source-inventory"
       ]
+    },
+    {
+      "id": "historical-reduction-audit-tooling",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "tools/reduction",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "tools/reduction/audit.py",
+        "tools/reduction/check_links.py",
+        "tools/reduction/path_audit.py"
+      ],
+      "ownershipRole": "Inspect historical reduction evidence",
+      "dependencyNotes": [
+        "audit reads Git source refs and emits a static census; check_links parses current source and path_audit reads Git diffs. Historical classifications are evidence, not current deletion authority or a production planner."
+      ],
+      "resourceRoles": [
+        "tools/reduction/audit.py#source-census",
+        "tools/reduction/check_links.py#source-link-audit",
+        "tools/reduction/path_audit.py#historical-diff-audit"
+      ]
     }
   ],
   "suites": [
