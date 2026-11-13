@@ -162,6 +162,7 @@ export function validateCompositionOwnership(manifest, paths) {
 // Scope predicates enumerate tracked inputs independently of ownership. The
 // component registry is the only mapping from an input to its owner.
 const censusPredicates = {
+  calendar: path => /^(backend\/app\/study\/policy\/clock[^/]*|backend\/app\/services\/study_calendar[^/]*)\.py$/.test(path),
   retained: path => /^(backend\/app\/(contracts|games)\/.*|backend\/app\/study\/(next_exercise|queue_serving|position_learning\/issuance)[^/]*|backend\/app\/product_composition\/study[^/]*|backend\/app\/services\/queue_next_card[^/]*|database\/tempo_storage\/study\/(next_exercise_reads|position_issued_plans)[^/]*|database\/tempo_storage\/game_review[^/]*)\.py$/.test(path),
   review: path => /^(backend\/app\/(command_dispatch|command_gateway|review_commands)[^/]*|backend\/app\/services\/(learning_review_adapter|review_service|review_reconciliation)[^/]*|backend\/app\/study\/policy\/review_reconciliation[^/]*|database\/tempo_storage\/(commands\/receipts\/.*|study\/review\/.*|learning_bridge\/review[^/]*|controls\/review_reconciliation[^/]*|review_reconciliation[^/]*))\.py$/.test(path),
   durable: path => /^(backend\/app\/services\/(durable_tasks|queue_refresh_wakeup)[^/]*|database\/tempo_storage\/(durable_tasks\/.*|controls\/claim_sql[^/]*))\.py$/.test(path),

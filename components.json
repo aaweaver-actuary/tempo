@@ -2,6 +2,69 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "study-calendar-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/policy",
+      "publicExports": [
+        "backend/app/study/policy/clock.py#StudyCalendar",
+        "backend/app/study/policy/clock.py#study_calendar_at"
+      ],
+      "dependencies": [
+        "learning-review-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/policy/clock.py"
+      ],
+      "ownershipRole": "Convert an explicit instant and configured zone to an immutable Study calendar",
+      "dependencyNotes": [
+        "Uses the Learning review application review_day_at conversion; it does not capture clocks or read settings."
+      ],
+      "censusScope": "calendar"
+    },
+    {
+      "id": "study-calendar-capture",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/study_calendar.py#capture_study_calendar"
+      ],
+      "dependencies": [
+        "study-calendar-policy"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/study_calendar.py"
+      ],
+      "ownershipRole": "Capture one Study instant and configured timezone on the caller transaction",
+      "dependencyNotes": [
+        "Reads the timezone through tempo_storage.commands.queue.study_timezone on the borrowed connection and reports unavailable policy as HTTP 503; that multi-purpose queue storage owner is outside this selection."
+      ],
+      "censusScope": "calendar"
+    },
+    {
       "id": "study-web",
       "type": "app",
       "maintainer": "Tempo",
