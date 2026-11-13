@@ -191,6 +191,9 @@ def test_missing_accepted_day_stays_held_while_known_current_queue_progresses(mi
             now = observed.isoformat()
             db.execute_native("INSERT INTO background_tasks(id,kind,deduplication_key,generation,priority,state,phase,payload_json,next_attempt_at,created_at,updated_at) VALUES('unknown-day','daily_queue','current',7,10,'queued','admit_due',%s,%s,%s,%s)", (payload_json, now, now, now))
             protected_before = protected_hash(db.raw, facts.issued_ids)
+            protected_rows_before = [dict(row) for row in db.execute_native(
+                "SELECT q.id, to_jsonb(q) AS queue, to_jsonb(o) AS origin FROM daily_queue q JOIN queue_attempt_origins o ON o.queue_entry_id=q.id WHERE q.id=ANY(%s) ORDER BY q.id,o.card_id,o.revision", (list(facts.issued_ids),)
+            ).fetchall()]
         class FixedClock(datetime):
             @classmethod
             def now(cls, tz=None):
@@ -239,6 +242,10 @@ def test_missing_accepted_day_stays_held_while_known_current_queue_progresses(mi
             after = dict(db.execute_native("SELECT * FROM background_tasks WHERE id='unknown-day'").fetchone())
             for key in ("id", "generation", "state", "phase", "payload_json", "last_error", "next_attempt_at"):
                 assert after[key] == held[key]
+            protected_rows_after = [dict(row) for row in db.execute_native(
+                "SELECT q.id, to_jsonb(q) AS queue, to_jsonb(o) AS origin FROM daily_queue q JOIN queue_attempt_origins o ON o.queue_entry_id=q.id WHERE q.id=ANY(%s) ORDER BY q.id,o.card_id,o.revision", (list(facts.issued_ids),)
+            ).fetchall()]
+            assert protected_rows_after == protected_rows_before
             assert protected_hash(db.raw, facts.issued_ids) == protected_before
             card = db.execute_native("SELECT c.start_fen,c.moves_json FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.queue_date=%s AND q.status='queued' ORDER BY q.position LIMIT 1", (today,)).fetchone()
             assert card and chess.Board(card["start_fen"]).parse_uci(json.loads(card["moves_json"])[0])
