@@ -6,6 +6,7 @@ import { confirmOriginalOperationResponse, FailedOperationError, PendingOperatio
 import { isStudyIntentStoreCurrent, studyIntentStore } from "../../database/browser/study-intent-storage";
 import { studySettingsSchema } from "./study-connection";
 import { z } from "zod";
+import { tacticCardIdentityFromRequest } from "./tactic-card-identity";
 
 type StudyCommandKind = "study-command" | "defense-command" | "tactic-command" | "endgame-command" | "burial-command" | "settings-command";
 const commandKinds: StudyCommandKind[] = ["study-command", "defense-command", "tactic-command", "endgame-command", "burial-command", "settings-command"];
@@ -80,12 +81,19 @@ export function createStudyCommandDelivery(client: StudyClient, getStore: () => 
         if (record.kind === "study-command" && response.status === 422) return rejected(record, 422, message, body);
         throw new Error(message + " Retry the original request.");
       }
-      return assessResponse(record, body);
+      const result = await assessResponse(record, body);
+      requireAuthority();
+      return result;
     } catch (error) { return rejectionFromError(record, error); }
   }
-  function assessResponse(record: IntentRecord, body: Record<string, unknown>) {
+  async function assessResponse(record: IntentRecord, body: Record<string, unknown>) {
     if (record.kind === "study-command" && body.attempt_id !== record.attemptId) throw new Error("The service did not confirm the original study attempt.");
-    if (record.kind === "tactic-command") z.strictObject({ card_id: z.string().min(1), mode: z.enum(["normal", "light", "hard"]), next_due: z.string().min(1) }).parse(body);
+    if (record.kind === "tactic-command") {
+      const result = z.strictObject({ card_id: z.string().min(1), mode: z.enum(["normal", "light", "hard"]), next_due: z.string().min(1) }).parse(body);
+      const request = record.payload as FrozenStudyRequest;
+      if (result.card_id !== await tacticCardIdentityFromRequest(request.body, record.attemptId))
+        throw new Error("The tactic receipt does not match the original saved card.");
+    }
     if (record.kind === "settings-command") studySettingsSchema.parse(body);
     if (record.kind === "burial-command" && (body.buried !== true || body.queue_entry_id !== Number(/entries\/(\d+)\//.exec(record.endpoint)?.[1])))
       throw new Error("Learning did not confirm the original burial.");
@@ -100,7 +108,9 @@ export function createStudyCommandDelivery(client: StudyClient, getStore: () => 
       if (response.status === 404) return undefined;
       const body = await response.json() as Record<string, unknown>;
       requireAuthority();
-      return assessResponse(record, body);
+      const result = await assessResponse(record, body);
+      requireAuthority();
+      return result;
     } catch (error) { return rejectionFromError(record, error); }
   }
   return { deliver, checkReceipt };

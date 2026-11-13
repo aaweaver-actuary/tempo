@@ -1,4 +1,5 @@
 import { canonicalFenKey } from "@tempo/chess-line";
+import { Chess, type Square } from "chess.js";
 
 // Python str.split/strip whitespace, including C0 separators and NEL; unlike
 // ECMAScript whitespace it excludes U+FEFF. Persisted IDs use Python's rules.
@@ -22,4 +23,16 @@ export async function tacticCardIdentity(fen: string, uciMoves: readonly string[
   if (!globalThis.crypto?.subtle) throw new Error("Tactic identity verification is unavailable.");
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
   return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
+}
+
+/** Derive the producer's training line from the original retained request. */
+export async function tacticCardIdentityFromRequest(body: Record<string, unknown>, attemptId: string): Promise<string> {
+  if (body.attempt_id !== attemptId || typeof body.source_fen !== "string" ||
+      !Array.isArray(body.moves) || body.moves.length < 2 ||
+      !body.moves.every(move => typeof move === "string" && /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(move)))
+    throw new Error("The retained tactic request cannot prove its original card.");
+  const [setup, ...solution] = body.moves as string[];
+  const board = new Chess(body.source_fen);
+  board.move({ from: setup.slice(0, 2) as Square, to: setup.slice(2, 4) as Square, promotion: setup[4] });
+  return tacticCardIdentity(board.fen(), solution);
 }

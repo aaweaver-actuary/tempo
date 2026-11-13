@@ -274,7 +274,7 @@ it.each([false, true])("pr285_rejected_answer_self_assessment_replacement_uses_n
     if (url.endsWith("/attempts")) { answerPosts++; parent = JSON.parse(String(init?.body)).attempt_id; return Response.json({ attempt_id: parent, assessment: { outcome: "needs_self_assessment", feedback: "Rate it" }, pending_self_assessment: true }); }
     if (url.endsWith("/self-assess")) {
       const { rating } = JSON.parse(String(init?.body)); const key = (init?.headers as Record<string, string>)["Idempotency-Key"]; ratings.push({ rating, key });
-      if (ratings.length === 1) return Response.json({ operation_id: key }, { status: 202 });
+      if (ratings.length === 1) return Response.json({ operation_id: key, state: "queued" }, { status: 202 });
       return Response.json({ attempt_id: parent, assessment: { outcome: "needs_self_assessment", feedback: "Replacement assessment saved" }, pending_self_assessment: false, rating });
     }
     if (url.includes("/api/operations/")) return Response.json({ state: "failed", error: { status_code: 422, message: "Choose another assessment" } });

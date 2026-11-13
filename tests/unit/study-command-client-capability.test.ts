@@ -113,3 +113,47 @@ it('B31 retained pending practice presentation requires one original parent and 
   await store.boundary(`practice-reset:${scope}`, record => (record.payload as { scope?: string })?.scope === scope, 0);
   expect(await retainedPendingStudyPresentation('b31-study', 'b31-exercise', endpoint)).toBeUndefined();
 });
+
+it.each(["initial", "receipt-first"])("C14 retained tactic %s rejects a foreign card and recovers the same frozen attempt", async lane => {
+  const { webcrypto } = await import("node:crypto");
+  vi.stubGlobal("crypto", webcrypto);
+  try {
+    const { record, store } = fixture(lane === "receipt-first");
+    record.kind = "tactic-command";
+    record.endpoint = "/api/tactics/attempt";
+    record.payload = { scope: "tactic:deck:puzzle", headers: { "Idempotency-Key": "original" }, body: {
+      attempt_id: "attempt", puzzle_id: "polish-1", deck_id: "deck", correct: true, clean: true,
+      source_fen: "q3k1nr/1pp1nQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 b k - 0 17",
+      moves: ["e8d7", "a2e6", "d7d8", "f7f8"] } };
+    const original = structuredClone(record.payload);
+    let valid = false;
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual((original as { body: unknown }).body);
+        return Response.json({ operation_id: "original", state: "queued" }, { status: 202 });
+      }
+      return Response.json({ operation_id: "original", state: "complete", response: {
+        card_id: valid ? "7102eb92e00287f834ec6f5a2dd1afaaebfdafd3c649b975444a77ccff836d5a" : "foreign-card",
+        mode: "normal", next_due: "2026-11-13" } });
+    });
+    const delivery = createStudyCommandDelivery(client(fetch), async () => store);
+    const run = () => lane === "initial" ? delivery.deliver(record, new AbortController().signal)
+      : delivery.checkReceipt(record, new AbortController().signal);
+    await expect(run()).rejects.toThrow("original saved card");
+    expect(record.payload).toEqual(original);
+    valid = true;
+    expect((await run())?.state).toBe("committed");
+    expect(record.requestId).toBe("original");
+    expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(lane === "initial" ? 2 : 0);
+  } finally { vi.unstubAllGlobals(); }
+});
+
+it("C14 retained tactic refuses a request whose saved attempt identity differs", async () => {
+  const { record, store } = fixture();
+  record.kind = "tactic-command";
+  record.payload = { scope: "tactic", headers: {}, body: { attempt_id: "foreign", source_fen: "invalid", moves: ["e2e4", "e7e5"] } };
+  const fetch = vi.fn(async () => Response.json({ card_id: "card", mode: "normal", next_due: "2026-11-13" }));
+  const delivery = createStudyCommandDelivery(client(fetch), async () => store);
+  await expect(delivery.deliver(record, new AbortController().signal)).rejects.toThrow("cannot prove its original card");
+  expect(record.requestId).toBe("original");
+});
