@@ -220,6 +220,10 @@ class ReviewResult:
     def as_dict(self) -> object:
         return json.loads(self.payload_json)
 
+    def current_mapping(self) -> dict[str, object]:
+        """Decode a newly constructed result, whose source was a JSON object."""
+        return _json_object(self.payload_json)
+
 
 @dataclass(frozen=True)
 class ScheduledReview:
