@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+from dataclasses import dataclass
+from tempo_learning_review.models import ReconciledWire
 from tempo_learning_review import review_day_at as _review_day
 from .opening_maturity import augment_opening_maturity
 import json
@@ -16,6 +18,16 @@ SCHEDULE_COLUMNS = storage.SCHEDULE_COLUMNS
 card_schedule_state = storage.card_schedule_state
 save_schedule_snapshot = storage.save_schedule_snapshot
 _write_card_state = storage.write_card_state
+
+
+@dataclass(frozen=True)
+class FreshReconciliation:
+    payload: ReconciledWire
+
+
+@dataclass(frozen=True)
+class RetainedReconciliation:
+    result_json: str
 
 
 def _next_state(
@@ -97,8 +109,8 @@ def reconcile_completed_review(
     timezone_name: str,
     observed_at: datetime,
     local_day: date,
-    competing_review: dict | None = None,
-) -> dict:
+    competing_review: dict[str, str | None] | None = None,
+) -> FreshReconciliation | RetainedReconciliation:
     prior = storage.review_attempt_receipt(database, attempt_id)
     if prior:
         if (
@@ -114,7 +126,7 @@ def reconcile_completed_review(
             raise HTTPException(
                 409, "Review attempt ID was reused for a different result"
             )
-        return json.loads(prior["result_json"])
+        return RetainedReconciliation(prior["result_json"])
 
     current = card_schedule_state(database, card_id)
     revision_row = storage.card_revision(database, card_id)
@@ -162,7 +174,10 @@ def reconcile_completed_review(
             previous_interval=initial_interval, next_interval=initial_interval,
             source_kind="study", source_ref=f"attempt:{attempt_id}",
         )
-        review_id = storage.independent_review_id(database, f"attempt:{attempt_id}")
+        stored_review_id: object = storage.independent_review_id(database, f"attempt:{attempt_id}")
+        if type(stored_review_id) is not int:
+            raise ValueError("Invalid independent review identity")
+        review_id = stored_review_id
         if status == "chronological":
             events = [(review_id, scheduled_outcome, guided, review_time)] + [
                 (
@@ -208,7 +223,7 @@ def reconcile_completed_review(
             state["state"] if status == "chronological" else "learning",
         )
 
-    result = {
+    result: ReconciledWire = {
         "persisted": True,
         "review_id": review_id,
         "queue_entry_id": queue_entry_id,
@@ -222,4 +237,4 @@ def reconcile_completed_review(
         outcome=outcome, guided=int(guided), completed_at=completed_at.isoformat() if completed_at else None,
         review_id=review_id, scheduling_status=status, warning=warning, result_json=json.dumps(result),
     )
-    return result
+    return FreshReconciliation(result)

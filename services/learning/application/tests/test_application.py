@@ -200,6 +200,15 @@ def test_completed_attempt_competitor_and_recovered_chronological_path():
     assert ("bind", True) in store.calls
 
 
+def test_recovered_attempt_without_original_identity_is_held_before_reconciliation_writes():
+    store = Capabilities()
+    store.attempt = None
+    with pytest.raises(review.ReviewConflict) as caught:
+        review.apply_review(store, command(attempt_id=None), CONTEXT)
+    assert caught.value.code == "queue_attempt_unprovable"
+    assert not {"introduction", "reconcile", "retain", "bind"} & {call[0] for call in store.calls}
+
+
 @pytest.mark.parametrize("recorded,code", [("invalid",422),("2026-01-01T00:00:00",422),
     ("2026-10-15T03:00:00Z",422)])
 def test_timestamp_validation(recorded, code):

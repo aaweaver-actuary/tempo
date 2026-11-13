@@ -29,6 +29,7 @@ from .review_reconciliation import (
     save_schedule_snapshot,
     reconcile_completed_review,
 )
+from app.study.policy.review_reconciliation import FreshReconciliation, RetainedReconciliation
 from .background_runtime import training_timing_stage
 
 if TYPE_CHECKING:
@@ -254,14 +255,16 @@ class LearningReviewAdapter:
 
     def reconcile_completed(
         self, command: ReviewCommand, attempt: QueueAttempt, context: ReviewContext, *,
-        guided: bool, revision: int | None, competing_review: CompetingReview | None = None
+        attempt_id: str, guided: bool, revision: int | None, competing_review: CompetingReview | None = None
     ) -> ReconciledReview:
+        if not attempt_id or command.attempt_id != attempt_id:
+            raise learning.ReviewConflict("queue_attempt_unprovable", "The original queue attempt cannot be verified. The completed result needs review.")
         calendar = self._capture_command_day()
         result = reconcile_completed_review(
             self.database,
             command.card_id,
             attempt.id,
-            attempt_id=command.attempt_id,
+            attempt_id=attempt_id,
             outcome=command.outcome,
             guided=guided,
             completed_at=context.reviewed_at if command.recorded_at else None,
@@ -271,7 +274,9 @@ class LearningReviewAdapter:
             local_day=context.local_day,
             competing_review=competing_review.as_dict() if competing_review else None,
         )
-        return ReconciledReview.from_dict(result)
+        if isinstance(result, RetainedReconciliation):
+            return ReconciledReview.from_dict(json.loads(result.result_json))
+        return ReconciledReview.from_dict(result.payload)
 
     def bind_receipt(self, command: ReviewCommand, request_json: str, *, restore_original: bool = False) -> None:
         if restore_original:

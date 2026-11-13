@@ -9,7 +9,7 @@ from tempo_learning_review.ports import ReviewCompletionStore, ReviewScheduleSto
 
 class IndependentSchedule:
     def reconcile_completed(self, command: ReviewCommand, attempt: QueueAttempt,
-                            context: ReviewContext, *, guided: bool, revision: int | None,
+                            context: ReviewContext, *, attempt_id: str, guided: bool, revision: int | None,
                             competing_review: CompetingReview | None = None) -> ReconciledReview:
         return ReconciledReview.from_dict(dict(persisted=True, review_id=None, queue_entry_id=attempt.id,
                                                 requeue_entry_id=None, reconciliation="history_only"))

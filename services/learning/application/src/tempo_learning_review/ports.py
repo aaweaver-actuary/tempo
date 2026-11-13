@@ -7,7 +7,7 @@ from .models import (AttemptReceipt, CardFacts, ContinuationFacts, PreparedNext,
 
 class ReviewScheduleStore(Protocol):
     def reconcile_completed(self, command: ReviewCommand, attempt: QueueAttempt,
-                            context: ReviewContext, *, guided: bool, revision: int | None,
+                            context: ReviewContext, *, attempt_id: str, guided: bool, revision: int | None,
                             competing_review: CompetingReview | None = None) -> ReconciledReview: ...
     def schedule_snapshot(self, card_id: str) -> ScheduleSnapshot | None: ...
     def schedule(self, command: ReviewCommand, context: ReviewContext, *, outcome: str,

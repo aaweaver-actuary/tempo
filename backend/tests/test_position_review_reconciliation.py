@@ -46,6 +46,47 @@ def names(store):
     return [call[0] for call in store.calls]
 
 
+def test_reconciliation_adapter_preserves_retained_payload_and_normalization(monkeypatch):
+    from app.services import learning_review_adapter as owner
+
+    raw = '{ "persisted": true, "review_id": null, "queue_entry_id": 1, "requeue_entry_id": null, "reconciliation": "history_only", "extra": [3, 1] }'
+    retained = owner.RetainedReconciliation(raw)
+    adapter = owner.LearningReviewAdapter(object(), None, observed_at=_fixture.NOW,
+        policy_provider=lambda: SimpleNamespace(timezone="UTC", light_first_interval_days=7))
+    seen = []
+    monkeypatch.setattr(owner, "reconcile_completed_review", lambda *args, **kwargs: seen.append(kwargs["attempt_id"]) or retained)
+    result = adapter.reconcile_completed(_fixture.command(), _fixture.Capabilities().attempt, _fixture.CONTEXT,
+                                         attempt_id="attempt-a", guided=False, revision=1)
+    assert seen == ["attempt-a"] and retained.result_json == raw
+    assert result.as_dict() == json.loads(raw) and result.as_dict()["extra"] == [3, 1]
+    assert result.payload_json == json.dumps(json.loads(raw))
+
+
+@pytest.mark.parametrize("attempt_id", ["", "other"])
+def test_reconciliation_adapter_rejects_missing_or_foreign_original_before_owner(monkeypatch, attempt_id):
+    from app.services import learning_review_adapter as owner
+    adapter = owner.LearningReviewAdapter(object(), None)
+    monkeypatch.setattr(owner, "reconcile_completed_review", lambda *_args, **_kwargs: pytest.fail("unexpected reconciliation"))
+    with pytest.raises(review.ReviewConflict) as caught:
+        adapter.reconcile_completed(_fixture.command(), _fixture.Capabilities().attempt, _fixture.CONTEXT,
+                                    attempt_id=attempt_id, guided=False, revision=1)
+    assert caught.value.code == "queue_attempt_unprovable"
+
+
+@pytest.mark.parametrize("raw,error", [("{", json.JSONDecodeError), ('[1,2]', ValueError), ('{"persisted":true}', ValueError)])
+def test_reconciliation_adapter_retains_existing_malformed_receipt_failures(monkeypatch, raw, error):
+    from app.services import learning_review_adapter as owner
+
+    adapter = owner.LearningReviewAdapter(object(), None, observed_at=_fixture.NOW,
+        policy_provider=lambda: SimpleNamespace(timezone="UTC", light_first_interval_days=7))
+    retained = owner.RetainedReconciliation(raw)
+    monkeypatch.setattr(owner, "reconcile_completed_review", lambda *_args, **_kwargs: retained)
+    with pytest.raises(error):
+        adapter.reconcile_completed(_fixture.command(), _fixture.Capabilities().attempt, _fixture.CONTEXT,
+                                    attempt_id="attempt-a", guided=False, revision=1)
+    assert retained.result_json == raw
+
+
 @pytest.mark.parametrize("defect", ["missing_fence", "foreign_writer", "attempt", "card", "revision", "entry", "divergent_receipt", "null_review", "original_receipt"])
 def test_position_effect_authority_rejects_unbound_original_before_grade(monkeypatch, defect):
     from app.services import learning_review_adapter as owner
@@ -418,11 +459,11 @@ def test_production_adapter_translates_owner_schedule_and_reconciliation_without
     monkeypatch.setattr(adapter_module, 'training_timing_stage', lambda *_: nullcontext())
     monkeypatch.setattr(adapter_module, 'apply_scheduling_review', lambda *args, **kwargs: owner_result.copy())
     monkeypatch.setattr(adapter_module, 'card_schedule_state', lambda *args: snapshot.copy())
-    monkeypatch.setattr(adapter_module, 'reconcile_completed_review', lambda *args, **kwargs: reconciliation.copy())
+    monkeypatch.setattr(adapter_module, 'reconcile_completed_review', lambda *args, **kwargs: adapter_module.FreshReconciliation(reconciliation.copy()))
     command, context = _fixture.command(), _fixture.CONTEXT
     policy = review.ReviewPolicy('America/New_York', 7)
     assert adapter.schedule(command, context, outcome='correct', guided=False, policy=policy).as_dict() == owner_result
     captured = adapter.schedule_snapshot(command.card_id)
     assert isinstance(captured, ScheduleSnapshot) and captured.as_dict() == snapshot
-    result = adapter.reconcile_completed(command, _fixture.Capabilities().attempt, context, guided=False, revision=1)
+    result = adapter.reconcile_completed(command, _fixture.Capabilities().attempt, context, attempt_id=command.attempt_id, guided=False, revision=1)
     assert isinstance(result, ReconciledReview) and result.as_dict() == reconciliation

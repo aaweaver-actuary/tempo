@@ -103,7 +103,7 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
         if command.attempt_id and command.attempt_id != recorded_attempt:
             if position:
                 raise ReviewConflict("position_attempt_conflict", "A different review completed this position attempt")
-            reconciled = store.reconcile_completed(command, attempt, context, guided=command.guided,
+            reconciled = store.reconcile_completed(command, attempt, context, attempt_id=command.attempt_id, guided=command.guided,
                 revision=command.expected_revision, competing_review=CompetingReview(
                     outcome=recorded_request.get("outcome") if recorded_request else None,
                     completed_at=recorded_time)).as_dict()
@@ -125,11 +125,13 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
     if command.recorded_at:
         context = replace(context, review_day=review_day_at(context.reviewed_at, policy.timezone))
     if attempt.recovered and not position:
+        if not command.attempt_id:
+            raise ReviewConflict("queue_attempt_unprovable", "The original queue attempt cannot be verified. The completed result needs review.")
         if attempt.cycle == 0 and attempt.admission_kind == "new" and card.content_type == "opening":
             store.retain_introduction(command.card_id, attempt.queue_date)
         if store.has_later_review(command.card_id, context) or not command.recorded_at:
             reconciled = store.reconcile_completed(command, attempt, context,
-                guided=bool(command.guided or attempt.attempt_failed), revision=attempt.revision).as_dict()
+                attempt_id=command.attempt_id, guided=bool(command.guided or attempt.attempt_failed), revision=attempt.revision).as_dict()
             store.bind_receipt(command, request_json, restore_original=True)
             store.retain_completion(command, attempt, json.dumps({**reconciled, "_request": original_request,
                 "_recorded_at": completed_at, "_attempt_id": command.attempt_id}), origin_only=True)
