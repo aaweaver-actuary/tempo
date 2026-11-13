@@ -2,6 +2,40 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "study-grading-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/study/policy/study_grading.py#validate_exercise",
+        "backend/app/study/policy/study_grading.py#available_knight_routes",
+        "backend/app/study/policy/study_grading.py#evaluate_answer"
+      ],
+      "dependencies": [
+        "backend-contracts"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/policy/study_grading.py",
+        "backend/app/services/study_grading.py"
+      ],
+      "ownershipRole": "Validate and grade authored Study exercises",
+      "dependencyNotes": [
+        "Policy retains GRADER_VERSION 1, existing exercise and answer contracts and python-chess; assignment-only service facade exposes existing names to attempt and presentation consumers."
+      ],
+      "censusScope": "study_grading"
+    },
+    {
       "id": "study-attempt-command",
       "type": "integration",
       "maintainer": "Tempo",

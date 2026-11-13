@@ -483,8 +483,14 @@ PGN, legacy and retained-mutation fixture failures remain unresolved. Both Study
 attempt guard fixture cases also fail on missing `current_presentation_available`;
 they do not establish runtime behavior.
 
-At this base revision, 137 of 291 tracked Python files in those trees remain
-outside the combined 154-file selections. The registry alone assigns owners;
+A twenty-fifth selection maps Study grading policy and its assignment-only backend
+facade. Existing grader version 1, exercise/answer contracts and python-chess
+remain unchanged; attempt and retained presentation consumers remain external.
+This source map does not establish runtime or browser qualification. The nineteen
+previously reported fixture failures remain unresolved.
+
+At this base revision, 135 of 291 tracked Python files in those trees remain
+outside the combined 156-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

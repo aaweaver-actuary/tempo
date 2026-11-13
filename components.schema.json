@@ -175,7 +175,8 @@
               "queue_order",
               "queue_application",
               "queue_refresh",
-              "study_attempt"
+              "study_attempt",
+              "study_grading"
             ]
           }
         }
