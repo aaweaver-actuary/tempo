@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { tacticCardIdentity } from "../lib/tactic-card-identity";
+import { splitTacticMoves, tacticCardIdentity } from "../lib/tactic-card-identity";
 import { executeStudyRequest, retainedStudyRequest } from "../lib/study-command-client";
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "../lib/study-connection";
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
@@ -362,6 +362,9 @@ function TacticsWorkspace({
       setAttempt({ ...completedAttempt, phase: "feedbackPause" });
       if (packagedRecord && usesLocalApi()) {
         try {
+          // Freeze the exact producer inputs before any receipt/network await.
+          const frozenFen = String(puzzle.startingFen);
+          const frozenMoves = splitTacticMoves(packagedRecord.Moves);
           const body = {
               attempt_id: completedAttempt.discoveryId,
               puzzle_id: packagedRecord.PuzzleId,
@@ -369,7 +372,7 @@ function TacticsWorkspace({
               correct: clean,
               clean,
               source_fen: packagedRecord.FEN,
-              moves: packagedRecord.Moves.split(/\s+/),
+              moves: [...frozenMoves],
               rating: packagedRecord.Rating,
             };
           const scope = `tactic:${progressKey}:${packagedRecord.PuzzleId}`;
@@ -385,7 +388,7 @@ function TacticsWorkspace({
             const result = z.strictObject({ card_id: z.string().min(1),
               mode: z.enum(["normal", "light", "hard"]), next_due: z.string().min(1) })
               .parse(await confirmedResponse.json());
-            const expected = await tacticCardIdentity(puzzle.startingFen, packagedRecord.Moves.split(/\s+/).filter(Boolean).slice(1));
+            const expected = await tacticCardIdentity(frozenFen, frozenMoves.slice(1));
             if (result.card_id !== expected) throw new Error("Tactic receipt names a different card.");
           }
           invalidateWorkspaceData();

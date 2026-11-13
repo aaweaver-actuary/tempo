@@ -11,7 +11,10 @@ import TacticsView from "../../app/views/tactics_view";
 import { playChessMoveSound } from "../../app/lib/move-sound";
 import { tacticCardIdentity } from "../../app/lib/tactic-card-identity";
 
-vi.mock("../../app/lib/tactic-card-identity", () => ({ tacticCardIdentity: vi.fn(async () => "card") }));
+vi.mock("../../app/lib/tactic-card-identity", async importOriginal => ({
+  ...await importOriginal<typeof import("../../app/lib/tactic-card-identity")>(),
+  tacticCardIdentity: vi.fn(async () => "card"),
+}));
 
 vi.mock("../../app/components/chessboard", () => ({
   Chessboard: (props: {

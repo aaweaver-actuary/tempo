@@ -5,6 +5,11 @@ import { canonicalFenKey } from "@tempo/chess-line";
 const pythonWhitespace = /[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/gu;
 const pythonTrim = /^[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/gu;
 
+/** Match the tactic producer's Python str.split() when reading a frozen line. */
+export function splitTacticMoves(moves: string): string[] {
+  return moves.split(pythonWhitespace).filter(Boolean);
+}
+
 /** Match the persisted Study card identity for a frozen tactic's training line. */
 export async function tacticCardIdentity(fen: string, uciMoves: readonly string[]): Promise<string> {
   const normalized = fen.replace(pythonWhitespace, " ");
