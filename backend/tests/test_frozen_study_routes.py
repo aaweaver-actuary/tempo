@@ -117,3 +117,44 @@ def test_requeue_read_binds_original_parent_and_never_dispatches(client, monkeyp
     assert client.get(BASE + '/attempts/foreign/requeue').status_code == 404
     assert client.get('/api/studies/foreign/exercises/exercise/attempts/parent/requeue').status_code == 404
     assert calls == [('study', 'exercise', 'parent'), ('study', 'exercise', 'foreign'), ('foreign', 'exercise', 'parent')]
+
+
+def test_assembled_study_commands_cross_cutover_guard_with_original_keys(monkeypatch):
+    from contextlib import asynccontextmanager
+    from app import command_dispatch, main
+    seen = []
+    @asynccontextmanager
+    async def admitted():
+        yield
+    monkeypatch.setattr(main.activity_gate, "async_foreground", admitted)
+    def dispatch(name, payload, *, idempotency_key):
+        seen.append((name, payload, idempotency_key))
+        return JSONResponse({"operation_id": idempotency_key, "state": "queued"}, status_code=202)
+    monkeypatch.setattr(command_dispatch, "dispatch_command", dispatch)
+    api = TestClient(main.app)
+    payload = {"attempt_id": "original-attempt", "revision": 3, "context": "review",
+               "queue_entry_id": 17, "queue_cycle": 2, "card_id": "card",
+               "answer": {"type": "choice", "option_ids": ["a"]}}
+    response = api.post(BASE + "/attempts", json=payload, headers={"Idempotency-Key": "submit-original"})
+    assert response.status_code == 202 and response.json()["operation_id"] == "submit-original"
+    response = api.post(BASE + "/attempts/original-attempt/self-assess", json={"rating": "again"},
+                        headers={"Idempotency-Key": "assessment-original"})
+    assert response.status_code == 202 and response.json()["operation_id"] == "assessment-original"
+    assert [(name, key) for name, _, key in seen] == [
+        ("studies.attempts.submit", "submit-original"),
+        ("studies.attempts.self_assess", "assessment-original")]
+    assert seen[0][1]["attempt"]["attempt_id"] == seen[1][1]["attempt_id"] == "original-attempt"
+
+
+def test_assembled_cutover_guard_rejects_neighboring_study_write(monkeypatch):
+    from app import main
+    @main.app.post("/api/studies/{study_id}/exercises/{exercise_id}/attempts/{attempt_id}/erase")
+    def forbidden(study_id: str, exercise_id: str, attempt_id: str):
+        pytest.fail("unrelated write passed cutover guard")
+    route = main.app.routes[-1]
+    try:
+        response = TestClient(main.app).post(BASE + "/attempts/original/erase")
+        assert response.status_code == 503
+        assert "awaiting its Celery cutover" in response.json()["detail"]
+    finally:
+        main.app.router.routes.remove(route)
