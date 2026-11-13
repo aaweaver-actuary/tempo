@@ -9,6 +9,8 @@ sys.path.insert(0, str(_REPOSITORY))
 sys.path.insert(0, str(_REPOSITORY / "database"))
 sys.path.insert(0, str(_REPOSITORY / "backend"))
 
+from tempo_storage.redis_control import admission as admission_storage
+
 import argparse
 from contextlib import contextmanager
 from datetime import date
@@ -187,7 +189,7 @@ def resume_unlock_checkpoint(environment):
 
 def assert_monotonic_activity_renewal(server, namespace, *, script=None):
     """Actual Redis: a short pulse cannot retire another live foreground lease."""
-    from app.services.redis_admission_gate import _REGISTER_FOREGROUND
+    from tempo_storage.redis_control.admission import _REGISTER_FOREGROUND
     key = namespace + ':monotonic-renewal:' + uuid4().hex
     now = int(time.time() * 1000)
     try:
@@ -504,10 +506,10 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
         from app.services import queue_application, redis_admission_gate, study_priority
         from app.services.background_runtime import measure_training_timing
         from unittest.mock import patch
-        saved_admission_keys = redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY
+        saved_admission_keys = admission_storage._FOREGROUND_KEY, admission_storage._BACKGROUND_KEY
         saved_policy_keys = study_priority.POLICY_KEY, study_priority.GENERATION_KEY
-        redis_admission_gate._FOREGROUND_KEY = configuration['TEMPO_ADMISSION_NAMESPACE'] + ':foreground'
-        redis_admission_gate._BACKGROUND_KEY = configuration['TEMPO_ADMISSION_NAMESPACE'] + ':background'
+        admission_storage._FOREGROUND_KEY = configuration['TEMPO_ADMISSION_NAMESPACE'] + ':foreground'
+        admission_storage._BACKGROUND_KEY = configuration['TEMPO_ADMISSION_NAMESPACE'] + ':background'
         study_priority.POLICY_KEY = configuration['TEMPO_ADMISSION_NAMESPACE'] + ':study-policy'
         study_priority.GENERATION_KEY = study_priority.POLICY_KEY + ':generation'
         redis_admission_gate.client.cache_clear(); study_priority.control_client.cache_clear()
@@ -689,7 +691,7 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                 results[CASES[3]] = {'database_paused':bool(postgres_container),'settings_locked':True,'control_ms':control_times}
                 shared, renewal = prepare_priority_control_fixture(configuration['TEMPO_ADMISSION_NAMESPACE'])
                 results[CASES[3]]['monotonic_renewal'] = renewal
-                foreground_key = redis_admission_gate._FOREGROUND_KEY
+                foreground_key = admission_storage._FOREGROUND_KEY
                 for session in ('device_a','device_b'):
                     assert client.post('/api/system/browser-activity?session_id='+session,headers={'X-Tempo-Work-Class':'background'}).status_code == 200
                 shared.zadd(foreground_key,{'browser-activity:device_a':int(time.time()*1000)-1})
@@ -719,7 +721,7 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
             for handle in handles: handle.close()
             postgres.close_pools()
             redis_admission_gate.client.cache_clear(); study_priority.control_client.cache_clear()
-            redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY = saved_admission_keys
+            admission_storage._FOREGROUND_KEY, admission_storage._BACKGROUND_KEY = saved_admission_keys
             study_priority.POLICY_KEY, study_priority.GENERATION_KEY = saved_policy_keys
             os.environ.clear(); os.environ.update(original)
             with psycopg.connect(owned_url) as database:

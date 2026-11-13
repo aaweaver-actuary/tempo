@@ -25,6 +25,7 @@ from psycopg.errors import TransactionTimeout
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 from tempo_storage import postgres
+from tempo_storage.redis_control.wake_runtime import wakes as wake_storage
 from app import tasks
 from app.main import _unlock_eligible_opening_cards
 from app.queue_commands import ensure_current_queue, request_queue_refresh_in_transaction
@@ -430,7 +431,7 @@ def proof_deferred_capacity_wakes(identifier):
 
         command_gateway.register_command(proof_command, enqueue_from_command)
         try:
-            with patch.object(background_wakes, '_KEY_PREFIX', ownership_prefix), \
+            with patch.object(wake_storage, '_KEY_PREFIX', ownership_prefix), \
                     patch.object(durable_tasks, '_now', lambda: observed_clock[0]), \
                     patch.object(queue_refresh_wakeup, 'datetime', WakeClock), \
                     patch.object(celery_app, 'send_task', publish_capacity), \

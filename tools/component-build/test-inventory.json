@@ -96,6 +96,7 @@
       "tests/unit/product-game-review-composition.test.tsx",
       "tests/unit/product-fixture-reset-regressions.test.ts",
       "tests/unit/redis-admission-cleanup-regressions.test.ts",
+      "tests/unit/redis-admission-evidence.test.ts",
       "tests/unit/repair-endgame-regressions.test.tsx",
       "tests/unit/repertoire-alternative-home-regressions.test.tsx",
       "tests/unit/repertoire-alternative-index-regressions.test.ts",

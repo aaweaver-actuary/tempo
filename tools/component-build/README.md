@@ -312,7 +312,8 @@ review command, adapter, scheduling and reconciliation, and their receipt,
 review and savepoint storage. The gateway spans multiple domains; dispatch imports
 Celery and the review command registers handlers at import. Review policy imports
 storage and scheduling, and review storage depends on queue-refresh presentation
-and admission. The existing legacy review adapter remains present. These are
+and admission. The retained `submit_legacy_review` adapter serves registered review
+commands; the `apply_legacy_review` compatibility bypass was removed. These are
 source facts, not claims of import purity or a complete dependency closure.
 
 A third selection maps five durable-task and shared-claim files: the task

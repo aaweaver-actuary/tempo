@@ -1,3 +1,5 @@
+import { describeEvidenceFailure } from "./redis-admission-evidence";
+
 type CleanupOperation = () => unknown | Promise<unknown>;
 
 interface RedisAdmissionOperations {
@@ -87,7 +89,8 @@ export class RedisAdmissionCleanup {
     if (this.cleanupFailures.length) {
       throw new AggregateError(
         bodyFailed ? [originalFailure, ...this.cleanupFailures] : this.cleanupFailures,
-        bodyFailed ? "Redis admission test failed; resource cleanup also failed" : "Redis admission resource cleanup failed",
+        [bodyFailed ? `Redis admission test failed: ${describeEvidenceFailure(originalFailure)}` : "Redis admission resource cleanup failed",
+          ...this.cleanupFailures.map((failure, index) => `cleanup ${index + 1}: ${describeEvidenceFailure(failure)}`)].join("; "),
         bodyFailed ? { cause: originalFailure } : undefined,
       );
     }

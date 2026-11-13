@@ -1,5 +1,7 @@
 """Checkpoint proofs preserve admission ownership and bounded shared recovery."""
 
+from tempo_storage.redis_control import admission as admission_storage
+
 from contextlib import nullcontext
 import importlib.util
 from pathlib import Path
@@ -82,8 +84,8 @@ def restart_admission(monkeypatch):
 
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts"))
     parent_keys = (
-        redis_admission_gate._FOREGROUND_KEY,
-        redis_admission_gate._BACKGROUND_KEY,
+        admission_storage._FOREGROUND_KEY,
+        admission_storage._BACKGROUND_KEY,
     )
     parent_lease = parent_keys[0], "persistent-unrelated-parent"
 
@@ -93,9 +95,9 @@ def restart_admission(monkeypatch):
             self.deleted_keys = []
 
         def eval(self, script, *arguments):
-            if script == redis_admission_gate._REGISTER_FOREGROUND:
+            if script == admission_storage._REGISTER_FOREGROUND:
                 self.leases[(arguments[1], arguments[3])] = float("inf")
-            elif script == redis_admission_gate._CLAIM_BACKGROUND:
+            elif script == admission_storage._CLAIM_BACKGROUND:
                 if any(key == arguments[1] for key, _token in self.leases):
                     return 0
                 self.leases[(arguments[2], arguments[4])] = 1
@@ -125,7 +127,7 @@ def restart_admission(monkeypatch):
         redis_admission_gate,
         "foreground_present",
         lambda: any(
-            key == redis_admission_gate._FOREGROUND_KEY for key, _token in server.leases
+            key == admission_storage._FOREGROUND_KEY for key, _token in server.leases
         ),
     )
     return redis_admission_gate, server, parent_keys, parent_lease
@@ -149,7 +151,7 @@ def prepare_restart_proof(monkeypatch, admission, *, fail_stage=None):
     def admitted_stage(stage):
         with gate.background_lease():
             stages.append(stage)
-            namespaces.append((gate._FOREGROUND_KEY, gate._BACKGROUND_KEY))
+            namespaces.append((admission_storage._FOREGROUND_KEY, admission_storage._BACKGROUND_KEY))
             assert server.zscore(*parent_lease) == float("inf")
         if stage == fail_stage:
             with gate.foreground_lease():
@@ -277,7 +279,7 @@ def test_checkpoint_restart_proof_isolates_persistent_parent_activity(
     assert len(set(namespaces)) == 1 and namespaces[0] != parent_keys
     assert server.leases == {parent_lease: float("inf")}
     assert server.deleted_keys == list(namespaces[0])
-    assert (gate._FOREGROUND_KEY, gate._BACKGROUND_KEY) == parent_keys
+    assert (admission_storage._FOREGROUND_KEY, admission_storage._BACKGROUND_KEY) == parent_keys
 
 
 @pytest.mark.parametrize("fail_stage", ["setup", "recovery", "replay"])
@@ -296,7 +298,7 @@ def test_checkpoint_restart_proof_preserves_parent_lease_and_cleans_owned_keys_o
         rehearsal.test_postgres_opening_checkpoint_restart_recomputes_original_receipt()
     assert server.leases == {parent_lease: float("inf")}
     assert server.deleted_keys == list(namespaces[0])
-    assert (gate._FOREGROUND_KEY, gate._BACKGROUND_KEY) == parent_keys
+    assert (admission_storage._FOREGROUND_KEY, admission_storage._BACKGROUND_KEY) == parent_keys
 
 
 def test_checkpoint_restart_crash_worker_uses_parent_owned_namespace(
@@ -320,7 +322,7 @@ def test_checkpoint_restart_crash_worker_uses_parent_owned_namespace(
 
     def prepare(saved_payload):
         with gate.background_lease():
-            observed_keys.append((gate._FOREGROUND_KEY, gate._BACKGROUND_KEY))
+            observed_keys.append((admission_storage._FOREGROUND_KEY, admission_storage._BACKGROUND_KEY))
             assert saved_payload == payload and server.zscore(*parent_lease) == float(
                 "inf"
             )
@@ -354,5 +356,5 @@ def test_checkpoint_restart_crash_worker_uses_parent_owned_namespace(
         )
     ]
     assert server.leases == {parent_lease: float("inf")}
-    assert (gate._FOREGROUND_KEY, gate._BACKGROUND_KEY) == parent_keys
+    assert (admission_storage._FOREGROUND_KEY, admission_storage._BACKGROUND_KEY) == parent_keys
     assert command_gateway._preparers["opening_evidence.checkpoint"] is prepare

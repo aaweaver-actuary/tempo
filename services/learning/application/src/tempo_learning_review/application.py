@@ -50,6 +50,11 @@ def _refresh_opening(store, context, card, result, *, priority_first=False):
 
 
 def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewContext, *, position=False) -> ReviewResult:
+    """Internal algorithm: caller owns transaction, locks and all submission fences.
+
+    This compatibility export is not a user submission boundary; use submit_review
+    for position ownership, evidence, receipt and continuation sequencing.
+    """
     original_request = {"outcome": command.outcome, "guided": command.guided}
     original_payload, request_json = _request_binding(command, context)
     completed_at = context.reviewed_at.isoformat() if command.recorded_at else None

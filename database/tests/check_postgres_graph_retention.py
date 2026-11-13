@@ -16,6 +16,8 @@ sys.path.insert(0, str(_REPOSITORY))
 sys.path.insert(0, str(_REPOSITORY / "database"))
 sys.path.insert(0, str(_REPOSITORY / "backend"))
 
+from tempo_storage.redis_control import admission as admission_storage
+
 import argparse
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -569,14 +571,14 @@ def validate_disposable_database() -> dict:
 @contextmanager
 def owned_admission_scope(owned_database_name):
     """The exclusive helper database has no callers in the parent API workspace."""
-    parent_foreground_key = redis_admission_gate._FOREGROUND_KEY
+    parent_foreground_key = admission_storage._FOREGROUND_KEY
     foreground_key = f'tempo:test:{owned_database_name}:admission:foreground'
     background_key = f'tempo:test:{owned_database_name}:admission:background'
     server = redis_admission_gate.client()
     token = uuid.uuid4().hex
     try:
-        with patch.object(redis_admission_gate, '_FOREGROUND_KEY', foreground_key), \
-                patch.object(redis_admission_gate, '_BACKGROUND_KEY', background_key):
+        with patch.object(admission_storage, '_FOREGROUND_KEY', foreground_key), \
+                patch.object(admission_storage, '_BACKGROUND_KEY', background_key):
             # A parent health/study request must not contaminate the isolated
             # rehearsal, and isolation must never clear the parent's lease.
             server.zadd(parent_foreground_key, {token: int(time.time()*1000)+30_000})
@@ -589,7 +591,7 @@ def owned_admission_scope(owned_database_name):
             yield
     finally:
         server.delete(foreground_key, background_key)
-    assert redis_admission_gate._FOREGROUND_KEY == parent_foreground_key
+    assert admission_storage._FOREGROUND_KEY == parent_foreground_key
 
 
 @contextmanager
