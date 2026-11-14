@@ -1,28 +1,26 @@
 """Preview and atomically add pasted SAN/PGN variations to repertoires."""
 
 from __future__ import annotations
-from tempo_storage.postgres import PostgresConnection
 
-import hashlib
 import io
 import json
 import re
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import chess
 import chess.pgn
-
+from backend.app.utils.hash import stable_key
+from tempo_chess_core import card_id
 from tempo_storage.authored_repertoires import (
     analysis_paste as storage,
 )
+from tempo_storage.postgres import PostgresConnection
 
-from app.chess.cards import card_id
 from app.chess.pgn import ends_on_trained_move
 from app.chess.position_identity import position_key as canonical_fen
-
 
 MAX_PASTE_BYTES = 65_536
 MAX_PASTE_LINES = 50
@@ -51,18 +49,18 @@ class PastedLine:
 
 def _validate_movetext_tokens(source: str) -> None:
     """python-chess ignores unknown PGN words, so reject them explicitly."""
-    without_headers = re.sub('(%sm)^\\s*\\[[^\\n]*\\]\\s*$', " ", source)
+    without_headers = re.sub("(%sm)^\\s*\\[[^\\n]*\\]\\s*$", " ", source)
     without_comments = re.sub(
-        '\\{[^}]*\\}|;[^\\n]*|(%sm:^%[^\\n]*)', " ", without_headers, flags=re.S
+        "\\{[^}]*\\}|;[^\\n]*|(%sm:^%[^\\n]*)", " ", without_headers, flags=re.DOTALL
     )
-    without_numbers = re.sub('\\b\\d+\\.(%s:\\.\\.)%s|\\.\\.\\.', " ", without_comments)
+    without_numbers = re.sub("\\b\\d+\\.(%s:\\.\\.)%s|\\.\\.\\.", " ", without_comments)
     without_nags = re.sub(r"\$\d+", " ", without_numbers)
     for token in re.sub(r"[()]", " ", without_nags).split():
         if token in {"*", "1-0", "0-1", "1/2-1/2"}:
             continue
-        normalized = token.rstrip('!?')
+        normalized = token.rstrip("!?")
         if not chess.SAN_REGEX.fullmatch(normalized) and not re.fullmatch(
-            '[O0]-[O0](%s:-[O0])%s[+#]%s', normalized
+            "[O0]-[O0](%s:-[O0])%s[+#]%s", normalized
         ):
             raise PasteInputError(f"Unrecognized move text: {token}")
 
@@ -152,9 +150,7 @@ def _position_moves(line: PastedLine) -> list[tuple[str, str]]:
 def _snapshot(database: PostgresConnection) -> tuple[list[dict], list[dict], str]:
     repertoires = storage.repertoires(database)
     lines = storage.lines(database)
-    signature = hashlib.sha256(
-        json.dumps([repertoires, lines], sort_keys=True).encode()
-    ).hexdigest()
+    signature = stable_key("analysis-paste", repertoires, lines)
     return repertoires, lines, signature
 
 
@@ -269,11 +265,9 @@ def build_paste_preview(
     repertoires, stored_lines, signature = _snapshot(database)
     if not repertoires:
         raise PasteInputError("Import a repertoire before pasting analysis")
-    token = hashlib.sha256(
-        json.dumps(
-            [raw_text, starting_fen, source_gap_id, signature], sort_keys=True
-        ).encode()
-    ).hexdigest()
+    token = stable_key(
+        "analysis-paste", raw_text, starting_fen, source_gap_id, signature
+    )
     parsed_existing = _parsed_existing_lines(stored_lines, signature)
     lines = []
     for index, pasted in enumerate(parsed):
@@ -311,11 +305,9 @@ def commit_pasted_lines(
             "Repertoires changed since the preview. Preview again before saving"
         )
     _, _, current_signature = _snapshot(database)
-    current_token = hashlib.sha256(
-        json.dumps(
-            [raw_text, starting_fen, source_gap_id, current_signature], sort_keys=True
-        ).encode()
-    ).hexdigest()
+    current_token = stable_key(
+        "analysis-paste", raw_text, starting_fen, source_gap_id, current_signature
+    )
     if current_token != preview_token:
         raise StalePastePreview(
             "Repertoires changed since the preview. Preview again before saving"
@@ -355,7 +347,7 @@ def commit_pasted_lines(
         raise PasteInputError(
             "Confirm conflicting trained moves between pasted lines before saving"
         )
-    from .canonical_prefix import ensure_batch_lines_in_scope, certify_admitted_route
+    from .canonical_prefix import certify_admitted_route, ensure_batch_lines_in_scope
 
     selected_indices = sorted(by_index)
     validated_routes = dict(
@@ -375,7 +367,7 @@ def commit_pasted_lines(
         )
     )
     admitted_routes = []
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     saved: list[dict] = []
     affected: set[str] = set()
     inserted_keys: set[tuple[str, str, tuple[str, ...]]] = set()
@@ -400,9 +392,11 @@ def commit_pasted_lines(
                 "Each saved line must finish with a move by the side being trained"
             )
         pasted = parsed[index]
-        line_id = hashlib.sha256(
-            f"{selected['repertoire_id']}\0{card_id(pasted.starting_fen, list(pasted.moves))}".encode()
-        ).hexdigest()
+        line_id = stable_key(
+            "repertoire-line",
+            selected["repertoire_id"],
+            card_id(pasted.starting_fen, list(pasted.moves)),
+        )
         insert_key = (
             selected["repertoire_id"],
             canonical_fen(pasted.starting_fen),

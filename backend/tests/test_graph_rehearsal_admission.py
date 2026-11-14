@@ -98,7 +98,7 @@ def test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease(
         publisher = executor.submit(publisher_read)
         assert entered.wait(2)
         try:
-            import database.tooling.postgres_rehearsal_admission as postgres_rehearsal_admission
+            from database.tooling import postgres_rehearsal_admission
 
             original_sleep = postgres_rehearsal_admission.time.sleep
 

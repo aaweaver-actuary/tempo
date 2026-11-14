@@ -1,5 +1,5 @@
 """Historical schema inclusion remains checksum-pinned without retired packages."""
-from pathlib import Path
+
 import pytest
 from database.tooling import apply_postgres_migrations as migration
 
@@ -17,7 +17,9 @@ def test_historical_remediation_schema_is_bundled_and_checksum_verified():
 
 
 @pytest.mark.parametrize("fault", ["checksum", "registration"])
-def test_changed_historical_schema_fails_before_database_access(monkeypatch, tmp_path, fault):
+def test_changed_historical_schema_fails_before_database_access(
+    monkeypatch, tmp_path, fault
+):
     migrations = tmp_path / "migrations"
     historical = tmp_path / "historical"
     migrations.mkdir()
@@ -25,7 +27,9 @@ def test_changed_historical_schema_fails_before_database_access(monkeypatch, tmp
     wrapper = migrations / "050_learning_remediation.sql"
     wrapper.write_text((migration.MIGRATIONS / wrapper.name).read_text())
     bundled = historical / "050_remediation.sql"
-    bundled.write_bytes((migration.MIGRATIONS.parent / "historical" / bundled.name).read_bytes())
+    bundled.write_bytes(
+        (migration.MIGRATIONS.parent / "historical" / bundled.name).read_bytes()
+    )
     if fault == "checksum":
         bundled.write_text("CREATE TABLE changed(value text);")
     else:

@@ -4,11 +4,11 @@ Only authored fixture data is generated here. No accepted effects, scheduling
 receipts, review results, or issuance authority are manufactured.
 """
 
-from dataclasses import dataclass
 import hashlib
 import json
 import math
 import random
+from dataclasses import dataclass
 
 import chess
 

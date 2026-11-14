@@ -8,23 +8,27 @@ from typing import Any
 
 import chess
 from fastapi import HTTPException
-
-from .services.study_calendar import capture_study_calendar
-
-from .command_gateway import register_command
-from app.repertoire.changes.application import validate_source_rows
-from app.repertoire.changes.ports import ChangeError
+from tempo_chess_core import card_id
+from tempo_storage.authored_repertoires import branches as storage
 from tempo_storage.authored_repertoires import (
     product_changes as change_storage,
 )
-from app.contracts.transport.authored_lines import BranchRequest, RemoveBranchRequest, reject_retired_coverage
 from tempo_storage.postgres import PostgresConnection
-from tempo_storage.authored_repertoires import branches as storage
-from app.chess.cards import card_id
-from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
-from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
+
+from app.contracts.transport.authored_lines import (
+    BranchRequest,
+    RemoveBranchRequest,
+    reject_retired_coverage,
+)
+from app.repertoire.changes.application import validate_source_rows
+from app.repertoire.changes.ports import ChangeError
+
+from .command_gateway import register_command
+from .services.canonical_prefix import certify_admitted_route, ensure_line_in_scope
 from .services.postgres_integrity import invalidate_integrity_in_transaction
+from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.repertoire_integrity import integrity_summary
+from .services.study_calendar import capture_study_calendar
 
 
 def add_repertoire_branch(

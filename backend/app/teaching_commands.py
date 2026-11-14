@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException
-
-from .command_gateway import register_command
-from app.contracts.transport.study import TeachingStateRequest
 from tempo_storage.commands import teaching as storage
 from tempo_storage.postgres import PostgresConnection
+
+from app.contracts.transport.study import TeachingStateRequest
+
+from .command_gateway import register_command
 
 
 def record_teaching_state(
@@ -20,7 +21,7 @@ def record_teaching_state(
     request = TeachingStateRequest.model_validate(payload["teaching_state"])
     if storage.active_card_for_update(database, card_id) is None:
         raise HTTPException(404, "Card not found")
-    taught_at = datetime.now(timezone.utc).isoformat()
+    taught_at = datetime.now(UTC).isoformat()
     stored_taught_at = storage.record_teaching_timestamp(
         database, card_id, request.revision, request.ply, taught_at
     )

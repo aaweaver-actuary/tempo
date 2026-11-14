@@ -1,15 +1,15 @@
 """Failed command receipts preserve HTTP semantics across worker timing."""
 
-from tempo_storage import postgres
-from contextlib import nullcontext
 import json
+from contextlib import nullcontext
 from types import SimpleNamespace
 
+import pytest
 from celery.exceptions import TimeoutError as CeleryTimeout
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from psycopg.errors import SerializationFailure
-import pytest
+from tempo_storage import postgres
 
 from app import command_dispatch, command_gateway
 
@@ -338,6 +338,7 @@ def test_opening_checkpoint_http_semantic_rejection_preserves_terminal_receipt(
 ):
     monkeypatch.setattr(postgres, "configured", lambda: True)
     from pathlib import Path
+
     from app import main
 
     transport, _client = receipt_transport
@@ -367,7 +368,7 @@ def test_opening_checkpoint_http_semantic_rejection_preserves_terminal_receipt(
     def source_read(statement, parameters):
         if statement.startswith("SELECT snapshot.*"):
             return SimpleNamespace(fetchone=lambda: snapshot)
-        return SimpleNamespace(fetchone=lambda: None, fetchall=lambda: [])
+        return SimpleNamespace(fetchone=lambda: None, fetchall=list)
 
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
     monkeypatch.delenv("TEMPO_FOREGROUND_ACTIVITY_URL", raising=False)

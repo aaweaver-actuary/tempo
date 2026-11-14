@@ -1,8 +1,9 @@
 """Place a card on the Study queue inside the caller-owned transaction."""
 
 from tempo_storage.study.review import storage
-from app.services.queue_presentation import presentation_rows
+
 from app.services.queue_ordering import _priority_queue_order
+from app.services.queue_presentation import presentation_rows
 from app.services.queue_priority_promotion import (
     StalePriorityPromotion,
     priority_changes,
@@ -27,20 +28,23 @@ def ensure_card_queued_after(
     previous_order = (
         capture_daily_queue_order(database, day) if preserve_order else None
     )
-    if prepared_priority is not None:
-        if (
-            not protect_presented
-            or preserve_order
-            or (day, card_id, priority_reason)
-            != (
-                prepared_priority.queue_date,
-                prepared_priority.card_id,
-                prepared_priority.priority_reason,
-            )
-            or storage.priority_ownership_state(database, day, target_card_id=card_id)
-            != prepared_priority.ownership_state
-        ):
-            raise StalePriorityPromotion("priority_presentation_changed")
+
+    has_prepared_priority = prepared_priority is not None
+
+    if has_prepared_priority and (
+        not protect_presented
+        or preserve_order
+        or (day, card_id, priority_reason)
+        != (
+            prepared_priority.queue_date,
+            prepared_priority.card_id,
+            prepared_priority.priority_reason,
+        )
+        or storage.priority_ownership_state(database, day, target_card_id=card_id)
+        != prepared_priority.ownership_state
+    ):
+        raise StalePriorityPromotion("priority_presentation_changed")
+
     entry = storage.queued_entry(database, day, card_id)
     if prepared_priority is not None and (
         not entry or entry["id"] != prepared_priority.entry_id

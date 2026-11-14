@@ -5,13 +5,11 @@ from __future__ import annotations
 import json
 
 import chess
-from fastapi import HTTPException
-from ..chess.position_identity import position_key
 from tempo_storage.authored_repertoires.canonical_prefix import (
     scope as storage,
 )
 
-
+from ..chess.position_identity import position_key
 
 
 def prefix_projection(moves: list[str], revision: int = 0) -> dict:
@@ -299,10 +297,6 @@ def ensure_batch_lines_in_scope(
             )
         break
     return [validated_routes[index] for index in range(len(candidates))]
-
-
-
-
 
 
 def store_positions(

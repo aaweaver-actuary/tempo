@@ -1,12 +1,13 @@
 import unittest
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-from app.chess.cards import card_id
-from app.services.puzzles import load_packaged_decks, validate_puzzle_record
-from app.chess.pgn import parse_pgn, prefix_through_user_moves
-from app.services.scheduler import schedule_review, unlock_ready
 import chess
+from tempo_chess_core import card_id
+
+from app.chess.pgn import parse_pgn, prefix_through_user_moves
+from app.services.puzzles import load_packaged_decks, validate_puzzle_record
+from app.services.scheduler import schedule_review, unlock_ready
 
 
 class CardIdentityTests(unittest.TestCase):
@@ -60,7 +61,7 @@ class SchedulerTests(unittest.TestCase):
             first_correct_at=first.first_correct_at,
             reinforcement_pending=True,
         )
-        much_later = datetime.now(timezone.utc) + timedelta(days=180)
+        much_later = datetime.now(UTC) + timedelta(days=180)
         third = schedule_review(
             "correct",
             interval_days=max(1, second.interval_days),
@@ -177,7 +178,6 @@ class PackagedContentTests(unittest.TestCase):
         ]
         self.assertEqual(len(puzzle_ids), len(set(puzzle_ids)))
 
-
     def test_six_move_prefix_ends_on_trained_side(self) -> None:
         moves = [
             "e2e4",
@@ -224,7 +224,6 @@ class PackagedContentTests(unittest.TestCase):
             board.piece_at(chess.A3), chess.Piece(chess.BISHOP, chess.WHITE)
         )
         self.assertEqual(solution, ["a2e6", "d7d8", "f7f8"])
-
 
 
 if __name__ == "__main__":

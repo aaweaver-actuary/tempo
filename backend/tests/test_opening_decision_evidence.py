@@ -1,17 +1,18 @@
 """Named regular-suite protections for the shadow evidence foundation."""
 
-import json
 import hashlib
-import pytest
+import json
+
 import chess
+import pytest
+
 from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
 from app.services.opening_decision_evidence import (
+    EvidenceConflict,
     decision_manifest,
     reduce_observations,
     validate_checkpoint,
-    EvidenceConflict,
 )
-
 
 MOVES = [
     "e2e4",

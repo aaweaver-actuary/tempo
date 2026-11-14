@@ -12,20 +12,20 @@ and discard behavior remains covered below, including receipt identity and batch
 """
 
 import ast
-from datetime import date
 import json
 import os
 import re
-from pathlib import Path
 import subprocess
 import sys
+from datetime import date
+from pathlib import Path
 from types import SimpleNamespace
 
 import chess
 import pytest
+from tempo_storage.authored_repertoires.pgn_import import storage
 
 from app import pgn_import_commands as application
-from tempo_storage.authored_repertoires.pgn_import import storage
 
 
 def _retained_storage_application_imports(source):
@@ -44,7 +44,10 @@ def test_retained_import_storage_does_not_import_application_policy():
     from tempo_storage.commands.receipts import storage as receipts
 
     for owner in (storage, preparation, receipts):
-        assert _retained_storage_application_imports(Path(owner.__file__).read_text()) == set()
+        assert (
+            _retained_storage_application_imports(Path(owner.__file__).read_text())
+            == set()
+        )
 
 
 @pytest.mark.parametrize(
@@ -91,7 +94,13 @@ assert not denied.intersection(sys.modules)
 """
     root = Path(__file__).resolve().parents[2]
     environment = os.environ.copy()
-    environment["PYTHONPATH"] = os.pathsep.join((str(root / "backend"), str(root / "database"), environment.get("PYTHONPATH", "")))
+    environment["PYTHONPATH"] = os.pathsep.join(
+        (
+            str(root / "backend"),
+            str(root / "database"),
+            environment.get("PYTHONPATH", ""),
+        )
+    )
     result = subprocess.run(
         [sys.executable, "-B", "-c", script],
         env=environment,
@@ -233,18 +242,41 @@ def test_retained_import_storage_preserves_full_receipt_tuple_and_raw_json():
 def test_current_import_card_identity_projections_preserve_empty_and_existing_rows():
     # The retired approval preview's seven fields/order have no current caller.
     # Import admission consumes existing/deleted identities, not approval previews.
-    database = Borrowed([], replies=[Rows(rows=[("a",), ("z",)]), Rows(rows=[("deleted",)]), Rows(rows=[]), Rows(rows=[])])
+    database = Borrowed(
+        [],
+        replies=[
+            Rows(rows=[("a",), ("z",)]),
+            Rows(rows=[("deleted",)]),
+            Rows(rows=[]),
+            Rows(rows=[]),
+        ],
+    )
     identifiers = ["z", "deleted", "a"]
     empty = []
     assert tuple(storage.existing_card_ids(database, identifiers)) == (("a",), ("z",))
     assert tuple(storage.deleted_card_ids(database, identifiers)) == (("deleted",),)
     assert tuple(storage.existing_card_ids(database, empty)) == ()
     assert tuple(storage.deleted_card_ids(database, empty)) == ()
-    assert [parameters for _, parameters in database.native_calls] == [(identifiers,), (identifiers,), (empty,), (empty,)]
-    for (statement, _), (column, relation) in zip(database.native_calls,
-        [("id", "cards"), ("card_id", "deleted_cards"), ("id", "cards"), ("card_id", "deleted_cards")]):
+    assert [parameters for _, parameters in database.native_calls] == [
+        (identifiers,),
+        (identifiers,),
+        (empty,),
+        (empty,),
+    ]
+    for (statement, _), (column, relation) in zip(
+        database.native_calls,
+        [
+            ("id", "cards"),
+            ("card_id", "deleted_cards"),
+            ("id", "cards"),
+            ("card_id", "deleted_cards"),
+        ],
+    ):
         normalized = " ".join(statement.lower().split())
-        match = re.fullmatch(r"select (\w+) from (\w+) where (\w+)\s*=\s*any\(\s*%s\s*::\s*text\[\]\s*\)", normalized)
+        match = re.fullmatch(
+            r"select (\w+) from (\w+) where (\w+)\s*=\s*any\(\s*%s\s*::\s*text\[\]\s*\)",
+            normalized,
+        )
         assert match and match.groups() == (column, relation, column), normalized
     assert database.raw_calls == []
 
@@ -268,10 +300,15 @@ def test_current_import_receipt_lock_preserves_original_identity_and_opaque_writ
     writer = receipts.receipt_writer(database)
     assert not hasattr(writer, "commit") and not hasattr(writer, "connection")
     assert receipts.lock_operation(writer, "original-operation") is None
-    assert [parameters for _, parameters in database.raw_calls] == [("original-operation",)]
-    (statement, _), = database.raw_calls
+    assert [parameters for _, parameters in database.raw_calls] == [
+        ("original-operation",)
+    ]
+    ((statement, _),) = database.raw_calls
     normalized = " ".join(statement.lower().split())
-    assert re.fullmatch(r"select pg_advisory_xact_lock\(\s*hashtextextended\(\s*%s\s*,\s*0\s*\)\s*\)", normalized), normalized
+    assert re.fullmatch(
+        r"select pg_advisory_xact_lock\(\s*hashtextextended\(\s*%s\s*,\s*0\s*\)\s*\)",
+        normalized,
+    ), normalized
     assert database.native_calls == []
 
 
@@ -371,7 +408,11 @@ def test_import_keeps_clock_identity_lazy_reads_certification_and_callback_order
         events.append("certify")
 
     monkeypatch.setattr(batch, "executemany", executemany)
-    monkeypatch.setattr(application, "capture_study_calendar", lambda db: SimpleNamespace(observed_at=now(None), day=date(2026, 10, 20)))
+    monkeypatch.setattr(
+        application,
+        "capture_study_calendar",
+        lambda db: SimpleNamespace(observed_at=now(None), day=date(2026, 10, 20)),
+    )
     monkeypatch.setattr(application.uuid, "uuid4", new_id)
     monkeypatch.setattr(application, "ensure_batch_lines_in_scope", scope)
     monkeypatch.setattr(application, "certify_admitted_route", certify)

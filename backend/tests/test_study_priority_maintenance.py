@@ -76,6 +76,7 @@ def test_study_priority_maintenance_setup_timeouts_and_closed_connections_back_o
     monkeypatch,
 ):
     import psycopg
+
     from app import tasks
 
     now = [100.0]
@@ -107,12 +108,14 @@ def test_owned_fixture_database_renews_private_policy_without_touching_parent_co
 ):
     import importlib
     import json
-    from contextlib import nullcontext
-    from pathlib import Path
     import threading
     import time
+    from contextlib import nullcontext
+    from pathlib import Path
     from types import SimpleNamespace
+
     from tempo_storage import connections as database
+
     from app.services import study_priority
 
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts"))
@@ -216,8 +219,8 @@ def test_postgres_sparse_unlock_proof_retains_three_write_batches_while_bounding
     monkeypatch,
 ):
     import bisect
-    from contextlib import nullcontext
     import importlib
+    from contextlib import nullcontext
     from pathlib import Path
 
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts"))
@@ -265,9 +268,7 @@ def test_postgres_sparse_unlock_proof_retains_three_write_batches_while_bounding
             return Result([(card_id,) for card_id in sorted(unlocked)])
 
     database = Database()
-    monkeypatch.setattr(
-        proof.postgres, "connection", lambda **_: nullcontext(database)
-    )
+    monkeypatch.setattr(proof.postgres, "connection", lambda **_: nullcontext(database))
     monkeypatch.setattr(
         proof.psycopg, "connect", lambda *_args, **_kwargs: nullcontext(database)
     )
@@ -284,7 +285,9 @@ def test_native_priority_control_fixture_preserves_poll_deadline_and_uses_bounde
 ):
     import importlib
     from pathlib import Path
+
     import redis
+
     from app.services import redis_admission_gate, study_priority
 
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts"))
@@ -358,8 +361,9 @@ def test_checkpoint_restart_success_preserves_cursor_and_process_bounds(monkeypa
 def test_checkpoint_restart_reports_only_validated_symbolic_frames(monkeypatch):
     import importlib
     import json
-    import pytest
     from types import SimpleNamespace
+
+    import pytest
 
     proof = importlib.import_module("database.tests.check_postgres_study_priority")
     record = {
@@ -393,8 +397,9 @@ def test_checkpoint_restart_rejects_messages_malicious_frames_and_raw_output(
 ):
     import importlib
     import json
-    import pytest
     from types import SimpleNamespace
+
+    import pytest
 
     proof = importlib.import_module("database.tests.check_postgres_study_priority")
     frame = {"module": "owned.module", "function": "checkpoint", "line": 1}
@@ -441,6 +446,7 @@ def test_checkpoint_restart_rejects_messages_malicious_frames_and_raw_output(
 
 def test_checkpoint_restart_timeout_does_not_expose_captured_output(monkeypatch):
     import importlib
+
     import pytest
 
     proof = importlib.import_module("database.tests.check_postgres_study_priority")
@@ -461,8 +467,9 @@ def test_checkpoint_child_wraps_import_and_call_without_exception_messages(capsy
     import builtins
     import importlib
     import json
-    import pytest
     from types import SimpleNamespace
+
+    import pytest
 
     proof = importlib.import_module("database.tests.check_postgres_study_priority")
     for fail_import in (True, False):
@@ -506,9 +513,10 @@ def test_native_checkpoint_restart_resumes_private_postgres_checkpoint(
     import importlib
     import json
     import os
-    import pytest
     import subprocess
+
     import psycopg
+    import pytest
     from psycopg.conninfo import conninfo_to_dict
 
     parent_url = os.environ.get("TEMPO_489_TEST_DSN")

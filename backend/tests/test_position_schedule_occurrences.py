@@ -4,19 +4,19 @@ from dataclasses import replace
 
 import chess
 import pytest
-from tempo_evidence_math.position_learning import Hold, PositionKey, SourceCertificate
 from tempo_evidence_math import opening_position_key
+from tempo_evidence_math.position_learning import Hold, PositionKey, SourceCertificate
+from test_product_position_index import binding, route, snapshot
 
-from app.repertoire.position_index import build_index
-from app.repertoire.position_schedule_occurrences import routes_from_validated_index
 from app.repertoire.interfaces.position_schedule_occurrences import (
+    PositionInventoryFacts,
     index_routes,
+    inventory_from_snapshot,
     options_for_target,
     routes_from_snapshot,
-    inventory_from_snapshot,
-    PositionInventoryFacts,
 )
-from test_product_position_index import binding, route, snapshot
+from app.repertoire.position_index import build_index
+from app.repertoire.position_schedule_occurrences import routes_from_validated_index
 
 
 def project(source, certificate=True):

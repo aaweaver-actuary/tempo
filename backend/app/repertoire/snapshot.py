@@ -6,28 +6,27 @@ transaction, graph migration and provider lifecycle authority stay in adapters.
 
 from __future__ import annotations
 
-from tempo_game_review_contracts import RepertoireSnapshotBoundExceeded
-
-from collections import Counter
-from functools import lru_cache
-from dataclasses import dataclass
-from types import MappingProxyType
-from datetime import datetime, timezone
 import json
-from typing import Callable, Mapping
+from collections import Counter
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from functools import lru_cache
+from types import MappingProxyType
 
 import chess
-from tempo_evidence_math import opening_position_key
 from tempo_chess_core import canonical_fen_key
+from tempo_evidence_math import opening_position_key
 from tempo_game_evidence_contracts.legacy import (
-    authority_source_digest,
-    authority_graph_digest,
     decision_identity,
     fingerprint,
 )
 from tempo_game_review_contracts import (
     AuthoredRoute,
     CanonicalGame,
+    RepertoireSnapshotBoundExceeded,
+)
+from tempo_game_review_contracts import (
     RepertoireSnapshot as MembershipSnapshot,
 )
 
@@ -41,8 +40,6 @@ from app.contracts.product_v02.repertoire import (
 MAX_CAPTURE_BYTES = 32 * 1024 * 1024
 
 
-
-
 def _introduction(card):
     if "introduced_at" not in card:
         return "unknown", None
@@ -54,7 +51,7 @@ def _introduction(card):
         if (
             "T" in value
             and parsed.tzinfo is not None
-            and parsed.utcoffset() == timezone.utc.utcoffset(parsed)
+            and parsed.utcoffset() == UTC.utcoffset(parsed)
         ):
             return "introduced", value
     except (ValueError, TypeError, AttributeError):
@@ -423,7 +420,7 @@ def _project_repertoire(
         else "current_repertoire_snapshot"
     )
     digest = fingerprint({"kind": kind, "schema_version": 1, "facts": source})
-    moment = captured_at or datetime.now(timezone.utc).isoformat()
+    moment = captured_at or datetime.now(UTC).isoformat()
     membership = MembershipSnapshot(
         workspace_id=header["workspace_id"],
         snapshot_id=("publication:" if published else "repertoire:") + digest,

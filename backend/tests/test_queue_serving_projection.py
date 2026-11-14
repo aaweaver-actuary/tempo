@@ -6,20 +6,48 @@ from pathlib import Path
 
 import pytest
 from tempo_storage.http_composition import queue_projection
+
 from app.study.queue_serving import add_encounter_evidence
 
-CARD_FIELDS = """id repertoire_id kind start_fen moves_json state due_date interval_days ease
-repetitions lapses unlock_after_card_id fsrs_card_json first_correct_at reinforcement_pending
-stability guided_review maximum_interval content_type scheduling_mode hard_correct_streak
-recent_attempts_json archived superseded_by source_ref source_fen revision introduced_at
-trained_color pending_validation prefix_split_rejected_after_review_id study_exercise_id
-canonical_route_source""".split()
+CARD_FIELDS = [
+    "id",
+    "repertoire_id",
+    "kind",
+    "start_fen",
+    "moves_json",
+    "state",
+    "due_date",
+    "interval_days",
+    "ease",
+    "repetitions",
+    "lapses",
+    "unlock_after_card_id",
+    "fsrs_card_json",
+    "first_correct_at",
+    "reinforcement_pending",
+    "stability",
+    "guided_review",
+    "maximum_interval",
+    "content_type",
+    "scheduling_mode",
+    "hard_correct_streak",
+    "recent_attempts_json",
+    "archived",
+    "superseded_by",
+    "source_ref",
+    "source_fen",
+    "revision",
+    "introduced_at",
+    "trained_color",
+    "pending_validation",
+    "prefix_split_rejected_after_review_id",
+    "study_exercise_id",
+    "canonical_route_source",
+]
 
 
 @pytest.mark.parametrize("limit", [None, 20])
-def test_queue_projection_emits_only_explicit_current_card_fields(
-    limit
-):
+def test_queue_projection_emits_only_explicit_current_card_fields(limit):
     class Capture:
         def execute_native(self, sql):
             self.profile = sql
@@ -43,9 +71,7 @@ def test_queue_projection_emits_only_explicit_current_card_fields(
     assert re.findall(r"c\.([a-z_]+)", selected) == CARD_FIELDS
     assert "c.*" not in selected
     assert database.params == (
-        ("2026-10-30", limit, limit)
-        if limit is not None
-        else ("2026-10-30",)
+        ("2026-10-30", limit, limit) if limit is not None else ("2026-10-30",)
     )
 
 

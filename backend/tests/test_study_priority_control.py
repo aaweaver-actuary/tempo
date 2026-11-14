@@ -1,12 +1,11 @@
 """Study control must be fast, expiring, session-scoped and conservative."""
 
-from tempo_storage.redis_control import admission as admission_storage
-
+import json
 from contextlib import contextmanager
 from types import SimpleNamespace
-import json
 
 import pytest
+from tempo_storage.redis_control import admission as admission_storage
 
 from app.services import redis_admission_gate, study_priority
 from app.services.activity_gate import ApplicationActivityGate
@@ -70,6 +69,7 @@ def test_study_control_poll_never_reads_postgres_and_old_refresh_cannot_override
     control, monkeypatch
 ):
     from tempo_storage import connections as database
+
     from app import main
 
     monkeypatch.setattr(
@@ -142,7 +142,7 @@ def test_study_activity_final_pulse_preserves_remaining_quiet_time(
 def test_study_priority_background_policy_poll_never_opens_database_and_unknown_pauses_optional_work(
     monkeypatch,
 ):
-    from app.services import study_mode, study_priority, redis_admission_gate
+    from app.services import redis_admission_gate, study_mode, study_priority
     from app.services.activity_gate import activity_gate
 
     monkeypatch.setattr(redis_admission_gate, "configured", lambda: True)
@@ -163,6 +163,7 @@ def test_study_policy_refresh_retains_reserved_key_identity_after_private_owner_
     monkeypatch,
 ):
     import threading
+
     from tempo_storage import connections as database
 
     parent_keys = study_priority.POLICY_KEY, study_priority.GENERATION_KEY

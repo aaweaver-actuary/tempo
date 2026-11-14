@@ -17,7 +17,6 @@ from app.contracts.study_exercises import (
     SquareExercise,
 )
 
-
 GRADER_VERSION = 1
 
 

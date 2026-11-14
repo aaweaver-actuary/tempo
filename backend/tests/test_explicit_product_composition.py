@@ -3,7 +3,7 @@
 import os
 import subprocess
 import sys
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -78,12 +78,21 @@ else: raise AssertionError('unknown export accepted')
 
 def test_branch_add_and_remove_preserve_repairs(monkeypatch):
     import chess
+
     from app import branch_commands as owner
 
     events = []
     db = object()
-    calendar = SimpleNamespace(day=date(2026, 1, 1), observed_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
-    monkeypatch.setattr(owner, "capture_study_calendar", lambda database: calendar if database is db else pytest.fail("wrong calendar database"))
+    calendar = SimpleNamespace(
+        day=date(2026, 1, 1), observed_at=datetime(2026, 1, 1, tzinfo=UTC)
+    )
+    monkeypatch.setattr(
+        owner,
+        "capture_study_calendar",
+        lambda database: (
+            calendar if database is db else pytest.fail("wrong calendar database")
+        ),
+    )
     monkeypatch.setattr(
         owner.storage,
         "lock_repertoire_for_add",
@@ -100,6 +109,7 @@ def test_branch_add_and_remove_preserve_repairs(monkeypatch):
     monkeypatch.setattr(
         owner, "ensure_line_in_scope", lambda *_args, **_kwargs: "route"
     )
+
     def insert_line(database, values):
         assert database is db and values[-1] == calendar.observed_at.isoformat()
         events.append("insert")
@@ -118,8 +128,13 @@ def test_branch_add_and_remove_preserve_repairs(monkeypatch):
         "invalidate_integrity_in_transaction",
         lambda *_: events.append("integrity"),
     )
+
     def request_graph(database, repertoire_id, day):
-        assert database is db and repertoire_id == "rep" and day == calendar.day.isoformat()
+        assert (
+            database is db
+            and repertoire_id == "rep"
+            and day == calendar.day.isoformat()
+        )
         events.append("graph")
 
     monkeypatch.setattr(owner, "request_graph_rebuild_in_transaction", request_graph)

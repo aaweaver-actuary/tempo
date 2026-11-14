@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
-from app.study.policy.clock import StudyCalendar
 import json
 
 from fastapi import HTTPException
+from tempo_storage.study_attempts import storage
+
+from app.study.policy.clock import StudyCalendar
 
 from .review_service import apply_scheduling_review
-from tempo_storage.study_attempts import storage
 
 
 def _json(value) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
-def finish_study_attempt(database, attempt, rating: str, *, calendar: StudyCalendar) -> dict:
+def finish_study_attempt(
+    database, attempt, rating: str, *, calendar: StudyCalendar
+) -> dict:
     now = calendar.observed_at.isoformat()
     requested_rating = rating
     review_result = None

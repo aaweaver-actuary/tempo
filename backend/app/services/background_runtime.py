@@ -2,25 +2,26 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-from contextvars import ContextVar
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from functools import lru_cache
-import hashlib
+from hashlib import blake2s
 import json
 import logging
 import os
 import socket
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from functools import lru_cache
 
+from backend.app.utils.hash import stable_key
 from tempo_storage.redis_control.wake_runtime import runtime as storage
 from tempo_storage.redis_control.wake_runtime.runtime import (
     _diagnostic_client,
 )
 
 # Explicit compatibility aliases share the neutral timing contract's context.
-from app.contracts.runtime_timing import _training_timing, current_training_timing
+from app.contracts.runtime_timing import _training_timing
 
 
 @lru_cache(maxsize=1)
@@ -41,7 +42,7 @@ def measure_training_timing(label: str, identity: str = ""):
     started = time.perf_counter()
     measurement = {
         "label": label,
-        "trace": hashlib.sha256(identity.encode()).hexdigest()[:16],
+        "trace": stable_key("training-timing", identity)[:16],
         "started_epoch_ms": time.time() * 1000,
         "stages_ms": {},
         "connections": [],
@@ -72,11 +73,13 @@ def training_timing_stage(label: str):
             )
 
 
-from pydantic import BaseModel, ConfigDict, Field
 from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
 from . import redis_admission_gate
-from .background_metric_kinds import KINDS
 from .background_diagnostic_types import DiagnosticTimestamp, WorkKind
+from .background_metric_kinds import KINDS
 
 _LOGGER = logging.getLogger("tempo.background.diagnostics")
 STAGES = (
@@ -90,7 +93,7 @@ STAGES = (
 _reserved_database_depth: ContextVar[int] = ContextVar(
     "diagnostic_database_reservation_depth", default=0
 )
-_current: ContextVar["RuntimeMeasurement | None"] = ContextVar(
+_current: ContextVar[RuntimeMeasurement | None] = ContextVar(
     "background_measurement", default=None
 )
 
@@ -117,13 +120,13 @@ class RuntimeSnapshot(BaseModel):
     workers: list[WorkerStage] = Field(default_factory=list, max_length=16)
 
 
-_PROCESS_STARTED = datetime.now(timezone.utc).isoformat()
+_PROCESS_STARTED = datetime.now(UTC).isoformat()
 
 
 def _worker_slot() -> int:
     return (
         int.from_bytes(
-            hashlib.blake2s(
+            blake2s(
                 f"{socket.gethostname()}:{os.getpid()}".encode(), digest_size=2
             ).digest(),
             "big",
@@ -151,7 +154,7 @@ class RuntimeMeasurement:
         return WorkerStage(
             kind=self.kind if self.kind in KINDS else "other",
             stage=self.stage,
-            observed_at=datetime.now(timezone.utc).isoformat(),
+            observed_at=datetime.now(UTC).isoformat(),
             process_started_at=_PROCESS_STARTED,
             admission_wait_seconds=wait,
             handler_elapsed_seconds=elapsed,
@@ -253,7 +256,7 @@ def snapshot() -> RuntimeSnapshot:
         return RuntimeSnapshot()
     try:
         values = storage.worker_stage_values(_diagnostic_client())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         workers = []
         for value in values:
             if value:
@@ -316,7 +319,7 @@ class StudyResponseTiming:
                     "study_response_timing %s",
                     json.dumps(
                         {
-                            "trace": hashlib.sha256(identity).hexdigest()[:16],
+                            "trace": stable_key("training-timing", identity)[:16],
                             "request_through_delivery_ms": (ended - started) * 1000,
                             "response_delivery_ms": (
                                 ended - (headers_started or started)

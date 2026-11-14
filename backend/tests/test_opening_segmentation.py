@@ -4,6 +4,7 @@ import json
 
 import chess
 import pytest
+from tempo_chess_core import card_id
 
 from app.chess.opening_segments import (
     decision_identity,
@@ -11,7 +12,6 @@ from app.chess.opening_segments import (
     presentation_occurrences,
     recommendation_estimate,
 )
-from app.chess.cards import card_id
 
 
 def presentation(moves, start=chess.STARTING_FEN, color="white"):

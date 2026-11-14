@@ -3,16 +3,13 @@
 from datetime import timedelta
 
 import pytest
-
-from native_study_fixture import owned_postgres, case, NOW
+from native_study_fixture import NOW
 from tempo_storage.study.issuance import (
     attempt_issuance,
     first_target_issuance,
     issuance_frontier,
     stamp_issued_head,
 )
-
-
 
 
 def entry(database, card_id, day, *, position=0):

@@ -44,6 +44,8 @@ def issuance_generation(operation_id: str, payload: dict) -> int:
 def immutable_issuance_conflict(response: dict) -> str | None:
     reason = response.get("position_study_hold")
     return reason if reason in IMMUTABLE_CONFLICTS else None
+
+
 # Internal Study application outcomes, not new HTTP response bodies. The queue
 # envelope remains opaque here; only the serving owner can establish currentness.
 class NextExerciseReady(TypedDict):
@@ -76,6 +78,9 @@ class NextExerciseUnavailable(TypedDict):
 
 
 NextExerciseOutcome = (
-    NextExerciseReady | NextExerciseEmpty | NextExercisePending
-    | NextExerciseHeld | NextExerciseUnavailable
+    NextExerciseReady
+    | NextExerciseEmpty
+    | NextExercisePending
+    | NextExerciseHeld
+    | NextExerciseUnavailable
 )

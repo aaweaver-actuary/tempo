@@ -2,8 +2,11 @@
 
 import chess
 
-from app.services.canonical_prefix import game_in_scope, prefix_projection, validate_scoped_line
-
+from app.services.canonical_prefix import (
+    game_in_scope,
+    prefix_projection,
+    validate_scoped_line,
+)
 
 ITALIAN = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4"]
 

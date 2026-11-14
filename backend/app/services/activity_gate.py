@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager, asynccontextmanager
-from contextlib import nullcontext, ExitStack
-from contextvars import ContextVar
-import threading
-import time
 import json
 import os
+import threading
+import time
+from collections.abc import Iterator
+from contextlib import ExitStack, asynccontextmanager, contextmanager, nullcontext
+from contextvars import ContextVar
 from urllib.request import Request, urlopen
-from typing import Iterator
 
 from . import redis_admission_gate
 from .redis_admission_gate import BackgroundAdmissionDeferred
@@ -132,13 +131,17 @@ class ApplicationActivityGate:
         if _control_section.get() or _essential_study.get():
             return
         if self.foreground_waiting:
-            raise BackgroundAdmissionDeferred("Waiting for foreground activity", reason="foreground_wait")
+            raise BackgroundAdmissionDeferred(
+                "Waiting for foreground activity", reason="foreground_wait"
+            )
         if redis_admission_gate.configured():
             import redis
 
             try:
                 if redis_admission_gate.foreground_present():
-                    raise BackgroundAdmissionDeferred("Waiting for foreground activity", reason="foreground_wait")
+                    raise BackgroundAdmissionDeferred(
+                        "Waiting for foreground activity", reason="foreground_wait"
+                    )
             except redis.RedisError as error:
                 raise BackgroundAdmissionDeferred(
                     "Foreground admission is unavailable"
@@ -155,7 +158,9 @@ class ApplicationActivityGate:
                     "Foreground admission is unavailable"
                 ) from error
             if active:
-                raise BackgroundAdmissionDeferred("Waiting for foreground activity", reason="foreground_wait")
+                raise BackgroundAdmissionDeferred(
+                    "Waiting for foreground activity", reason="foreground_wait"
+                )
 
     @contextmanager
     def essential_study_progress(self, kind):
@@ -204,8 +209,8 @@ class ApplicationActivityGate:
         )
         from .background_runtime import (
             admission_wait,
-            reserved_database_telemetry,
             heartbeat,
+            reserved_database_telemetry,
         )
 
         # Acquire before suppressing so admission-wait heartbeats remain visible.

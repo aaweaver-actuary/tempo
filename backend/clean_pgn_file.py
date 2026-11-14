@@ -41,7 +41,6 @@ from pathlib import Path
 import chess
 import chess.pgn
 
-
 INVALID_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
@@ -356,7 +355,7 @@ def clean_pgn(
 
         if nulls_removed:
             details.append(
-                (f"    - Initially removed {nulls_removed} null-move subtree(s)")
+                f"    - Initially removed {nulls_removed} null-move subtree(s)"
             )
 
         for reason in reasons:

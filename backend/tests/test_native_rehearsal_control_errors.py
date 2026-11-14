@@ -5,9 +5,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from fastapi import HTTPException
 import psycopg
 import pytest
+from fastapi import HTTPException
 
 from app.services import redis_admission_gate
 

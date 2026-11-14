@@ -4,11 +4,10 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import TypeAdapter, ValidationError
 
 from app.contracts import studies as legacy
-from pydantic import TypeAdapter, ValidationError
 from app.contracts import study_exercises as owned
-
 
 EXECUTABLE_CONTRACTS = (
     "ExerciseText",
@@ -72,12 +71,23 @@ def test_checked_in_stalemate_corpus_validates_with_legacy_learning_contract_bou
     adapter = TypeAdapter(owned.ExerciseSpecification)
     for revision in revisions:
         specification = json.loads(revision["specification_json"])
-        assert adapter.validate_python(specification) == TypeAdapter(legacy.ExerciseSpecification).validate_python(specification)
+        assert adapter.validate_python(specification) == TypeAdapter(
+            legacy.ExerciseSpecification
+        ).validate_python(specification)
 
 
 def test_study_envelopes_keep_defaults_and_reject_extra_fields():
-    assert legacy.StudyCreate(title="Study").model_dump() == {"title": "Study", "description": "", "source": {}}
-    assert legacy.StudyImportCommitRequest(chapter_id="c", raw_pgn="p", preview_digest="d", selected_records=[]).mode == "append"
+    assert legacy.StudyCreate(title="Study").model_dump() == {
+        "title": "Study",
+        "description": "",
+        "source": {},
+    }
+    assert (
+        legacy.StudyImportCommitRequest(
+            chapter_id="c", raw_pgn="p", preview_digest="d", selected_records=[]
+        ).mode
+        == "append"
+    )
     for name in REQUEST_ENVELOPES:
         model = getattr(legacy, name)
         assert model.model_config["extra"] == "forbid"

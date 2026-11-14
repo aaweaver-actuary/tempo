@@ -9,10 +9,10 @@ from .interfaces import (
 from .policy import annotate, order_queue_slots, proposal_valid
 
 __all__ = [
-    "FrozenAnnotationFacts",
-    "FrozenRankFacts",
     "CardPredicate",
     "ContentFingerprint",
+    "FrozenAnnotationFacts",
+    "FrozenRankFacts",
     "annotate",
     "order_queue_slots",
     "proposal_valid",

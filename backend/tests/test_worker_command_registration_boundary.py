@@ -47,6 +47,7 @@ for name in ("threat.analysis.claim", "games.analysis.claim", "games.analysis.po
 
 def test_retired_game_commands_are_not_lazy_loaded():
     from app.product_composition.worker_game_commands import resolve_worker_game_command
+
     from app.command_gateway import is_command_registered
 
     for name in (
@@ -63,6 +64,7 @@ def test_retired_feature_commands_reject_new_dispatch_and_consume_stale_deliveri
 ):
     import pytest
     from fastapi import HTTPException
+
     from app import command_dispatch, command_gateway, tasks
 
     def unexpected(*args, **kwargs):

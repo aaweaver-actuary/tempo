@@ -8,7 +8,6 @@ import pytest
 MISS_REASON = "Priority review · missed in a recent game"
 from tempo_storage import frozen_order, postgres
 from tempo_storage.http_composition import queue_projection
-from native_study_fixture import owned_postgres
 
 
 @pytest.mark.parametrize("read_name", ["queue_rows", "available_count"])
@@ -72,7 +71,16 @@ def test_interactive_queue_read_preserves_protection_and_scopes_jit_to_transacti
                 (old_membership, card_id),
             )
         ranks = [
-            dict(row, rank=position, fingerprint="synthetic", memberships=([repertoire, old_membership] if row["id"] in cards[8:] else [repertoire]))
+            dict(
+                row,
+                rank=position,
+                fingerprint="synthetic",
+                memberships=(
+                    [repertoire, old_membership]
+                    if row["id"] in cards[8:]
+                    else [repertoire]
+                ),
+            )
             for position, row in enumerate(
                 database.execute_native(
                     "SELECT * FROM cards WHERE repertoire_id=%s ORDER BY id",
@@ -168,13 +176,6 @@ def test_interactive_queue_read_preserves_protection_and_scopes_jit_to_transacti
                 "DELETE FROM repertoires WHERE id=ANY(%s)",
                 ([repertoire, old_membership, new_membership],),
             )
-
-
-
-
-
-
-from native_study_fixture import case
 
 
 def test_retired_head_does_not_consume_limited_queue_window(

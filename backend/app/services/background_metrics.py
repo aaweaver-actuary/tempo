@@ -1,10 +1,10 @@
 """Fixed-cardinality, transaction-fenced diagnostic counters (never raw payloads)."""
 
 from __future__ import annotations
-
-from datetime import datetime, timezone, timedelta
 import hashlib
+
 import math
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,11 +12,11 @@ from tempo_storage.lifecycle import background_metrics as storage
 from tempo_storage.lifecycle.background_metrics import (
     COUNT_NAMES,
     DURATION_NAMES,
-    write_metric_delta,
 )
+
+from .background_diagnostic_types import DiagnosticTimestamp, WorkKind, WorkState
 from .background_metric_kinds import KINDS
 from .background_runtime import RuntimeSnapshot
-from .background_diagnostic_types import DiagnosticTimestamp, WorkKind, WorkState
 
 BUCKET_SECONDS = 300
 BUCKET_SLOTS = 288
@@ -55,7 +55,7 @@ def increment(
     *,
     now: datetime | None = None,
     shard_override: int | None = None,
-    **counts: int | float,
+    **counts: float,
 ) -> None:
     """One sharded UPSERT inside the existing outcome transaction; no global hot row."""
     if not counts or any(
@@ -69,10 +69,10 @@ def increment(
     ):
         raise ValueError("Invalid background counter")
     kind = kind if kind in KINDS else "other"
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     bucket_number = int(now.timestamp()) // BUCKET_SECONDS
     bucket_start = datetime.fromtimestamp(
-        bucket_number * BUCKET_SECONDS, timezone.utc
+        bucket_number * BUCKET_SECONDS, UTC
     ).isoformat()
     shard = metric_shard(identity) if shard_override is None else shard_override
     if not 0 <= shard < SHARDS:
@@ -170,4 +170,4 @@ class BackgroundDiagnostics(BaseModel):
     unavailable_reason: Literal["query_deadline", "storage_unavailable"] | None = None
     queues: list[QueueDiagnostic] = Field(default_factory=list, max_length=27)
     counters: list[KindCounts] = Field(default_factory=list, max_length=len(KINDS))
-    runtime: "RuntimeSnapshot"
+    runtime: RuntimeSnapshot

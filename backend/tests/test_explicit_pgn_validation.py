@@ -9,7 +9,6 @@ from fastapi import HTTPException
 from app.chess.pgn import parse_pgn
 from app.pgn_import_validation import validate_sources
 
-
 BLACK_PGN = '[Event "Synthetic Black branches"]\n\n1. e4 c5 2. Nf3 (2. Nc3 e6) e6 3. d4 cxd4 4. Nxd4 Nc6 *'
 
 

@@ -1,9 +1,8 @@
-from dataclasses import FrozenInstanceError, replace
 import json
+from dataclasses import FrozenInstanceError, replace
 
 import chess
 import pytest
-
 from tempo_evidence_math import opening_position_key
 from tempo_evidence_math.position_learning import (
     DecisionOccurrence,
@@ -12,6 +11,7 @@ from tempo_evidence_math.position_learning import (
     RouteOption,
     SourceCertificate,
 )
+
 from app.study.position_learning.source_change_policy import (
     ScopedPositionSource,
     compare_source_change,

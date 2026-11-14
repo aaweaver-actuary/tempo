@@ -2,8 +2,9 @@
 
 from contextlib import contextmanager
 
-from app import main
 from tempo_storage import postgres
+
+from app import main
 
 
 class Cursor:

@@ -10,12 +10,6 @@ from app.study.openings.capacity_frontier import CapacityRoute
 
 # Compatibility exports: policy has one pure owner; existing consumers keep
 # their imports while the storage adapter retains route queries and validation.
-from .queue_admission import (
-    remaining_opening_allowances,
-    propose_capacity_expansion_from_priority_rows,
-    capacity_proposal_payload,
-    plan_frozen_with_capacity,
-)
 
 CAPACITY_READ_BATCH_SIZE = 16
 

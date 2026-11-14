@@ -1,17 +1,16 @@
 """#220: pinned queue parity and application dependency ownership."""
 
 import ast
-from contextlib import contextmanager
 import importlib.util
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
+from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
-from tempo_storage import connections as database
 from app.services import postgres_queue_refresh, queue_ordering, study_mode
 
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
@@ -226,9 +225,7 @@ def test_essential_queue_study_only_resumes_every_legacy_phase(
     monkeypatch.setattr(
         postgres_queue_refresh.read_storage, "_bounded_read", bounded_opening_read
     )
-    monkeypatch.setattr(
-        postgres_queue_refresh.postgres, "configured", lambda: True
-    )
+    monkeypatch.setattr(postgres_queue_refresh.postgres, "configured", lambda: True)
 
     @contextmanager
     def owned_connection(**kwargs):
@@ -352,8 +349,9 @@ def test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint(monkeypa
     captured = {}
     admitted = []
     reader, writer = object(), object()
-    from app.services import position_queue_admission
     from tempo_storage.study import position_owner_epoch
+
+    from app.services import position_queue_admission
 
     original_prepare = position_queue_admission.prepare_opening_introduction
     original_owner = position_owner_epoch.owner_mode
@@ -386,9 +384,7 @@ def test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint(monkeypa
     def owned_connection(**kwargs):
         yield writer
 
-    monkeypatch.setattr(
-        postgres_queue_refresh.postgres, "configured", lambda: True
-    )
+    monkeypatch.setattr(postgres_queue_refresh.postgres, "configured", lambda: True)
     monkeypatch.setattr(postgres_queue_refresh, "connection", owned_connection)
     monkeypatch.setattr(
         postgres_queue_refresh, "lock_current_slice", lambda database, task: True

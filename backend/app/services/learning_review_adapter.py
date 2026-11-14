@@ -1,45 +1,39 @@
 """Legacy persistence/transport capabilities borrowing the caller's connection."""
 
 from __future__ import annotations
-from datetime import date, datetime, timezone
-import json
 
-from fastapi import HTTPException
+import json
+from datetime import UTC, datetime
+
 import tempo_learning_review as learning
+from fastapi import HTTPException
 from tempo_learning_review.models import (
-    QueueAttempt, ReconciledReview, ReviewCommand, ReviewContext, ReviewPolicy,
-    ScheduledReview, ScheduleSnapshot,
+    QueueAttempt,
+    ReconciledReview,
+    ReviewCommand,
+    ReviewContext,
+    ReviewPolicy,
+    ScheduledReview,
+    ScheduleSnapshot,
 )
-from tempo_storage.learning_bridge import review as storage
 from tempo_storage.connections import read_connection
-from app.contracts.transport.study import ReviewRequest
-from app.contracts.review_conflicts import ReviewConflict
+from tempo_storage.learning_bridge import review as storage
 from tempo_storage.queue_position_lock import (
     lock_queue_date_for_position,
 )
-from . import queue_application
-from .review_service import apply_scheduling_review
+
+from app.contracts.review_conflicts import ReviewConflict
+from app.contracts.transport.study import ReviewRequest
 from app.study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
+
+from . import queue_application
+from .background_runtime import training_timing_stage
 from .review_reconciliation import (
     card_schedule_state,
-    save_schedule_snapshot,
     reconcile_completed_review,
+    save_schedule_snapshot,
 )
-from .background_runtime import training_timing_stage
-
-
-def _lock_review_cards(database, card_id, candidate):
-    """Never wait for an optional continuation's edit lock; preserve card-before-queue order."""
-    continuation_locked = candidate is not None
-    for locked_card_id in sorted(
-        {card_id, *([candidate.card_id] if candidate else [])}
-    ):
-        if locked_card_id == card_id:
-            storage.lock_current_card(database, locked_card_id)
-        else:
-            locked = storage.try_lock_continuation(database, locked_card_id)
-            continuation_locked = continuation_locked and locked
-    return continuation_locked
+from .review_service import apply_scheduling_review
 
 
 def command_from_request(card_id, request):
@@ -110,7 +104,7 @@ class LearningReviewAdapter:
 
     def _capture_command_day(self):
         if self._command_time is None:
-            self._command_time = self.observed_at or datetime.now(timezone.utc)
+            self._command_time = self.observed_at or datetime.now(UTC)
             self._command_policy = self.policy()
             self._command_timezone = self._command_policy.timezone
             self._command_day = self.local_day or learning.review_day_at(
@@ -237,8 +231,14 @@ class LearningReviewAdapter:
         )
 
     def reconcile_completed(
-        self, command: ReviewCommand, attempt: QueueAttempt, context: ReviewContext, *,
-        guided: bool, revision: int | None, competing_review: dict | None = None
+        self,
+        command: ReviewCommand,
+        attempt: QueueAttempt,
+        context: ReviewContext,
+        *,
+        guided: bool,
+        revision: int | None,
+        competing_review: dict | None = None,
     ) -> ReconciledReview:
         result = reconcile_completed_review(
             self.database,
@@ -268,8 +268,13 @@ class LearningReviewAdapter:
         return ScheduleSnapshot.from_dict(state) if state else None
 
     def schedule(
-        self, command: ReviewCommand, context: ReviewContext, *, outcome: str,
-        guided: bool, policy: ReviewPolicy,
+        self,
+        command: ReviewCommand,
+        context: ReviewContext,
+        *,
+        outcome: str,
+        guided: bool,
+        policy: ReviewPolicy,
     ) -> ScheduledReview:
         with training_timing_stage("fsrs_review_receipt"):
             result = apply_scheduling_review(
@@ -288,12 +293,18 @@ class LearningReviewAdapter:
         return ScheduledReview.from_dict(result)
 
     def record_position_review(
-        self, command: ReviewCommand, context: ReviewContext, *, outcome: str, guided: bool,
+        self,
+        command: ReviewCommand,
+        context: ReviewContext,
+        *,
+        outcome: str,
+        guided: bool,
     ) -> ScheduledReview:
         """Save the human review without advancing the physical card schedule."""
         from tempo_storage.scheduling_review_store import (
             OwnedConnectionSchedulingReviewStore,
         )
+
         from .scheduling_review_contracts import ReviewRecord
 
         owner = OwnedConnectionSchedulingReviewStore(self.database)
@@ -313,19 +324,21 @@ class LearningReviewAdapter:
                 f"attempt:{command.attempt_id}",
             )
         )
-        return ScheduledReview.from_dict({
-            "card_id": command.card_id,
-            "next_due": card.due_date,
-            "interval_days": card.interval_days,
-            "state": card.state,
-            "requeue_today": False,
-            "requeue_after_cards": None,
-            "stability": card.stability,
-            "scheduling_mode": card.scheduling_mode,
-            "hard_correct_streak": card.hard_correct_streak,
-            "suggest_shorter_prefix": False,
-            "idempotent": False,
-        })
+        return ScheduledReview.from_dict(
+            {
+                "card_id": command.card_id,
+                "next_due": card.due_date,
+                "interval_days": card.interval_days,
+                "state": card.state,
+                "requeue_today": False,
+                "requeue_after_cards": None,
+                "stability": card.stability,
+                "scheduling_mode": card.scheduling_mode,
+                "hard_correct_streak": card.hard_correct_streak,
+                "suggest_shorter_prefix": False,
+                "idempotent": False,
+            }
+        )
 
     def complete_attempt(self, command, context, *, guided):
         queue_day = storage.queue_date(self.database, command.queue_entry_id)
@@ -451,7 +464,20 @@ class LearningReviewAdapter:
             effect()
 
     def lock_review_cards(self, command):
-        return _lock_review_cards(self.database, command.card_id, command.prepared_next)
+        """Never wait for an optional continuation's edit lock; preserve card-before-queue order."""
+        database = self.database
+        card_id = command.card_id
+        candidate = command.prepared_next
+        continuation_locked = candidate is not None
+        for locked_card_id in sorted(
+            {card_id, *([candidate.card_id] if candidate else [])}
+        ):
+            if locked_card_id == card_id:
+                storage.lock_current_card(database, locked_card_id)
+            else:
+                locked = storage.try_lock_continuation(database, locked_card_id)
+                continuation_locked = continuation_locked and locked
+        return continuation_locked
 
     def begin_position_review(self, command):
         # A saved canonical receipt owns replay across owner activation changes.
@@ -574,14 +600,18 @@ class LearningReviewAdapter:
             )
 
     def apply_position_effects(self, command, context, result):
-        from app.study.position_learning.grade_effects import CompletionAuthority, apply_in_borrowed_transaction
+        from tempo_evidence_math.position_learning import Hold
         from tempo_storage.study.position_first_responses import (
             acceptance_clock,
         )
-        from tempo_evidence_math.position_learning import Hold
+
         from app.study.position_checkpoint import (
             fence_position_completion,
             position_completion_inputs,
+        )
+        from app.study.position_learning.grade_effects import (
+            CompletionAuthority,
+            apply_in_borrowed_transaction,
         )
 
         plan = self._position_fence.preparation.plan
@@ -679,10 +709,10 @@ class LearningReviewAdapter:
         storage.save_continuation(self.database, json.dumps(result), attempt_id)
 
 
-
 def submit_legacy_review(database, payload):
-    from .opening_decision_evidence import EvidenceConflict
     from app.study.position_learning.grade_effects import GradeEffectError
+
+    from .opening_decision_evidence import EvidenceConflict
 
     request = ReviewRequest.model_validate(payload["review"])
     command = command_from_request(payload["card_id"], request)

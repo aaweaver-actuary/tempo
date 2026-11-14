@@ -1,20 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import date, datetime, timezone
 import json
+from dataclasses import replace
+from datetime import UTC, date, datetime
 
 import chess
+from tempo_evidence_math import opening_position_key
 
 from app.study.position_learning.contracts import (
     DueAtIssuance,
     Hold,
     PositionDefinition,
-)
-from app.study.position_learning.contracts import PositionKey
-from app.study.position_learning.prefix_eligibility import (
-    CleanFirstResponse,
-    CleanPresentationProof,
+    PositionKey,
 )
 from app.study.position_learning.issued_plan_contracts import (
     IssuedPlan,
@@ -23,14 +20,16 @@ from app.study.position_learning.issued_plan_contracts import (
     select_and_freeze,
     validate_wire_v1,
 )
+from app.study.position_learning.prefix_eligibility import (
+    CleanFirstResponse,
+    CleanPresentationProof,
+)
 from app.study.position_learning.route_planner import choose_plan
-from tempo_evidence_math import opening_position_key
 from tests.fixtures.position_study_cases import ROUTES
 from tests.test_position_route_planner import option, target_after
 
-
 DAY = date(2026, 11, 2)
-NOW = datetime(2026, 11, 2, 9, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 2, 9, tzinfo=UTC)
 EPOCH = "owner-epoch-1"
 
 

@@ -3,7 +3,6 @@
 import pytest
 from test_worker_legacy_evidence_registration import SETUP, run_fresh
 
-
 SPECS = [
     ("games.exclusion.set", "app.game_commands", "set_game_exclusion", None),
     (

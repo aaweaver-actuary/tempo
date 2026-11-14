@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 import json
+from dataclasses import dataclass, replace
 
 import chess
+from tempo_chess_core import card_id
 
-from app.chess.cards import card_id
 from ..contracts.opening_graph import GraphStep
 
 

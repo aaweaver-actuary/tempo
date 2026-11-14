@@ -1,11 +1,10 @@
 """Pure receipt/credit policy regressions; no database or scheduler claims."""
 
 from dataclasses import replace
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from itertools import permutations
 
 import pytest
-
 from tempo_evidence_math.position_learning import (
     AcceptedEvidence,
     FirstResponse,
@@ -14,15 +13,15 @@ from tempo_evidence_math.position_learning import (
     PositionDefinition,
     PositionKey,
 )
+
 from app.study.position_learning.daily_credit import (
     CurrentPositionState,
     GradeAcceptance,
     accept_grade,
 )
 
-
 DAY = date(2026, 11, 2)
-NOW = datetime(2026, 11, 2, 10, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 2, 10, tzinfo=UTC)
 KEY = PositionKey("rep-1", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -")
 DEFINITION = PositionDefinition(KEY, "e2e4", "policy-1")
 
@@ -242,7 +241,7 @@ def test_stale_positive_is_observation_even_without_good_and_never_retroactive()
 
 def test_midnight_uses_authoritative_owner_day_not_timestamp_timezone_date():
     # UTC dates are Nov 3, but the authoritative Study day is still Nov 2.
-    utc_after_midnight = datetime(2026, 11, 3, 1, tzinfo=timezone.utc)
+    utc_after_midnight = datetime(2026, 11, 3, 1, tzinfo=UTC)
     result = accept(event(accepted_at=utc_after_midnight))
     assert result.schedule_grade == "good"
     next_day = DAY + timedelta(days=1)

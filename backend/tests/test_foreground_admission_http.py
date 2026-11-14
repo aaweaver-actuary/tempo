@@ -1,17 +1,17 @@
 """Issue #225: real Redis I/O failure must refuse HTTP work before dispatch."""
 
-from tempo_storage import postgres
-from contextlib import contextmanager
 import socket
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 
-from fastapi.testclient import TestClient
 import pytest
 import redis
+from fastapi.testclient import TestClient
+from tempo_storage import postgres
 
-from app import main, command_dispatch
+from app import command_dispatch, main
 from app.services import redis_admission_gate
 from app.services.activity_gate import activity_gate
 
@@ -107,8 +107,9 @@ def test_issue225_foreground_redis_failure_refuses_before_dispatch(monkeypatch, 
 @pytest.mark.parametrize("status", [200, 202, 409])
 def test_issue225_admitted_http_response_is_preserved(monkeypatch, status):
     import asyncio
-    from starlette.requests import Request
+
     from fastapi.responses import JSONResponse
+    from starlette.requests import Request
 
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
 
@@ -138,10 +139,10 @@ def test_issue225_downstream_redis_error_is_not_reported_as_admission_rejection(
     monkeypatch,
 ):
     import asyncio
+
     from starlette.requests import Request
 
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
-
 
     async def downstream(request):
         raise redis.ConnectionError("Publication may already have committed")
@@ -162,7 +163,8 @@ def test_issue225_downstream_redis_error_is_not_reported_as_admission_rejection(
 
 @pytest.fixture
 def observation_gate(monkeypatch):
-    from app.services import activity_gate as gate_module, study_priority
+    from app.services import activity_gate as gate_module
+    from app.services import study_priority
 
     gate = gate_module.ApplicationActivityGate()
     monkeypatch.setattr(main, "activity_gate", gate)
@@ -193,6 +195,7 @@ def test_issue491_monitor_poll_cannot_mint_foreground_or_starve_work(
     observation_gate, path, headers
 ):
     import asyncio
+
     from fastapi.responses import JSONResponse
     from starlette.requests import Request
 
@@ -241,8 +244,10 @@ def test_issue491_monitor_poll_cannot_mint_foreground_or_starve_work(
 )
 def test_issue491_monitor_never_clears_genuine_foreground_hold(observation_gate, path):
     import asyncio
+
     from fastapi.responses import JSONResponse
     from starlette.requests import Request
+
     from app.services.activity_gate import BackgroundAdmissionDeferred
 
     gate = observation_gate
@@ -286,8 +291,10 @@ def test_issue491_real_study_and_unknown_routes_keep_foreground_lease(
     observation_gate, method, path
 ):
     import asyncio
+
     from fastapi.responses import JSONResponse
     from starlette.requests import Request
+
     from app.services.activity_gate import BackgroundAdmissionDeferred
 
     gate = observation_gate
@@ -319,8 +326,8 @@ def test_issue491_real_study_and_unknown_routes_keep_foreground_lease(
 def test_issue491_real_browser_input_quiet_lease_still_defers_and_expires(
     observation_gate, monkeypatch
 ):
-    from app.services.activity_gate import BackgroundAdmissionDeferred
     import app.services.activity_gate as gate_module
+    from app.services.activity_gate import BackgroundAdmissionDeferred
 
     gate = observation_gate
     now = [100.0]
@@ -337,21 +344,35 @@ def test_issue491_real_browser_input_quiet_lease_still_defers_and_expires(
 @pytest.mark.parametrize(
     ("error", "expected"),
     [
-        (redis_admission_gate.BackgroundAdmissionDeferred(
-            "Waiting for foreground activity", reason="foreground_wait"
-        ), {"detail": "Waiting for foreground activity", "code": "foreground_wait"}),
-        (redis_admission_gate.BackgroundAdmissionDeferred(
-            "Foreground admission is unavailable"
-        ), {"detail": "Foreground admission is unavailable"}),
-        (redis_admission_gate.BackgroundAdmissionDeferred(
-            "Waiting for foreground activity"
-        ), {"detail": "Waiting for foreground activity"}),
-        (redis_admission_gate.BackgroundAdmissionDeferred(
-            "Waiting for a database section", reason="other"
-        ), {"detail": "Waiting for a database section"}),
+        (
+            redis_admission_gate.BackgroundAdmissionDeferred(
+                "Waiting for foreground activity", reason="foreground_wait"
+            ),
+            {"detail": "Waiting for foreground activity", "code": "foreground_wait"},
+        ),
+        (
+            redis_admission_gate.BackgroundAdmissionDeferred(
+                "Foreground admission is unavailable"
+            ),
+            {"detail": "Foreground admission is unavailable"},
+        ),
+        (
+            redis_admission_gate.BackgroundAdmissionDeferred(
+                "Waiting for foreground activity"
+            ),
+            {"detail": "Waiting for foreground activity"},
+        ),
+        (
+            redis_admission_gate.BackgroundAdmissionDeferred(
+                "Waiting for a database section", reason="other"
+            ),
+            {"detail": "Waiting for a database section"},
+        ),
     ],
 )
-def test_background_admission_wire_reason_requires_explicit_foreground_metadata(error, expected):
+def test_background_admission_wire_reason_requires_explicit_foreground_metadata(
+    error, expected
+):
     from fastapi import FastAPI
 
     app = FastAPI()

@@ -242,9 +242,10 @@ def test_bounded_unlock_rechecks_parent_exposure_and_publication_before_update(
 def test_opening_progression_native_driver_replays_only_foreground_deferred_slice(
     monkeypatch, unexpected_error
 ):
-    from contextlib import contextmanager
     import importlib.util
+    from contextlib import contextmanager
     from pathlib import Path
+
     from app.services.activity_gate import BackgroundAdmissionDeferred
 
     proof_path = (

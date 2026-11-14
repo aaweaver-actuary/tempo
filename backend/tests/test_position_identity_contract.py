@@ -4,15 +4,6 @@ from dataclasses import replace
 
 import chess
 import pytest
-from tempo_evidence_math import opening_position_key
-from tempo_evidence_math.position_learning import (
-    DecisionOccurrence,
-    PositionDefinition,
-    PositionKey,
-    RouteOption,
-    SourceCertificate,
-)
-
 from fixtures.position_identity_examples import (
     CASTLING_INTACT,
     CASTLING_LOST,
@@ -24,6 +15,14 @@ from fixtures.position_identity_examples import (
     LONDON_ORDER_B,
     invalid_fen,
     with_irrelevant_ep,
+)
+from tempo_evidence_math import opening_position_key
+from tempo_evidence_math.position_learning import (
+    DecisionOccurrence,
+    PositionDefinition,
+    PositionKey,
+    RouteOption,
+    SourceCertificate,
 )
 
 

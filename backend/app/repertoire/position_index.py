@@ -7,9 +7,9 @@ routes retain their legal prefix with a diagnostic, never a complete certificate
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping
 
 import chess
 from tempo_evidence_math import opening_position_key

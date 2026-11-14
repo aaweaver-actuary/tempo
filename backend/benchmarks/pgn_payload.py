@@ -11,22 +11,22 @@ branching corpus. These synthetic cases do not reproduce production delivery.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
-import hashlib
 import io
 import json
 import platform
-from pathlib import Path
 import subprocess
 import sys
+from datetime import UTC, datetime
+from pathlib import Path
 
 import chess
 import chess.pgn
 from kombu.serialization import dumps
 
 from app.celery_app import celery_app
-from app.pgn_import_commands import prepare_import_payload
 from app.chess.pgn import parse_pgn
+from app.pgn_import_commands import prepare_import_payload
+from backend.app.utils.hash import stable_key
 
 
 def branching_fixture(plies: int) -> bytes:
@@ -81,7 +81,7 @@ def measure_payload(
             unvisited.extend(node.variations)
     return {
         "source_name": source_name,
-        "source_sha256": hashlib.sha256(raw_bytes).hexdigest(),
+        "source_sha256": stable_key("pgn-source", raw_bytes),
         "trained_color": trained_color,
         "initial_depth": initial_depth,
         "raw_pgn_bytes": len(raw_bytes),
@@ -129,7 +129,7 @@ def main() -> None:
         "schema_version": 1,
         "revision": revision,
         "dirty_tree": dirty,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "environment": {
             "python": sys.version.split()[0],
             "platform": platform.platform(),

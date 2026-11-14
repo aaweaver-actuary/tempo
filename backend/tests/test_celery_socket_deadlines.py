@@ -1,12 +1,12 @@
 """Real Redis client I/O must yield when a reachable peer stops answering."""
 
-from contextlib import contextmanager
 import socket
 import threading
+from contextlib import contextmanager
 
+import pytest
 from celery import Celery
 from redis.exceptions import RedisError
-import pytest
 
 from app.celery_app import celery_app
 

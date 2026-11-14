@@ -1,13 +1,12 @@
 """Owning acceptance-harness checks; no database or Docker allocation."""
 
-import pytest
 import chess
-
+import pytest
+from fixtures.study_recovery_content import Shape, publication
 from native_study_fixture import (
     postgres_fixture_profile,
     study_recovery_assembly_allocations,
 )
-from fixtures.study_recovery_content import Shape, publication
 
 
 def test_recovery_profile_keeps_default_native_allocation_and_is_explicit():
@@ -54,11 +53,13 @@ def test_recovery_publication_is_legal_complete_short_card_scope_with_real_stand
 def test_recovery_standard_target_is_actionable_across_complete_distinct_repertoire_scope():
     """A real target survives complete scope; competing physical owners stay distinct."""
     import json
-    from app.repertoire import PreparedPublishedRepertoire
+
     from app.games.feedback.first_boundary import select_first_boundary
-    from app.contracts.product_v02.repertoire import IntroductionGameScope
     from tempo_game_review_contracts import CanonicalGame
     from test_product_snapshot import repertoire_facts
+
+    from app.contracts.product_v02.repertoire import IntroductionGameScope
+    from app.repertoire import PreparedPublishedRepertoire
 
     snapshots, ids, physical, target = [], [], {}, None
     colors = (
@@ -141,7 +142,7 @@ def test_recovery_standard_target_is_actionable_across_complete_distinct_reperto
 
 def test_recovery_graph_uses_real_owner_geometry_and_contiguous_frontier_metadata():
     import json
-    from app.contracts.opening_graph import GraphStep
+
     from app.services.opening_frontier import (
         OpeningFrontierCard,
         OpeningFrontierPublication,
@@ -150,6 +151,8 @@ def test_recovery_graph_uses_real_owner_geometry_and_contiguous_frontier_metadat
         OpeningFrontierSnapshot,
         project_opening_frontier,
     )
+
+    from app.contracts.opening_graph import GraphStep
 
     for color in ("white", "black"):
         shape = Shape(color, 12, 216, 33 if color == "white" else 32, 48, 84, 216, 7)
@@ -202,8 +205,8 @@ def test_recovery_graph_uses_real_owner_geometry_and_contiguous_frontier_metadat
 def test_recovery_observed_shapes_keep_exact_route_graph_counts_and_explicit_payload_deltas():
     from fixtures.study_recovery_content import (
         OBSERVED,
-        _route_lengths,
         _prefix_decisions,
+        _route_lengths,
     )
 
     authored = graphs = graph_plies = 0
@@ -241,8 +244,9 @@ def test_recovery_observed_shapes_keep_exact_route_graph_counts_and_explicit_pay
 
 
 def test_recovery_assembly_allocation_fits_existing_budget_without_changing_global_roles():
-    from copy import deepcopy
     import json
+    from copy import deepcopy
+
     from native_study_fixture import ROOT
 
     configuration = json.loads((ROOT / "config/resource-budgets.json").read_text())
@@ -269,9 +273,9 @@ def test_recovery_assembly_allocation_fits_existing_budget_without_changing_glob
 
 def test_packaged_recovery_helper_binds_database_before_integrity_connection():
     """Execute the mounted fixture entry in a fresh process without storage."""
-    from pathlib import Path
     import subprocess
     import sys
+    from pathlib import Path
 
     entry = Path(__file__).resolve().parent / "fixtures/product_collection_packaged.py"
     probe = r"""
@@ -385,9 +389,11 @@ def test_packaged_fixture_clock_advances_with_wall_time():
 def test_recovery_review_command_checks_original_and_prepared_manifest(monkeypatch):
     import copy
     from pathlib import Path
+
+    from test_opening_decision_evidence import manifest
+
     from app.contracts.transport.study import ReviewRequest
     from app.services.opening_decision_evidence import EvidenceConflict
-    from test_opening_decision_evidence import manifest
 
     monkeypatch.syspath_prepend(
         str(Path(__file__).resolve().parents[2] / "database/tests/games_collection")
@@ -434,6 +440,7 @@ def test_recovery_review_command_checks_original_and_prepared_manifest(monkeypat
 
 def test_capture_observer_preserves_command_result_stdout_and_limits(monkeypatch):
     import subprocess
+
     from test_packaged_collection import _run_packaged_docker
 
     result = subprocess.CompletedProcess(
@@ -464,6 +471,7 @@ def test_capture_observer_preserves_original_timeout_and_partial_markers(
 ):
     import subprocess
     from pathlib import Path
+
     from test_packaged_collection import _retain_capture_markers, _run_packaged_docker
 
     stderr = b'ordinary stderr\n{"capture_unit_diagnostic":1,"event":"unit_start","private":"secret"}\n'
@@ -523,6 +531,7 @@ def test_capture_marker_retention_is_bounded(tmp_path, stderr):
 def test_capture_marker_write_failure_does_not_replace_timeout(monkeypatch, tmp_path):
     import subprocess
     from pathlib import Path
+
     from test_packaged_collection import _retain_capture_markers, _run_packaged_docker
 
     timeout = subprocess.TimeoutExpired(
@@ -552,6 +561,7 @@ def test_capture_marker_write_failure_does_not_replace_timeout(monkeypatch, tmp_
 
 def test_capture_observer_retention_exception_does_not_replace_timeout(monkeypatch):
     import subprocess
+
     from test_packaged_collection import _run_packaged_docker
 
     timeout = subprocess.TimeoutExpired(["docker"], 45, stderr=b"partial")

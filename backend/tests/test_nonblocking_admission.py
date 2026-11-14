@@ -63,15 +63,13 @@ def test_control_bookkeeping_does_not_claim_shared_admission(monkeypatch):
     with (
         gate.background_job("test", "control", yielding=True),
         gate.background_control(),
+        gate.background_database_section(),
     ):
-        with gate.background_database_section():
-            assert gate.active_background_sections == 1
+        assert gate.active_background_sections == 1
     assert gate.active_background_sections == 0
     with pytest.raises(BackgroundAdmissionDeferred):
         with gate.background_database_section():
             pytest.fail("control context leaked")
-
-
 
 
 def test_short_control_receipt_is_admitted_during_existing_background_reservation(
@@ -90,16 +88,16 @@ def test_short_control_receipt_is_admitted_during_existing_background_reservatio
     assert gate.active_background_sections == 0
 
 
-
-
 @pytest.mark.parametrize("receipt_exists", [True, False])
 def test_background_receipt_read_is_prompt_during_foreground_without_false_success(
     monkeypatch, receipt_exists
 ):
     from contextlib import contextmanager
     from types import SimpleNamespace
-    from app import command_gateway
+
     from tempo_storage import postgres
+
+    from app import command_gateway
     from app.services.activity_gate import activity_gate
 
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
@@ -145,12 +143,11 @@ def test_background_receipt_read_is_prompt_during_foreground_without_false_succe
     assert observations == [{"read_only": True, "background": True}]
 
 
-
-
 def test_foreground_receipt_denial_does_not_consume_failure_attempts(
     monkeypatch,
 ):
     from contextlib import nullcontext
+
     from app import tasks
 
     command_name = "queue.bury"
@@ -182,6 +179,7 @@ def test_foreground_receipt_denial_does_not_consume_failure_attempts(
 
 def test_foreground_wait_reason_on_explicit_producers(monkeypatch):
     import io
+
     from app.services import activity_gate as gate_module
 
     gate = ApplicationActivityGate()

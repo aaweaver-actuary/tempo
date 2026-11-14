@@ -1,9 +1,10 @@
 """Legacy environmental defaults around the installed pure scheduling API."""
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from fsrs import Card
-from tempo_scheduling import Schedule, schedule_review as _schedule_review, unlock_ready
+from tempo_scheduling import Schedule, unlock_ready
+from tempo_scheduling import schedule_review as _schedule_review
 
 
 def schedule_review(
@@ -22,9 +23,9 @@ def schedule_review(
 ) -> Schedule:
     if outcome not in {"correct", "again"}:
         raise ValueError("outcome must be correct or again")
-    now = reviewed_at or datetime.now(timezone.utc)
+    now = reviewed_at or datetime.now(UTC)
     if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
+        now = now.replace(tzinfo=UTC)
     calendar_day = review_day or (
         now.date() if reviewed_at is not None else date.today()
     )

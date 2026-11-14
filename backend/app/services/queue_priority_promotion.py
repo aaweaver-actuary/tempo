@@ -1,14 +1,15 @@
 """Prepare one protected Study priority overlay; the canonical writer rechecks it."""
 
 from dataclasses import dataclass
-from .redis_admission_gate import BackgroundAdmissionDeferred
 
-from .queue_ordering import _priority_queue_order
-from .queue_presentation import presentation_rows, MISS_REASON
 from tempo_storage.queue_refresh.presentation import (
     prepare_presentation_queries,
     priority_ownership_state,
 )
+
+from .queue_ordering import _priority_queue_order
+from .queue_presentation import MISS_REASON, presentation_rows
+from .redis_admission_gate import BackgroundAdmissionDeferred
 
 
 class StalePriorityPromotion(BackgroundAdmissionDeferred):

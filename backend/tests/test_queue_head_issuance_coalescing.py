@@ -4,9 +4,9 @@ Storage/transport doubles prove selection policy only. Real worker/PostgreSQL
 claim and immutable-plan evidence belongs to the position owner native suite.
 """
 
-from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
 import json
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -14,10 +14,10 @@ import pytest
 from app import command_gateway as gateway
 from app.contracts.command_identity import request_digest
 from app.contracts.queue_issuance import (
-    issuance_operation_id,
-    issuance_generation,
-    MAX_GENERATION,
     IMMUTABLE_CONFLICTS,
+    MAX_GENERATION,
+    issuance_generation,
+    issuance_operation_id,
 )
 
 PAYLOAD = {
@@ -53,7 +53,7 @@ def receipt(state="complete", result=None, generation=0, seconds_ago=2, error=No
         request_digest("queue.issue_head", PAYLOAD),
         state,
         json.dumps(result if result is not None else {"issued": False}),
-        datetime.now(timezone.utc) - timedelta(seconds=seconds_ago),
+        datetime.now(UTC) - timedelta(seconds=seconds_ago),
         json.dumps(error) if error is not None else None,
     )
 
@@ -216,6 +216,7 @@ def test_italian_dispatch_pending_keeps_family_handle_and_location(monkeypatch):
 
 def test_queue_prepared_propagates_pending_response_without_queue_envelope(monkeypatch):
     from fastapi.responses import JSONResponse
+
     from app import main
 
     pending = JSONResponse(
@@ -244,9 +245,10 @@ def test_queue_prepared_propagates_pending_response_without_queue_envelope(monke
 def test_italian_http_uses_authoritative_plan_or_preserves_genuine_conflict(
     monkeypatch, result
 ):
-    from app import main, command_dispatch
-    from app.services import queue_next_card
     from fastapi import HTTPException
+
+    from app import command_dispatch, main
+    from app.services import queue_next_card
 
     @contextmanager
     def reader():

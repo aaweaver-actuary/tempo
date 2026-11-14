@@ -1,7 +1,8 @@
 """Prepare and fence an ordinary position-owned queue head before its writer."""
 
-from dataclasses import dataclass
 from collections import OrderedDict
+from dataclasses import dataclass
+from datetime import UTC
 from threading import Lock
 from time import monotonic
 
@@ -16,10 +17,11 @@ def _cached_position_source(database, repertoire_id, epoch, digest):
     owner's complete in-writer fence, including authored rows and integrity.
     """
     from tempo_evidence_math.position_learning import Hold
-    from app.repertoire.position_study_source import prepare_position_source
     from tempo_storage.http_composition.queue_projection import (
         position_source_revision,
     )
+
+    from app.repertoire.position_study_source import prepare_position_source
 
     revision = position_source_revision(database, repertoire_id)
     if revision is None:
@@ -51,28 +53,40 @@ class PreparedQueueHead:
 
 def prepare_queue_head(payload):
     """Read an exact replay or prepare one position head before the writer opens."""
-    from tempo_storage.study import next_exercise_reads as reads
-    from datetime import date, datetime, timezone
+    from datetime import date, datetime
     from uuid import NAMESPACE_URL, uuid5
+
     from tempo_evidence_math.position_learning import Hold
     from tempo_storage.connections import read_connection
+    from tempo_storage.study import next_exercise_reads as reads
     from tempo_storage.study.position_due_candidates import (
         PositionDueCandidateReader,
     )
-    from app.study.position_learning.issuance import replay_exact_attempt, read_clean_presentation_proof, read_applicable_clean_proofs
+
+    from app.study.position_learning.issuance import (
+        read_applicable_clean_proofs,
+        read_clean_presentation_proof,
+        replay_exact_attempt,
+    )
     from app.study.position_learning.issued_plan_contracts import SelectionRequest
     from app.study.position_learning.issued_plan_service import (
         prepare_position_issuance,
     )
     from app.study.position_learning.route_planner import choose_plan
-    from .position_queue_admission import select_carrier
+
     from .background_runtime import training_timing_stage
+    from .position_queue_admission import select_carrier
 
     def held(reason):
         return PreparedQueueHead(payload, "hold", reason=reason)
 
     with read_connection() as db:
-        rows = reads.original_attempt_ids(db, entry_id=payload["entry_id"], card_id=payload["card_id"], revision=payload["expected_revision"])
+        rows = reads.original_attempt_ids(
+            db,
+            entry_id=payload["entry_id"],
+            card_id=payload["card_id"],
+            revision=payload["expected_revision"],
+        )
         if len(rows) > 1:
             return held("position_original_admission_ambiguous")
         if rows:
@@ -82,7 +96,12 @@ def prepare_queue_head(payload):
                     plan.reason if isinstance(plan, Hold) else "position_plan_missing"
                 )
             return PreparedQueueHead(payload, "replay", plan)
-        origin = reads.admission_origin(db, entry_id=payload["entry_id"], card_id=payload["card_id"], revision=payload["expected_revision"])
+        origin = reads.admission_origin(
+            db,
+            entry_id=payload["entry_id"],
+            card_id=payload["card_id"],
+            revision=payload["expected_revision"],
+        )
         if not origin:
             return held("position_original_admission_unavailable")
         if origin.content_type != "opening":
@@ -103,15 +122,13 @@ def prepare_queue_head(payload):
         if origin.issued_as_head:
             return held("position_issued_head_plan_missing")
         with training_timing_stage("position_source_prepare"):
-            source = _cached_position_source(
-                db, rep, owner.epoch, owner.source_digest
-            )
+            source = _cached_position_source(db, rep, owner.epoch, owner.source_digest)
         if isinstance(source, Hold):
             return held(source.reason)
         if source.authored_token.authored_digest != owner.source_digest:
             return held("position_owner_source_changed")
         instant, day = (
-            datetime.now(timezone.utc),
+            datetime.now(UTC),
             date.fromisoformat(payload["queue_date"]),
         )
         reader = PositionDueCandidateReader(
@@ -150,7 +167,9 @@ def prepare_queue_head(payload):
             return held("position_due_target_unavailable")
         with training_timing_stage("position_prior_clean_proofs"):
             proofs = []
-            prior = reads.prior_attempt_ids(db, repertoire_id=rep, owner_epoch=owner.epoch, study_day=day)
+            prior = reads.prior_attempt_ids(
+                db, repertoire_id=rep, owner_epoch=owner.epoch, study_day=day
+            )
             for attempt_id in prior:
                 proof = read_clean_presentation_proof(db, attempt_id)
                 if not isinstance(proof, Hold):

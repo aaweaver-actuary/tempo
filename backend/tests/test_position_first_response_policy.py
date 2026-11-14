@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
@@ -11,7 +11,6 @@ from app.study.position_learning.contracts import (
     PositionKey,
 )
 from app.study.position_learning.first_response_policy import propose_grade
-
 
 STUDY_TZ = timezone(timedelta(hours=-7))
 ISSUED_AT = datetime(2026, 11, 2, 9, 0, tzinfo=STUDY_TZ)
@@ -159,7 +158,7 @@ def test_first_wrong_survives_abandoned_attempt_and_uses_acceptance_day():
 
 def test_authoritative_owner_day_wins_when_utc_date_differs_from_local_day():
     # 00:30 UTC is still 17:30 on the prior day for this issuance's owner.
-    accepted_at = datetime(2026, 11, 3, 0, 30, tzinfo=timezone.utc)
+    accepted_at = datetime(2026, 11, 3, 0, 30, tzinfo=UTC)
     evidence, due = make(accepted_at=accepted_at, accepted_study_day=DAY)
     proposal = propose_grade(evidence, due)
     assert proposal.grade == "good"
@@ -185,7 +184,7 @@ def test_dst_offset_mismatch_does_not_reconstruct_authoritative_acceptance_day()
     # The fixed -07:00 issuance offset is not a DST-aware owner timezone. The
     # owner has resolved this instant to March 9 after the spring transition.
     issued_at = datetime(2026, 3, 8, 23, 55, tzinfo=STUDY_TZ)
-    accepted_at = datetime(2026, 3, 9, 5, 30, tzinfo=timezone.utc)
+    accepted_at = datetime(2026, 3, 9, 5, 30, tzinfo=UTC)
     evidence, due = make(
         issued_at=issued_at,
         accepted_at=accepted_at,
@@ -198,7 +197,7 @@ def test_dst_offset_mismatch_does_not_reconstruct_authoritative_acceptance_day()
 
 
 def test_replay_uses_persisted_accepted_study_day_not_recomputed_timestamp():
-    accepted_at = datetime(2026, 11, 3, 0, 30, tzinfo=timezone.utc)
+    accepted_at = datetime(2026, 11, 3, 0, 30, tzinfo=UTC)
     evidence, due = make(accepted_at=accepted_at, accepted_study_day=DAY)
     replayed, replay_due = make(accepted_at=accepted_at, accepted_study_day=DAY)
     assert propose_grade(replayed, replay_due) == propose_grade(evidence, due)

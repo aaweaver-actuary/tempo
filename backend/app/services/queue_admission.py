@@ -14,8 +14,8 @@ from app.study.openings.capacity_frontier import (
     CapacityCandidate,
     CapacityRoute,
     CapacitySnapshot,
-    propose_capacity_expansion,
     plan_prioritized_opening_admissions,
+    propose_capacity_expansion,
 )
 
 

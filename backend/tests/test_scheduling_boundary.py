@@ -4,14 +4,13 @@ import ast
 import importlib
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tomllib
+from pathlib import Path
 
 import grimp
 import pytest
-
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 METADATA = json.loads(
@@ -74,7 +73,6 @@ def synthetic_package(tmp_path, additions):
         "app.games": "",
         "app.study.openings": "",
         "app.study.review": "",
-        "app.authoring": "",
         "app.studies": "",
         "app.services.review_service": "",
         "tempo_storage.connections": "",
@@ -107,7 +105,9 @@ def synthetic_package(tmp_path, additions):
         "if False:\n    from . import unrelated_analysis",
     ],
 )
-@pytest.mark.parametrize("application_module", [APPLICATION, BACKEND_APPLICATION, OPENING_MATURITY])
+@pytest.mark.parametrize(
+    "application_module", [APPLICATION, BACKEND_APPLICATION, OPENING_MATURITY]
+)
 def test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports(
     tmp_path, forbidden_import, application_module
 ):
@@ -207,7 +207,16 @@ def test_scheduling_boundary_has_no_unrelated_transitive_dependencies(dependency
         ) == sorted(expected_imports), module
     for application_module, expected_app in (
         (APPLICATION, {CONTRACTS, OPENING_MATURITY, "app.services.scheduler"}),
-        (BACKEND_APPLICATION, {APPLICATION, CONTRACTS, BACKEND_CONTRACTS, OPENING_MATURITY, "app.services.scheduler"}),
+        (
+            BACKEND_APPLICATION,
+            {
+                APPLICATION,
+                CONTRACTS,
+                BACKEND_CONTRACTS,
+                OPENING_MATURITY,
+                "app.services.scheduler",
+            },
+        ),
     ):
         reachable = dependency_graph.find_upstream_modules(application_module)
         assert {
@@ -282,57 +291,97 @@ raise SystemExit(pytest.main([sys.argv[1] + '/backend/tests/test_scheduling_revi
 
 def validate_semantic_review_dispatch(metadata, sources, dependency_graph):
     """Check named source links, not broker execution or runtime delivery."""
+
     def tree(key):
         return ast.parse(sources[key])
 
-    routes = {node.name: node for node in tree("route").body
-              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    routes = {
+        node.name: node
+        for node in tree("route").body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
     for route, command in metadata["routes"].items():
         function = routes.get(route)
         assert function is not None, f"missing route: {route}"
-        matches = [node for node in ast.walk(function)
-                   if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                   and node.func.id == "dispatch_command" and node.args
-                   and isinstance(node.args[0], ast.Constant) and node.args[0].value == command]
+        matches = [
+            node
+            for node in ast.walk(function)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "dispatch_command"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value == command
+        ]
         assert len(matches) == 1, f"missing route dispatch: {route} {command}"
-    task_imports = [node for node in ast.walk(tree("task"))
-                    if isinstance(node, ast.ImportFrom) and node.level == 1
-                    and node.module is None
-                    and any(alias.name == "review_commands" for alias in node.names)]
+    task_imports = [
+        node
+        for node in ast.walk(tree("task"))
+        if isinstance(node, ast.ImportFrom)
+        and node.level == 1
+        and node.module is None
+        and any(alias.name == "review_commands" for alias in node.names)
+    ]
     assert task_imports, "missing task review registration import"
-    registration_calls = [node for node in ast.walk(tree("registration"))
-                          if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                          and node.func.id == "register_review_commands" and node.args
-                          and isinstance(node.args[0], ast.Name)
-                          and node.args[0].id == "register_prepared_review"]
+    registration_calls = [
+        node
+        for node in ast.walk(tree("registration"))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "register_review_commands"
+        and node.args
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == "register_prepared_review"
+    ]
     assert len(registration_calls) == 1, "missing review registration bridge"
-    bridge = [node for node in tree("registration").body
-              if isinstance(node, ast.FunctionDef) and node.name == "register_prepared_review"]
+    bridge = [
+        node
+        for node in tree("registration").body
+        if isinstance(node, ast.FunctionDef) and node.name == "register_prepared_review"
+    ]
     assert len(bridge) == 1 and any(
-        isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
         and node.func.id == "register_command"
         for node in ast.walk(bridge[0])
     ), "missing gateway registration"
-    assert {keyword.arg: keyword.value.id for keyword in registration_calls[0].keywords
-            if isinstance(keyword.value, ast.Name)} == {
-        "submit": "submit_review", "reconcile": "reconcile_review"
-    }, "missing review handler bindings"
+    assert {
+        keyword.arg: keyword.value.id
+        for keyword in registration_calls[0].keywords
+        if isinstance(keyword.value, ast.Name)
+    } == {"submit": "submit_review", "reconcile": "reconcile_review"}, (
+        "missing review handler bindings"
+    )
     registry = tree("registry")
-    definitions = [node for node in registry.body if isinstance(node, ast.FunctionDef)
-                   and node.name == "register_review_commands"]
+    definitions = [
+        node
+        for node in registry.body
+        if isinstance(node, ast.FunctionDef) and node.name == "register_review_commands"
+    ]
     assert len(definitions) == 1, "missing review command registry"
-    calls = [node for node in ast.walk(definitions[0])
-             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-             and node.func.id == "register" and node.args
-             and isinstance(node.args[0], ast.Constant)]
+    calls = [
+        node
+        for node in ast.walk(definitions[0])
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "register"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+    ]
     for command in metadata["routes"].values():
-        assert sum(node.args[0].value == command for node in calls) == 1, f"missing registry command: {command}"
-    assert dependency_graph.find_shortest_chain(metadata["task_module"], CONTRACTS), "missing task contract chain"
+        assert sum(node.args[0].value == command for node in calls) == 1, (
+            f"missing registry command: {command}"
+        )
+    assert dependency_graph.find_shortest_chain(metadata["task_module"], CONTRACTS), (
+        "missing task contract chain"
+    )
 
 
 def semantic_review_sources(metadata):
-    return {key: (REPOSITORY / metadata[key + "_path"]).read_text()
-            for key in ("route", "task", "registration", "registry")}
+    return {
+        key: (REPOSITORY / metadata[key + "_path"]).read_text()
+        for key in ("route", "task", "registration", "registry")
+    }
 
 
 def ownership_selection(changed_module, dependency_graph):
@@ -349,7 +398,9 @@ def ownership_selection(changed_module, dependency_graph):
             assert consumer in consumers, consumer
             selected.update(tests)
         semantic = METADATA["semantic_dispatch"]
-        validate_semantic_review_dispatch(semantic, semantic_review_sources(semantic), dependency_graph)
+        validate_semantic_review_dispatch(
+            semantic, semantic_review_sources(semantic), dependency_graph
+        )
         selected.update(semantic["tests"])
     else:
         assert changed_module == APPLICATION
@@ -378,17 +429,34 @@ def test_scheduling_contract_change_expands_consumer_qualification(dependency_gr
         assert (REPOSITORY / file).is_file(), file
 
 
-@pytest.mark.parametrize("source_key, old, replacement", [
-    ("route", '"cards.review",', '"cards.review.changed",'),
-    ("route", '"cards.review.reconcile",', '"cards.review.reconcile.changed",'),
-    ("task", 'from . import review_commands', 'from . import removed_review_commands'),
-    ("registration", 'register_review_commands(', 'removed_review_commands('),
-    ("registration", 'register_command(name, handler, prepare=prepare_review)', 'removed_register(name, handler, prepare=prepare_review)'),
-    ("registration", 'submit=submit_review', 'submit=wrong_review'),
-    ("registry", 'register("cards.review", submit)', 'register("changed", submit)'),
-    ("registry", 'register("cards.review.reconcile", reconcile)', 'register("changed", reconcile)'),
-])
-def test_semantic_review_dispatch_rejects_missing_source_link(dependency_graph, source_key, old, replacement):
+@pytest.mark.parametrize(
+    "source_key, old, replacement",
+    [
+        ("route", '"cards.review",', '"cards.review.changed",'),
+        ("route", '"cards.review.reconcile",', '"cards.review.reconcile.changed",'),
+        (
+            "task",
+            "from . import review_commands",
+            "from . import removed_review_commands",
+        ),
+        ("registration", "register_review_commands(", "removed_review_commands("),
+        (
+            "registration",
+            "register_command(name, handler, prepare=prepare_review)",
+            "removed_register(name, handler, prepare=prepare_review)",
+        ),
+        ("registration", "submit=submit_review", "submit=wrong_review"),
+        ("registry", 'register("cards.review", submit)', 'register("changed", submit)'),
+        (
+            "registry",
+            'register("cards.review.reconcile", reconcile)',
+            'register("changed", reconcile)',
+        ),
+    ],
+)
+def test_semantic_review_dispatch_rejects_missing_source_link(
+    dependency_graph, source_key, old, replacement
+):
     semantic = METADATA["semantic_dispatch"]
     sources = semantic_review_sources(semantic)
     assert old in sources[source_key]

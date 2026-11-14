@@ -1,12 +1,11 @@
 """Schema upgrades must reject ambiguous history and preserve the live stack."""
 
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 import yaml
-
 from database.tooling.apply_postgres_migrations import validate_migration_history
 
 

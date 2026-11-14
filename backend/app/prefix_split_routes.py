@@ -1,14 +1,14 @@
 """HTTP transport for the retained manual prefix split commands."""
 
-from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel
+import json
 from typing import Literal
 
+from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel
+from tempo_storage.commands.receipts import storage as receipt_storage
 from tempo_storage.connections import read_connection
 from tempo_storage.foreground_controls import prefix_splits as storage
 from tempo_storage.study import deferred_prefix_splits as deferred_storage
-from tempo_storage.commands.receipts import storage as receipt_storage
-import json
 
 from .contracts.transport.content import PrefixSplitRequest, PrefixSplitResponse
 from .services.prefix_split import preview_prefix_split
@@ -29,8 +29,15 @@ class DeferredPrefixSplitResponse(BaseModel):
 def prefix_split_intent_status(identifier: str, intent_id: str):
     with read_connection() as database:
         intent = deferred_storage.intent(database, intent_id)
-        child = (receipt_storage.foreground_operation_state(database, intent["child_operation_id"])
-                 if intent is not None and intent["state"] == "ready" and intent["child_operation_id"] else None)
+        child = (
+            receipt_storage.foreground_operation_state(
+                database, intent["child_operation_id"]
+            )
+            if intent is not None
+            and intent["state"] == "ready"
+            and intent["child_operation_id"]
+            else None
+        )
     if intent is None or intent["card_id"] != identifier:
         raise HTTPException(404, "Split intent not found")
     reason = intent["reason"]
@@ -41,9 +48,15 @@ def prefix_split_intent_status(identifier: str, intent_id: str):
                 reason = last_error.get("message")
         except (TypeError, ValueError, AttributeError):
             pass
-    return {"status": intent["state"], "intent_id": intent["intent_id"], "card_id": intent["card_id"],
-            "source_revision": intent["source_revision"], "queue_entry_id": intent["queue_entry_id"],
-            "reason": reason, "result": intent["result_json"]}
+    return {
+        "status": intent["state"],
+        "intent_id": intent["intent_id"],
+        "card_id": intent["card_id"],
+        "source_revision": intent["source_revision"],
+        "queue_entry_id": intent["queue_entry_id"],
+        "reason": reason,
+        "result": intent["result_json"],
+    }
 
 
 @router.get("/api/cards/{identifier}/prefix-split", response_model=PrefixSplitResponse)
@@ -63,7 +76,10 @@ def prefix_split_preview(identifier: str):
     }
 
 
-@router.post("/api/cards/{identifier}/prefix-split", response_model=PrefixSplitResponse | DeferredPrefixSplitResponse)
+@router.post(
+    "/api/cards/{identifier}/prefix-split",
+    response_model=PrefixSplitResponse | DeferredPrefixSplitResponse,
+)
 def prefix_split_accept(
     identifier: str,
     request: PrefixSplitRequest,

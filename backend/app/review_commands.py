@@ -1,11 +1,13 @@
 """Legacy command assembly: explicit Learning registration and owned savepoint."""
 
-from tempo_learning_review import register_review_commands
-from .command_gateway import register_command
-from tempo_storage.postgres import PostgresConnection
-from tempo_storage.controls import review_reconciliation as storage
-from .services.learning_review_adapter import submit_legacy_review
 from typing import Any
+
+from tempo_learning_review import register_review_commands
+from tempo_storage.controls import review_reconciliation as storage
+from tempo_storage.postgres import PostgresConnection
+
+from .command_gateway import register_command
+from .services.learning_review_adapter import submit_legacy_review
 
 
 def submit_review(
@@ -37,9 +39,10 @@ def prepare_review(payload):
     prepared = dict(payload)
     request = prepared["review"].get("opening_evidence_completion")
     if request:
+        from tempo_storage.connections import read_connection
+
         from app.contracts.transport.study import OpeningEvidenceCheckpoint
         from app.study.position_checkpoint import prepare_position_checkpoint
-        from tempo_storage.connections import read_connection
 
         with read_connection() as database:
             prepared["prepared_position_checkpoint"] = prepare_position_checkpoint(

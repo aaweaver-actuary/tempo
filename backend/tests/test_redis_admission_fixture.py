@@ -2,9 +2,9 @@
 
 import importlib.util
 import json
+import sys
 from contextlib import nullcontext
 from pathlib import Path
-import sys
 
 import pytest
 

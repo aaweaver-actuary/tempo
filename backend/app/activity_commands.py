@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException
-
-from .command_gateway import register_command
 from tempo_storage.commands import activity as storage
 from tempo_storage.postgres import PostgresConnection
+
+from .command_gateway import register_command
 from .services.background_activity import set_control_in_transaction
 from .services.durable_tasks import (
     serialize_task,
@@ -47,7 +47,7 @@ def retry_failed_task(
 
     if failed["kind"] in RETIRED_TASK_KINDS:
         raise HTTPException(410, "Task retired")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     storage.reset_failed_task(database, task_id, now)
     if failed["kind"] == "daily_queue":
         from .services.queue_refresh_wakeup import mark_queue_refresh_requested

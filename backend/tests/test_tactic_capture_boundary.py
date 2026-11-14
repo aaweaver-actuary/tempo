@@ -1,19 +1,22 @@
 """The capture and Study admission share the exact caller-owned writer."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from app.study.policy.clock import study_calendar_at
 
-CALENDAR = study_calendar_at(datetime(2026, 11, 12, 2, tzinfo=timezone.utc), "America/New_York")
+CALENDAR = study_calendar_at(datetime(2026, 11, 12, 2, tzinfo=UTC), "America/New_York")
 
 import json
 import uuid
+
 import chess
 import pytest
 from fastapi import HTTPException
+from tempo_storage.study import captured_tactic as study_storage
+from tempo_storage.tactics import captures as receipt_storage
+
 from app.contracts.transport.tactics import TacticCaptureRequest
 from app.product_composition import tactic_capture as composition
-from tempo_storage.tactics import captures as receipt_storage
-from tempo_storage.study import captured_tactic as study_storage
 
 
 def test_tactic_capture_borrowed_admission_preserves_lock_order_and_writer(monkeypatch):
@@ -149,8 +152,10 @@ def test_disposable_capture_proof_binds_database_before_owner_work(monkeypatch):
     import sys
     from pathlib import Path
     from unittest.mock import patch
-    from app.product_composition import database_infrastructure
+
     from tempo_storage import postgres
+
+    from app.product_composition import database_infrastructure
 
     calls = []
     original_path = sys.path[:]

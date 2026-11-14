@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-import json
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import chess
 
+from app.chess.opening_segments import (
+    POLICY_VERSION,
+    presentation_occurrences,
+    stable_key,
+)
 from app.contracts.opening_evidence import (
     OpeningDecisionManifest,
     OpeningEvidenceCheckpoint,
 )
-from app.chess.opening_segments import POLICY_VERSION, presentation_occurrences, stable_key
 
 
 class EvidenceConflict(ValueError):
@@ -21,9 +24,7 @@ class EvidenceConflict(ValueError):
 
 def evidence_time(value: str) -> datetime:
     moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if moment.tzinfo is None or moment > datetime.now(timezone.utc) + timedelta(
-        minutes=5
-    ):
+    if moment.tzinfo is None or moment > datetime.now(UTC) + timedelta(minutes=5):
         raise ValueError(
             "Evidence timestamps require a timezone and cannot be in the future"
         )

@@ -28,9 +28,11 @@ def test_prepared_control_precedes_pending_study_work_without_applying_during_pr
 ):
     from contextlib import contextmanager
     from types import SimpleNamespace
+
+    from app.study.interfaces.next_card import NoNextCardWork
+
     from app.product_composition import next_card_priority as composition
     from app.study import game_feedback
-    from app.study.interfaces.next_card import NoNextCardWork
 
     prepared, study_preparations = {}, []
 
@@ -82,6 +84,7 @@ def test_prepared_control_precedes_pending_study_work_without_applying_during_pr
 def test_optional_preparation_exception_does_not_hide_accepted_study_work(monkeypatch):
     from contextlib import contextmanager
     from types import SimpleNamespace
+
     from app.product_composition import next_card_priority as composition
     from app.study import game_feedback
 

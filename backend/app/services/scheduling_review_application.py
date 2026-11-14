@@ -8,21 +8,32 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+from app.study.policy import scheduling_review_application as _owned
+
 from .scheduler import schedule_review, unlock_ready
 
 # Explicit compatibility re-exports preserve the original public imports.
 from .scheduling_review_contracts import (
     CardState as CardState,
-    ReviewRecord as ReviewRecord,
-    OpeningSeedFacts as OpeningSeedFacts,
+)
+from .scheduling_review_contracts import (
     MaturityFacts as MaturityFacts,
-    UpdatedCardState as UpdatedCardState,
+)
+from .scheduling_review_contracts import (
+    OpeningSeedFacts as OpeningSeedFacts,
+)
+from .scheduling_review_contracts import (
+    ReviewRecord as ReviewRecord,
+)
+from .scheduling_review_contracts import (
     SchedulingReviewResult as SchedulingReviewResult,
+)
+from .scheduling_review_contracts import (
     SchedulingReviewStore as SchedulingReviewStore,
 )
-
-
-from app.study.policy import scheduling_review_application as _owned
+from .scheduling_review_contracts import (
+    UpdatedCardState as UpdatedCardState,
+)
 
 
 def apply_scheduling_review(

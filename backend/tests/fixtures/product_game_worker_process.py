@@ -28,7 +28,6 @@ class LocalTransport(httpx.AsyncBaseTransport):
 def main():
     ROOT = Path(__file__).resolve().parents[3]
     sys.path.insert(0, str(ROOT / "backend/tests"))
-    from test_product_feedback_jobs import FakeClock, MemoryStore
     from app.contracts.product_v02.games import GameWindow
     from app.product_composition.game_sync import (
         AcquisitionPolicy,
@@ -36,6 +35,7 @@ def main():
         sync_job,
     )
     from app.product_composition.game_worker import run_optional_worker
+    from test_product_feedback_jobs import FakeClock, MemoryStore
 
     port = int(sys.argv[1])
     policy = AcquisitionPolicy(

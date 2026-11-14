@@ -4,15 +4,13 @@ Native cases use the task-owned schema-58 fixture and roll back every case.
 They do not establish packaged or live service behavior.
 """
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "database" / "tests"))
 from queue_refresh_scale_fixture import protected_hash, seed_queue_refresh_case
-from native_study_fixture import owned_postgres
-
 from tempo_storage.queue_refresh.presentation import apply_plan
 
 
@@ -101,11 +99,29 @@ def test_native_plan_preserves_full_issued_row_while_reclassifying_unissued(case
     protected = protected_hash(db.raw, (issued,))
     # A stale/derived plan proposes both a different kind and bucket for the
     # issued member. Its original row and origin must remain byte-for-byte.
-    assert _plan(db, facts.queue_date, [issued, unissued],
-                 buckets=["tactic", "opening"], kinds=["review", "new"]) == 2
+    assert (
+        _plan(
+            db,
+            facts.queue_date,
+            [issued, unissued],
+            buckets=["tactic", "opening"],
+            kinds=["review", "new"],
+        )
+        == 2
+    )
     assert protected_hash(db.raw, (issued,)) == protected
-    assert [row[0] for row in db.execute_native("SELECT id FROM kind_updates ORDER BY id").fetchall()] == [unissued]
-    assert db.execute_native("SELECT admission_kind FROM daily_queue WHERE id=%s", (unissued,)).fetchone()[0] == "new"
+    assert [
+        row[0]
+        for row in db.execute_native(
+            "SELECT id FROM kind_updates ORDER BY id"
+        ).fetchall()
+    ] == [unissued]
+    assert (
+        db.execute_native(
+            "SELECT admission_kind FROM daily_queue WHERE id=%s", (unissued,)
+        ).fetchone()[0]
+        == "new"
+    )
 
 
 def test_native_kind_change_and_null_preserve_origin_trigger(case):
@@ -148,18 +164,17 @@ def test_native_missing_or_nonqueued_member_forces_caller_rollback(case, bad):
     before = db.execute_native(
         "SELECT position FROM daily_queue WHERE id=%s", (good,)
     ).fetchone()[0]
-    with pytest.raises(RuntimeError, match="membership"):
-        with db.raw.transaction():
-            matched = apply_plan(
-                db,
-                [good, bad_id],
-                [999, 1000],
-                ["opening"] * 2,
-                ["due"] * 2,
-                facts.queue_date,
-            )
-            if matched != 2:
-                raise RuntimeError("membership changed")
+    with pytest.raises(RuntimeError, match="membership"), db.raw.transaction():
+        matched = apply_plan(
+            db,
+            [good, bad_id],
+            [999, 1000],
+            ["opening"] * 2,
+            ["due"] * 2,
+            facts.queue_date,
+        )
+        if matched != 2:
+            raise RuntimeError("membership changed")
     assert (
         db.execute_native(
             "SELECT position FROM daily_queue WHERE id=%s", (good,)

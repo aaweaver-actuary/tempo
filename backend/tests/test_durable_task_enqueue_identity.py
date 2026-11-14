@@ -1,6 +1,7 @@
 """#144: events/results must use the identity selected by the UPSERT."""
 
 import pytest
+
 from app.services import durable_tasks
 
 
@@ -65,9 +66,16 @@ def test_visible_tasks_compares_text_timestamps_as_instants_without_rewriting_hi
     read behavior; the real integrity-recovery browser case executes the SQL.
     """
     import re
+
     from tempo_storage.durable_tasks import storage
 
-    retained = [{"id": "original-task", "state": "complete", "updated_at": "2026-11-12T09:00:00-05:00"}]
+    retained = [
+        {
+            "id": "original-task",
+            "state": "complete",
+            "updated_at": "2026-11-12T09:00:00-05:00",
+        }
+    ]
     calls = []
 
     class BorrowedReader:
@@ -76,7 +84,10 @@ def test_visible_tasks_compares_text_timestamps_as_instants_without_rewriting_hi
             # The column remains TEXT for retained history. Comparing text to
             # CURRENT_TIMESTAMP is invalid; lexicographic comparison would be
             # wrong for offset-bearing timestamps. Keep the cast on the column.
-            assert re.search(r"updated_at\s*::\s*timestamptz\s*>=\s*\(CURRENT_TIMESTAMP\s*-\s*INTERVAL '1 day'\)", statement)
+            assert re.search(
+                r"updated_at\s*::\s*timestamptz\s*>=\s*\(CURRENT_TIMESTAMP\s*-\s*INTERVAL '1 day'\)",
+                statement,
+            )
             assert "state!='complete' OR" in statement
             assert statement.lstrip().startswith("SELECT ")
             return self

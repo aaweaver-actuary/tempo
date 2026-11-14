@@ -1,8 +1,8 @@
 """Scheduling wrapper characterization and owned-connection adapter contracts."""
 
-from datetime import date, datetime, timezone
 import json
 import sqlite3
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -48,7 +48,7 @@ def apply_review(connection, **changes):
         source_kind="study",
         source_ref="source",
         light_first_interval_days=7,
-        reviewed_at=datetime(2026, 1, 2, 23, 30, tzinfo=timezone.utc),
+        reviewed_at=datetime(2026, 1, 2, 23, 30, tzinfo=UTC),
         review_day=date(2026, 1, 2),
     )
     arguments.update(changes)
@@ -194,12 +194,13 @@ def test_scheduling_store_never_commits_outside_command_owner(scheduling_databas
 def test_scheduling_store_maturity_filters_invalidated_history_and_preserves_seed_and_ties(
     scheduling_database,
 ):
+    from tempo_storage.scheduling_review_store import (
+        OwnedConnectionSchedulingReviewStore,
+    )
+
     from app.services.scheduling_review_application import (
         MaturityFacts,
         OpeningSeedFacts,
-    )
-    from tempo_storage.scheduling_review_store import (
-        OwnedConnectionSchedulingReviewStore,
     )
 
     for rating, timestamp, invalidated in [
@@ -263,7 +264,7 @@ def test_scheduling_wrapper_invalid_inputs_do_not_append_history(
             source_kind="study",
             source_ref=None,
             light_first_interval_days=7,
-            reviewed_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+            reviewed_at=datetime(2026, 1, 2, tzinfo=UTC),
             review_day=date(2026, 1, 2),
         )
     assert (

@@ -1,8 +1,9 @@
 """Authored line/paste contracts."""
 
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+
 from fastapi import HTTPException
+from pydantic import BaseModel, Field
 
 
 def reject_retired_coverage(value: Any) -> None:

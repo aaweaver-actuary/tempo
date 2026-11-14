@@ -7,9 +7,8 @@ no connection, transaction or writer is created.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from . import frozen_opening_order
+
 MISS_REASON = "Priority review · missed in a recent game"
 from .queue_admission import IntroductionCountPage, OpeningCandidatePage
 
@@ -18,9 +17,6 @@ READ_BATCH_SIZE = 16
 
 from tempo_storage.queue_refresh.application import (
     admission as admission_storage,
-)
-from tempo_storage.queue_refresh.application.admission import (
-    _PRIORITY_OPENING_CANDIDATE_BODY,
 )
 
 

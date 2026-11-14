@@ -1,14 +1,15 @@
 """Legacy review policy, lock selection and deferred effects borrow fixed storage."""
 
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 import pytest
+
 from app.services import learning_review_adapter as review
 
 DAY = date(2026, 10, 21)
-NOW = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 21, 12, tzinfo=UTC)
 
 
 def test_injected_policy_never_opens_settings_read(monkeypatch):

@@ -2,7 +2,9 @@
 
 from datetime import datetime
 from typing import Annotated, Literal
+
 from pydantic import AfterValidator, Field
+
 from .background_metric_kinds import KINDS
 
 

@@ -3,8 +3,9 @@
 import ast
 from pathlib import Path
 
-from app.services import queue_application
 from tempo_storage.queue_refresh.application import eligibility
+
+from app.services import queue_application
 
 
 def test_queue_unlock_captures_eligible_projection_before_selected_write(monkeypatch):

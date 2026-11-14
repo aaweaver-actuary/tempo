@@ -1,6 +1,7 @@
 """Borrowed, transaction-bound Study admission capability for validated captures."""
 
 from typing import Protocol, TypedDict
+
 from app.contracts.tactic_capture import ValidatedCapture
 
 

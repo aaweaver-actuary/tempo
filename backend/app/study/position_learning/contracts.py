@@ -3,25 +3,12 @@
 from __future__ import annotations
 
 from typing import Protocol, TypeVar
+
 from tempo_evidence_math.position_learning import (
-    AuthoredPositionSourceView,
-    PositionDecisionBindingView,
-    PositionPublicationFacts,
-    PositionSourceMembershipView,
-    PositionSourceSnapshotView,
-    PreparedPositionSourceView,
-    PreparedPositionSourceWithFactsView,
-    AcceptedEvidence,
-    DecisionOccurrence,
     DueAtIssuance,
-    FirstResponse,
-    Grade,
     GradeProposal,
     Hold,
-    PositionDefinition,
     PositionKey,
-    RouteOption,
-    SourceCertificate,
 )
 
 # Transaction owners supply concrete proposal and receipt values. These ports do

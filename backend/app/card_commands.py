@@ -4,15 +4,11 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from backend.app.types import Fen
 
 import chess
 from fastapi import HTTPException
-
-from .services.study_calendar import capture_study_calendar
-
-from .command_gateway import register_command
-from app.repertoire.changes.application import validate_source_rows
-from app.repertoire.changes.ports import ChangeError
+from tempo_chess_core import card_id
 from tempo_storage.authored_repertoires import (
     product_changes as change_storage,
 )
@@ -20,18 +16,23 @@ from tempo_storage.authored_repertoires.card_edits import storage
 from tempo_storage.authored_repertoires.card_edits.storage import (
     card_columns,
 )
-from app.contracts.transport.content import CardRevisionRequest
 from tempo_storage.postgres import PostgresConnection
-from app.chess.cards import card_id
+
+from app.contracts.transport.content import CardRevisionRequest
+from app.repertoire.changes.application import validate_source_rows
+from app.repertoire.changes.ports import ChangeError
+
+from .command_gateway import register_command
 from .services.postgres_integrity import (
     invalidate_integrity_in_transaction,
     request_integrity_scan_in_transaction,
 )
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.repertoire_integrity import integrity_summary
+from .services.study_calendar import capture_study_calendar
 
 
-def _validated_moves(starting_fen: str, supplied_moves: list[str]) -> list[str]:
+def _validated_moves(starting_fen: Fen, supplied_moves: list[str]) -> list[str]:
     try:
         board = chess.Board(starting_fen)
     except ValueError as error:
@@ -83,7 +84,7 @@ def revise_card(
     if request.expected_revision is None:
         raise HTTPException(422, "expected_revision is required for card edits")
     moves = _validated_moves(request.starting_fen, request.moves)
-    from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
+    from .services.canonical_prefix import certify_admitted_route, ensure_line_in_scope
 
     repertoire_ids = [row[0] for row in storage.card_scope(database, identifier)]
     validated_routes = {
@@ -105,11 +106,9 @@ def revise_card(
                     start_fen=request.starting_fen,
                     moves_json=json.dumps(moves),
                     trained_color=next(
-                        (
-                            row["trained_color"]
-                            for row in sources
-                            if row["source_id"] == f"card:{identifier}"
-                        )
+                        row["trained_color"]
+                        for row in sources
+                        if row["source_id"] == f"card:{identifier}"
                     ),
                 ),
             )

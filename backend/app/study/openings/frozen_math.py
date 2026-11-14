@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 import heapq
 import math
+from collections import defaultdict
+
 import chess
+
 from app.chess.opening_segments import (
     decision_identity,
     opening_position_key,

@@ -1,7 +1,9 @@
 """Public facts and narrow capabilities for frozen Study preference."""
 
 from __future__ import annotations
-from typing import AbstractSet, Callable, Mapping, NamedTuple, Sequence
+
+from collections.abc import Callable, Mapping, Sequence
+from typing import AbstractSet, NamedTuple
 
 
 class FrozenRankFacts(NamedTuple):

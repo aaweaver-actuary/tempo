@@ -1,21 +1,23 @@
 """Changed receipt/worker boundaries; fake storage is not native PostgreSQL proof."""
 
-from contextlib import nullcontext
 import json
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
+from tempo_storage.authored_repertoires.pgn_import import (
+    preparation as storage,
+)
 
 from app import tasks
 from app.services import (
     durable_tasks,
-    explicit_repertoire_import as preparation,
     study_mode,
 )
-from app.services.redis_admission_gate import BackgroundAdmissionDeferred
-from tempo_storage.authored_repertoires.pgn_import import (
-    preparation as storage,
+from app.services import (
+    explicit_repertoire_import as preparation,
 )
+from app.services.redis_admission_gate import BackgroundAdmissionDeferred
 
 
 def delivery(kind="opening_graph_rebuild"):

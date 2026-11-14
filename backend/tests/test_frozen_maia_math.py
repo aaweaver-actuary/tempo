@@ -1,13 +1,14 @@
 import json
+
 import chess
 import pytest
+
+from app.chess.opening_segments import decision_identity
 from app.study.openings.frozen_math import (
     anchor,
-    represented_reach,
-    card_decisions,
     greedy_order,
+    represented_reach,
 )
-from app.chess.opening_segments import decision_identity
 
 
 def scenario(prefix="", color="white", **extra):

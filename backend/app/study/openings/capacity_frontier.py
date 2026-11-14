@@ -5,8 +5,8 @@ No database, environment, clock, chess, or scheduling dependencies.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 import json
+from dataclasses import dataclass, replace
 
 
 def priority_frontier_depth(priority_row) -> int:

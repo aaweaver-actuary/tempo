@@ -1,10 +1,9 @@
 import threading
 
 import pytest
-
 from tempo_storage import connections as database
-from app.services.activity_gate import ApplicationActivityGate, BackgroundContractError
 
+from app.services.activity_gate import ApplicationActivityGate, BackgroundContractError
 
 START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 

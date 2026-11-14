@@ -1,9 +1,9 @@
 """Queue-refresh direct storage boundary and projection atomicity."""
 
 import ast
+import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-import sqlite3
 
 import pytest
 

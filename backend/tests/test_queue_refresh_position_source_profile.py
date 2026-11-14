@@ -5,9 +5,11 @@ from contextlib import contextmanager
 import pytest
 
 from app.services import (
-    postgres_queue_refresh as refresh,
     position_queue_admission,
     study_mode,
+)
+from app.services import (
+    postgres_queue_refresh as refresh,
 )
 
 

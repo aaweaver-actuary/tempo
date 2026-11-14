@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -60,13 +60,11 @@ class ExplanationExercise(ExerciseText):
 
 
 ExerciseSpecification = Annotated[
-    Union[
-        MoveExercise,
-        SquareExercise,
-        KnightExercise,
-        ChoiceExercise,
-        ExplanationExercise,
-    ],
+    MoveExercise
+    | SquareExercise
+    | KnightExercise
+    | ChoiceExercise
+    | ExplanationExercise,
     Field(discriminator="type"),
 ]
 
@@ -100,6 +98,6 @@ class ExplanationAnswer(StrictModel):
 
 
 ExerciseAnswer = Annotated[
-    Union[MoveAnswer, SquareAnswer, KnightAnswer, ChoiceAnswer, ExplanationAnswer],
+    MoveAnswer | SquareAnswer | KnightAnswer | ChoiceAnswer | ExplanationAnswer,
     Field(discriminator="type"),
 ]

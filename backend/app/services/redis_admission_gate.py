@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager, asynccontextmanager, suppress
 import asyncio
 import logging
 import threading
 import time
 import uuid
-from typing import Iterator
+from collections.abc import Iterator
+from contextlib import asynccontextmanager, contextmanager, suppress
 
 import redis
-
 from tempo_storage.redis_control import admission as storage
-from tempo_storage.redis_control.admission import client, configured
-
+from tempo_storage.redis_control.admission import client
 
 _LOGGER = logging.getLogger("tempo.admission")
 
@@ -36,7 +34,9 @@ def foreground_present() -> bool:
 def record_browser_activity(seconds: float, *, session_id: str = "legacy") -> None:
     """Keep the active workspace ahead of new background database slices."""
 
-    storage.record_browser_presence(client(), int(time.time() * 1000), session_id, seconds)
+    storage.record_browser_presence(
+        client(), int(time.time() * 1000), session_id, seconds
+    )
 
 
 @asynccontextmanager
@@ -70,9 +70,7 @@ async def async_foreground_lease():
         with suppress(asyncio.CancelledError):
             await renewal
         try:
-            await asyncio.to_thread(
-                storage.remove_foreground, client(), token
-            )
+            await asyncio.to_thread(storage.remove_foreground, client(), token)
         except redis.RedisError:
             _LOGGER.exception("Could not release foreground admission lease")
 
@@ -128,7 +126,9 @@ def background_lease() -> Iterator[None]:
             "Foreground admission is unavailable"
         ) from error
     if not admitted:
-        raise BackgroundAdmissionDeferred("Waiting for foreground activity", reason="foreground_wait")
+        raise BackgroundAdmissionDeferred(
+            "Waiting for foreground activity", reason="foreground_wait"
+        )
     try:
         yield
     finally:

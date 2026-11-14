@@ -1,8 +1,9 @@
-
-from app.repertoire import position_study_source as _source_preparation
+from datetime import UTC
 from types import SimpleNamespace as NS
 
 from tempo_evidence_math.position_learning import Hold
+
+from app.repertoire import position_study_source as _source_preparation
 from app.services.position_queue_admission import select_carrier
 
 
@@ -120,8 +121,9 @@ def test_conflicting_response_or_unavailable_carrier_holds():
 
 def test_refresh_consumes_prepared_due_before_advancing(monkeypatch):
     from contextlib import contextmanager
-    from app.services import postgres_queue_refresh as refresh
+
     from app.services import position_queue_admission as position
+    from app.services import postgres_queue_refresh as refresh
     from app.services import study_mode
 
     @contextmanager
@@ -165,20 +167,22 @@ def test_refresh_consumes_prepared_due_before_advancing(monkeypatch):
 
 
 def test_admission_fences_before_card_and_date_and_deduplicates(monkeypatch):
-    from datetime import date, datetime, timezone
-    from app.services.position_queue_admission import admit_due
+    from datetime import date, datetime
+
+    from tempo_storage import queue_position_lock
     from tempo_storage.authored_repertoires import (
         position_study_source,
     )
-    from tempo_storage.study import (
-        position_owner_epoch,
-        position_due_candidates,
-    )
     from tempo_storage.queue_refresh import admissions
-    from tempo_storage import queue_position_lock
+    from tempo_storage.study import (
+        position_due_candidates,
+        position_owner_epoch,
+    )
+
+    from app.services.position_queue_admission import admit_due
 
     order = []
-    now = datetime(2026, 11, 2, tzinfo=timezone.utc)
+    now = datetime(2026, 11, 2, tzinfo=UTC)
     prepared, target = source([binding("a")])
     prepared.authored_token.authored_digest = "digest"
     state = NS(definition=target, owner_epoch="epoch", version=1)
@@ -233,9 +237,10 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
     """Synthetic schema with real source, H1 and sliced queue admission."""
     import os
     from contextlib import contextmanager
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
     from pathlib import Path
     from uuid import uuid4
+
     import pytest
 
     dsn = os.environ.get("TEMPO_POSITION_TEST_DSN")
@@ -243,14 +248,13 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
         pytest.skip("requires task-owned TEMPO_POSITION_TEST_DSN")
     import psycopg
     from psycopg import sql
-    from tempo_evidence_math.position_learning import PositionKey, PositionDefinition
+    from tempo_evidence_math.position_learning import PositionDefinition, PositionKey
     from tempo_storage.postgres import tempo_row_factory
-    from tempo_storage.authored_repertoires import (
-        position_study_source,
-    )
-    from app.services import postgres_queue_refresh as refresh, study_mode
 
-    now = datetime.now(timezone.utc)
+    from app.services import postgres_queue_refresh as refresh
+    from app.services import study_mode
+
+    now = datetime.now(UTC)
     day = now.date().isoformat()
     fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"
     definition = PositionDefinition(PositionKey("r", fen), "e2e4", "p1")
@@ -271,8 +275,9 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
         raw.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
         try:
             raw.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema)))
-            from test_product_snapshot_postgres import DDL
             import json
+
+            from test_product_snapshot_postgres import DDL
 
             raw.execute(DDL)
             raw.execute("ALTER TABLE cards ADD COLUMN fsrs_card_json text")
@@ -398,8 +403,13 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
             _, authoritative_day = refresh._queue_slice_current_day(port)
             assert authoritative_day == day
             assert refresh.execute_postgres_queue_refresh_slice(
-                {"payload": {"queue_date": day, "_queue_phase": "admit_position_due",
-                             "_refresh_cycle_epoch": 1}}
+                {
+                    "payload": {
+                        "queue_date": day,
+                        "_queue_phase": "admit_position_due",
+                        "_refresh_cycle_epoch": 1,
+                    }
+                }
             )
             raw.execute("COMMIT")
             assert [
@@ -418,10 +428,14 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
             # Current ordinary due admission owns selection. Removed Feedback
             # urgency/held-effect settlement is not a current issuance contract.
             from tempo_storage import connections
-            from app.services import queue_next_card
+
             from app import queue_commands
+            from app.services import queue_next_card
+
             target_definition = next(
-                d.definition for route in prepared.routes for d in route.decisions
+                d.definition
+                for route in prepared.routes
+                for d in route.decisions
                 if d.definition.key.position == min(fen, second_fen)
             )
 
@@ -436,7 +450,10 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
                 "prepare_queue_head",
                 lambda *a: lambda d: {"id": entry},
             )
-            def validate_available_attempt(database, entry_id, card_id, revision, *, current_day):
+
+            def validate_available_attempt(
+                database, entry_id, card_id, revision, *, current_day
+            ):
                 assert database is port
                 assert (entry_id, card_id, revision) == (entry, "card", 1)
                 assert current_day == day
@@ -478,7 +495,12 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
             )
             # Preparation has not issued an attempt or written an issuance plan.
             raw.execute("ROLLBACK")
-            assert raw.execute("SELECT count(*) FROM study_position_issued_plans").fetchone()[0] == 0
+            assert (
+                raw.execute(
+                    "SELECT count(*) FROM study_position_issued_plans"
+                ).fetchone()[0]
+                == 0
+            )
             raw.execute("BEGIN")
             raw.execute(
                 "UPDATE repertoire_lines SET moves_json='[\"d2d4\"]' WHERE id='route'"
@@ -503,30 +525,44 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
 
             original_issue = issuance.issue_in_borrowed_transaction
             witnessed = []
+
             def witness_real_plan(database, prepared):
                 result = original_issue(database, prepared)
                 plan = prepared.plan
                 row = raw.execute(
                     "SELECT attempt_id,queue_entry_id,card_id,card_revision,plan_digest,plan_json "
-                    "FROM study_position_issued_plans WHERE attempt_id=%s", (plan.attempt_id,)
+                    "FROM study_position_issued_plans WHERE attempt_id=%s",
+                    (plan.attempt_id,),
                 ).fetchone()
                 assert row is not None
-                assert tuple(row) == (plan.attempt_id, entry, "card", 1, plan.plan_id, plan.to_record())
+                assert tuple(row) == (
+                    plan.attempt_id,
+                    entry,
+                    "card",
+                    1,
+                    plan.plan_id,
+                    plan.to_record(),
+                )
                 witnessed.append(plan.attempt_id)
                 return result
 
             with monkeypatch.context() as patch:
-                patch.setattr(issuance, "issue_in_borrowed_transaction", witness_real_plan)
+                patch.setattr(
+                    issuance, "issue_in_borrowed_transaction", witness_real_plan
+                )
                 with pytest.raises(ReviewConflict) as failure:
                     queue_commands.issue_queue_head(port, proposal)
             assert failure.value.code == "position_head_changed"
             assert failure.value.retryable is True
             assert witnessed == [proposal.proposal.plan.attempt_id]
             raw.execute("ROLLBACK")
-            assert raw.execute(
-                "SELECT count(*) FROM study_position_issued_plans WHERE attempt_id=%s",
-                (proposal.proposal.plan.attempt_id,),
-            ).fetchone()[0] == 0
+            assert (
+                raw.execute(
+                    "SELECT count(*) FROM study_position_issued_plans WHERE attempt_id=%s",
+                    (proposal.proposal.plan.attempt_id,),
+                ).fetchone()[0]
+                == 0
+            )
             monkeypatch.setattr(
                 queue_commands.queue_storage,
                 "prepare_queue_head",
@@ -553,8 +589,13 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
             )
             raw.execute("BEGIN")
             assert refresh.execute_postgres_queue_refresh_slice(
-                {"payload": {"queue_date": day, "_queue_phase": "admit_position_due",
-                             "_refresh_cycle_epoch": 1}}
+                {
+                    "payload": {
+                        "queue_date": day,
+                        "_queue_phase": "admit_position_due",
+                        "_refresh_cycle_epoch": 1,
+                    }
+                }
             )
             raw.execute("COMMIT")
             assert [
@@ -573,8 +614,10 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
 
 def test_issued_head_replays_exact_attempt_without_rebuilding_source(monkeypatch):
     from contextlib import contextmanager
-    from app.services.queue_next_card import prepare_queue_head
+
     from tempo_storage import connections
+
+    from app.services.queue_next_card import prepare_queue_head
     from app.study.position_learning import issuance as position_issued_plans
 
     calls = []
@@ -614,11 +657,12 @@ def test_new_position_issue_fences_source_before_existing_queue_locks_and_rolls_
 ):
     import pytest
     from fastapi import HTTPException
-    from app import queue_commands
-    from app.services import queue_next_card
     from tempo_storage.authored_repertoires import (
         position_study_source,
     )
+
+    from app import queue_commands
+    from app.services import queue_next_card
     from app.study.position_learning import issuance as position_issued_plans
 
     calls = []
@@ -649,7 +693,9 @@ def test_new_position_issue_fences_source_before_existing_queue_locks_and_rolls_
     monkeypatch.setattr(
         queue_commands, "lock_queue_date_for_position", lambda *a: calls.append("date")
     )
-    monkeypatch.setattr(queue_commands.queue_storage, "retired_issuance_target", lambda *a: False)
+    monkeypatch.setattr(
+        queue_commands.queue_storage, "retired_issuance_target", lambda *a: False
+    )
     monkeypatch.setattr(queue_commands.queue_storage, "issued_origin", lambda *a: True)
     monkeypatch.setattr(
         queue_commands.queue_storage,
@@ -665,11 +711,9 @@ def test_new_position_issue_fences_source_before_existing_queue_locks_and_rolls_
 
 
 def test_source_preparation_cache_invalidates_on_source_revision(monkeypatch):
-    from app.services import queue_next_card
     from tempo_storage.http_composition import queue_projection
-    from tempo_storage.authored_repertoires import (
-        position_study_source,
-    )
+
+    from app.services import queue_next_card
 
     queue_next_card._source_cache.clear()
     revision, calls = [1], []
@@ -699,6 +743,7 @@ def test_source_preparation_cache_invalidates_on_source_revision(monkeypatch):
 
 def test_http_issued_head_returns_original_plan_without_dispatch(monkeypatch):
     from contextlib import contextmanager
+
     from app import main
     from app.services import queue_next_card
 
@@ -732,21 +777,39 @@ def test_http_issued_head_returns_original_plan_without_dispatch(monkeypatch):
 def test_changed_source_holds_before_position_plan_or_queue_locks(monkeypatch):
     # SPEC November 10 pass 2 retires active Games urgency; current Study
     # source fencing still protects an issued position proposal.
+    from tempo_storage.authored_repertoires import position_study_source
+
     from app import queue_commands
     from app.services import queue_next_card
-    from tempo_storage.authored_repertoires import position_study_source
     from app.study.position_learning import issuance
 
-    payload = {"queue_date": "2026-11-02", "entry_id": 4,
-               "card_id": "card", "expected_revision": 2}
-    prepared = queue_next_card.PreparedQueueHead(payload, "position", NS(source=object()))
+    payload = {
+        "queue_date": "2026-11-02",
+        "entry_id": 4,
+        "card_id": "card",
+        "expected_revision": 2,
+    }
+    prepared = queue_next_card.PreparedQueueHead(
+        payload, "position", NS(source=object())
+    )
     calls = []
-    monkeypatch.setattr(queue_commands, "current_study_day", lambda db: payload["queue_date"])
-    monkeypatch.setattr(position_study_source, "fence_position_source",
-                        lambda *a: calls.append("source") or Hold("position_owner_source_changed"))
-    monkeypatch.setattr(issuance, "issue_in_borrowed_transaction", lambda *a: calls.append("plan"))
-    monkeypatch.setattr(queue_commands, "_lock_attempt_card", lambda *a: calls.append("card"))
-    monkeypatch.setattr(queue_commands, "lock_queue_date_for_position", lambda *a: calls.append("date"))
+    monkeypatch.setattr(
+        queue_commands, "current_study_day", lambda db: payload["queue_date"]
+    )
+    monkeypatch.setattr(
+        position_study_source,
+        "fence_position_source",
+        lambda *a: calls.append("source") or Hold("position_owner_source_changed"),
+    )
+    monkeypatch.setattr(
+        issuance, "issue_in_borrowed_transaction", lambda *a: calls.append("plan")
+    )
+    monkeypatch.setattr(
+        queue_commands, "_lock_attempt_card", lambda *a: calls.append("card")
+    )
+    monkeypatch.setattr(
+        queue_commands, "lock_queue_date_for_position", lambda *a: calls.append("date")
+    )
     result = queue_commands.issue_queue_head(object(), prepared)
     assert result["issued"] is False
     assert result["position_study_hold"] == "position_owner_source_changed"
@@ -755,29 +818,38 @@ def test_changed_source_holds_before_position_plan_or_queue_locks(monkeypatch):
 
 def test_owner_read_contract_preserves_exact_selection_and_routing(monkeypatch):
     from dataclasses import FrozenInstanceError
+
     import pytest
-    from app.services import position_queue_admission as admission, queue_next_card
     from tempo_storage.study import position_owner_epoch as storage
+
+    from app.services import position_queue_admission as admission
+    from app.services import queue_next_card
 
     class Database:
         def __init__(self):
             self.rows = []
             self.calls = []
+
         def execute_native(self, sql, params):
             self.calls.append((" ".join(sql.split()), params))
             return NS(fetchone=lambda: self.rows.pop(0))
 
     db = Database()
-    db.rows = [dict(repertoire_id="r", epoch="e", source_digest="digest"),
-               dict(repertoire_id="r", epoch="e", source_digest="digest"),
-               dict(mode="shadow", epoch="e", source_digest="digest")]
+    db.rows = [
+        dict(repertoire_id="r", epoch="e", source_digest="digest"),
+        dict(repertoire_id="r", epoch="e", source_digest="digest"),
+        dict(mode="shadow", epoch="e", source_digest="digest"),
+    ]
     first = storage.next_active_owner(db, "q")
     assert first == storage.PositionOwnerFacts("r", "active", "e", "digest")
     with pytest.raises(FrozenInstanceError):
         first.epoch = "other"
     assert storage.active_owner(db, "r") == first
     assert storage.current_owner(db, "r").mode == "shadow"
-    assert "o.mode='active' AND o.repertoire_id>%s ORDER BY o.repertoire_id LIMIT 1" in db.calls[0][0]
+    assert (
+        "o.mode='active' AND o.repertoire_id>%s ORDER BY o.repertoire_id LIMIT 1"
+        in db.calls[0][0]
+    )
     assert "o.mode='active' AND o.repertoire_id=%s" in db.calls[1][0]
     assert "WHERE o.repertoire_id=%s" in db.calls[2][0]
     assert [params for _, params in db.calls] == [("q",), ("r",), ("r",)]
@@ -786,49 +858,100 @@ def test_owner_read_contract_preserves_exact_selection_and_routing(monkeypatch):
     monkeypatch.setattr(storage, "next_active_owner", lambda *_: None)
     monkeypatch.setattr(storage, "active_owner", lambda *_: None)
     assert admission.prepare_due(object(), "2026-11-02", {}) is None
-    assert admission.prepare_due(object(), "2026-11-02", {"position_repertoire": "r"}).reason == "position_owner_changed_during_admission"
+    assert (
+        admission.prepare_due(
+            object(), "2026-11-02", {"position_repertoire": "r"}
+        ).reason
+        == "position_owner_changed_during_admission"
+    )
     monkeypatch.setattr(storage, "active_owner", lambda *_: first)
     for epoch, digest in (("other", "digest"), ("e", "other")):
-        assert admission.prepare_due(object(), "2026-11-02", {"position_repertoire": "r", "position_epoch": epoch, "position_digest": digest}).reason == "position_owner_changed_during_admission"
+        assert (
+            admission.prepare_due(
+                object(),
+                "2026-11-02",
+                {
+                    "position_repertoire": "r",
+                    "position_epoch": epoch,
+                    "position_digest": digest,
+                },
+            ).reason
+            == "position_owner_changed_during_admission"
+        )
     for mode in (None, "inactive", "shadow", "staged", "paused"):
-        value = None if mode is None else storage.PositionOwnerFacts("r", mode, "e", "digest")
+        value = (
+            None
+            if mode is None
+            else storage.PositionOwnerFacts("r", mode, "e", "digest")
+        )
         monkeypatch.setattr(storage, "current_owner", lambda *_, value=value: value)
-        result = admission.prepare_opening_introduction(object(), {"repertoire_id": "r", "card_id": "card"})
+        result = admission.prepare_opening_introduction(
+            object(), {"repertoire_id": "r", "card_id": "card"}
+        )
         if mode in (None, "inactive", "shadow"):
             assert result == ("legacy", "r")
         else:
             assert result.reason == "position_owner_" + mode
     monkeypatch.setattr(storage, "current_owner", lambda *_: first)
-    monkeypatch.setattr(queue_next_card, "_cached_position_source", lambda *_: NS(authored_token=NS(authored_digest="changed")))
-    assert admission.prepare_opening_introduction(object(), {"repertoire_id": "r", "card_id": "card"}).reason == "position_owner_source_changed"
+    monkeypatch.setattr(
+        queue_next_card,
+        "_cached_position_source",
+        lambda *_: NS(authored_token=NS(authored_digest="changed")),
+    )
+    assert (
+        admission.prepare_opening_introduction(
+            object(), {"repertoire_id": "r", "card_id": "card"}
+        ).reason
+        == "position_owner_source_changed"
+    )
 
 
 def test_due_preparation_consumes_semantic_owner_facts_and_retains_cursor(monkeypatch):
-    from datetime import datetime, timezone
-    from app.services import position_queue_admission as admission
+    from datetime import datetime
+
     from tempo_storage.study import position_due_candidates, position_owner_epoch
 
+    from app.services import position_queue_admission as admission
+
     owner = position_owner_epoch.PositionOwnerFacts("r", "active", "epoch", "digest")
-    instant = datetime(2026, 11, 2, 12, tzinfo=timezone.utc)
+    instant = datetime(2026, 11, 2, 12, tzinfo=UTC)
     prepared_source, target = source([binding("card")])
     prepared_source.authored_token.authored_digest = "digest"
     state = NS(definition=target, due_at=instant)
     state.definition.key.variant = "standard"
     candidate = NS(state=state)
     seen = []
+
     class Reader:
         def __init__(self, database, **kwargs):
             seen.append((database, kwargs))
+
         def read_due_page(self, *, after, limit):
             assert after is None and limit == 1
             return NS(candidates=[candidate])
-    monkeypatch.setattr(position_owner_epoch, "next_active_owner", lambda db, after: owner)
+
+    monkeypatch.setattr(
+        position_owner_epoch, "next_active_owner", lambda db, after: owner
+    )
     monkeypatch.setattr(position_due_candidates, "PositionDueCandidateReader", Reader)
-    monkeypatch.setattr(_source_preparation, "prepare_position_source", lambda db, rep: prepared_source)
+    monkeypatch.setattr(
+        _source_preparation, "prepare_position_source", lambda db, rep: prepared_source
+    )
     db = object()
-    result = admission.prepare_due(db, "2026-11-02", {"position_instant": instant.isoformat()})
+    result = admission.prepare_due(
+        db, "2026-11-02", {"position_instant": instant.isoformat()}
+    )
     assert result["source"] is prepared_source and result["candidate"] is candidate
     assert result["carrier"].presentation_id == "card"
-    assert result["cursor"] == {"position_repertoire": "r", "position_epoch": "epoch", "position_digest": "digest",
-        "position_instant": instant.isoformat(), "position_after": [instant.isoformat(), "standard", "position"]}
-    assert seen[0][0] is db and seen[0][1]["owner_epoch"] == "epoch" and seen[0][1]["source_digest"] == "digest"
+    assert result["cursor"] == {
+        "position_repertoire": "r",
+        "position_epoch": "epoch",
+        "position_digest": "digest",
+        "position_instant": instant.isoformat(),
+        "position_after": [instant.isoformat(), "standard", "position"],
+    }
+    assert (
+        seen[0][0] is db
+        and seen[0][1]["owner_epoch"] == "epoch"
+        and seen[0][1]["source_digest"] == "digest"
+    )

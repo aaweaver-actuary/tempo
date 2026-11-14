@@ -1,14 +1,14 @@
 """Bounded-reader relocation and preserved queue/presentation query boundaries."""
 
 import ast
+import re
 from contextlib import contextmanager
 from pathlib import Path
-import re
 
 import pytest
+from tempo_storage.queue_refresh import reads
 
 from app.services import queue_application
-from tempo_storage.queue_refresh import reads
 
 
 def test_queue_refresh_and_capacity_keep_all_sql_and_driver_mechanics_in_root_database():
@@ -174,7 +174,9 @@ def _presentation_reader(rows, *, reviewed=(), eligible=()):
             return rows
         if statement.startswith("SELECT DISTINCT card_id FROM reviews"):
             return [(identity,) for identity in reviewed]
-        if statement.startswith("SELECT presentation_id FROM study_recombination_presentations"):
+        if statement.startswith(
+            "SELECT presentation_id FROM study_recombination_presentations"
+        ):
             return []
         return [(identity,) for identity in eligible]
 
@@ -182,7 +184,9 @@ def _presentation_reader(rows, *, reviewed=(), eligible=()):
 
 
 @pytest.mark.parametrize("reason", [None, "historical-priority"])
-def test_nonpriority_presentation_keeps_row_and_inerts_historical_priority(monkeypatch, reason):
+def test_nonpriority_presentation_keeps_row_and_inerts_historical_priority(
+    monkeypatch, reason
+):
     monkeypatch.setattr(reads.postgres, "configured", lambda: False)
     rows = [_priority_presentation_row(1, reason)]
     reader, calls = _presentation_reader(rows, eligible=(1,))
@@ -193,16 +197,26 @@ def test_nonpriority_presentation_keeps_row_and_inerts_historical_priority(monke
     assert not any("FROM study_game_feedback" in sql for sql, _ in calls)
 
 
-def test_bounded_presentation_preserves_order_protection_and_ordinary_admissions(monkeypatch):
+def test_bounded_presentation_preserves_order_protection_and_ordinary_admissions(
+    monkeypatch,
+):
     monkeypatch.setattr(reads.postgres, "configured", lambda: False)
-    rows = [_priority_presentation_row(1, None),
-            _priority_presentation_row(2, "historical-priority", cycle=1),
-            _priority_presentation_row(3, None, admission_kind="explicit")]
+    rows = [
+        _priority_presentation_row(1, None),
+        _priority_presentation_row(2, "historical-priority", cycle=1),
+        _priority_presentation_row(3, None, admission_kind="explicit"),
+    ]
     rows[0]["issued"] = True
     rows[1]["presented"] = True
     reader, calls = _presentation_reader(rows, reviewed=("card-1",), eligible=(1, 2))
-    result = queue_application.presentation_rows(None, "2026-10-28", read=reader, after_entry_id=0, limit=16)
-    assert [(row["id"], row["card_id"], row["position"]) for row in result] == [(1, "card-1", 1), (2, "card-2", 2), (3, "card-3", 3)]
+    result = queue_application.presentation_rows(
+        None, "2026-10-28", read=reader, after_entry_id=0, limit=16
+    )
+    assert [(row["id"], row["card_id"], row["position"]) for row in result] == [
+        (1, "card-1", 1),
+        (2, "card-2", 2),
+        (3, "card-3", 3),
+    ]
     assert [row["admission_kind"] for row in result] == ["review", "review", "explicit"]
     assert [row["eligible"] for row in result] == [True, True, False]
     assert result[0]["issued"] and result[1]["presented"]
@@ -215,6 +229,7 @@ def test_presentation_protection_sets_match_correlated_facts_with_historical_and
     monkeypatch,
 ):
     import sqlite3
+
     from tempo_storage.queue_refresh import presentation
 
     monkeypatch.setattr(presentation.postgres, "configured", lambda: True)
@@ -266,8 +281,14 @@ def test_presentation_protection_sets_match_correlated_facts_with_historical_and
 
         def read(statement, parameters):
             if statement.startswith("SELECT q.id,q.card_id"):
-                return database.execute(statement.replace("%s", "?"), parameters).fetchall()
-            if statement.startswith("SELECT DISTINCT card_id FROM reviews") or statement.startswith("SELECT presentation_id FROM study_recombination_presentations"):
+                return database.execute(
+                    statement.replace("%s", "?"), parameters
+                ).fetchall()
+            if statement.startswith(
+                "SELECT DISTINCT card_id FROM reviews"
+            ) or statement.startswith(
+                "SELECT presentation_id FROM study_recombination_presentations"
+            ):
                 return []
             return [(n,) for n in range(575)]
 

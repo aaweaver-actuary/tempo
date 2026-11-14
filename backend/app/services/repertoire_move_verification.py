@@ -5,12 +5,12 @@ import time
 
 import chess
 from fastapi import HTTPException
-
 from tempo_storage.connections import read_connection
 from tempo_storage.repertoire_scope import move_verification as storage
 from tempo_storage.repertoire_scope.move_verification import (
     _source_token,
 )
+
 from app.chess.position_identity import position_key as canonical_fen
 
 SOURCE_PAGE_SIZE = 64

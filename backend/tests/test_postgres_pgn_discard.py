@@ -1,15 +1,14 @@
 """Portable command regressions; real locks/recreation are proved by Docker durability."""
 
-from tempo_storage import postgres
-from contextlib import nullcontext
 import json
 import sqlite3
+from contextlib import nullcontext
 
+import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-import pytest
 
-from app import command_gateway, command_dispatch, main, pgn_import_commands
+from app import command_dispatch, command_gateway, main, pgn_import_commands
 
 
 class PortableReceiptDatabase:

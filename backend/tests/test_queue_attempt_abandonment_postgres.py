@@ -5,13 +5,11 @@ from datetime import timedelta
 from threading import Event
 
 import pytest
-
-from native_study_fixture import owned_postgres, case, NOW
+from native_study_fixture import NOW
 from tempo_storage.lifecycle import (
     queue_attempt_abandonment as abandonment,
 )
 from tempo_storage.study.issuance import stamp_issued_head
-from tempo_storage.study.position_owner_epoch import owner_lock_key
 
 
 def _new_attempt(case, *, buried=False):
@@ -40,12 +38,13 @@ def _apply_payload(case, plan):
 
 
 def _review(db, case, payload):
+    from tempo_learning_review import ReviewPolicy, submit_review
+
     from app.contracts.transport.study import ReviewRequest
     from app.services.learning_review_adapter import (
         LearningReviewAdapter,
         command_from_request,
     )
-    from tempo_learning_review import ReviewPolicy, submit_review
 
     request = ReviewRequest(
         outcome="correct",
@@ -64,8 +63,8 @@ def _review(db, case, payload):
 
 
 def test_native_abandonment_exact_retry_preservation_and_queue_cleanup(case):
-    from app.services.study_attempt_guard import guard_current_attempt
     from app.contracts.review_conflicts import ReviewConflict
+    from app.services.study_attempt_guard import guard_current_attempt
 
     plan = _new_attempt(case)
     payload = _apply_payload(case, plan)
@@ -161,8 +160,9 @@ def test_native_review_and_abandonment_serialize_both_orders(
     case, monkeypatch, review_first
 ):
     from tempo_storage import postgres
-    from app.contracts.review_conflicts import ReviewConflict
     from tempo_storage.learning_bridge import review as storage
+
+    from app.contracts.review_conflicts import ReviewConflict
 
     monkeypatch.setattr(postgres, "configured", lambda: True)
     plan = _new_attempt(case)
@@ -291,7 +291,9 @@ def test_native_review_and_abandonment_serialize_both_orders(
 
 def test_native_late_opening_evidence_rejected_before_writes(case):
     from types import SimpleNamespace
+
     from fastapi import HTTPException
+
     from app.study.position_checkpoint import _validate_checkpoint_scope
 
     plan = _new_attempt(case)
@@ -305,14 +307,13 @@ def test_native_late_opening_evidence_rejected_before_writes(case):
         origin_queue_entry_id=plan["queue_entry_id"],
         queue_entry_id=plan["queue_entry_id"],
     )
-    with pytest.raises(HTTPException) as error:
-        with case.transaction() as db:
-            # Any preceding work in a failed evidence transaction rolls back too.
-            db.execute_native(
-                "UPDATE cards SET interval_days=interval_days+1 WHERE id=%s",
-                (case.card_id,),
-            )
-            _validate_checkpoint_scope(db, request, completing_review=False)
+    with pytest.raises(HTTPException) as error, case.transaction() as db:
+        # Any preceding work in a failed evidence transaction rolls back too.
+        db.execute_native(
+            "UPDATE cards SET interval_days=interval_days+1 WHERE id=%s",
+            (case.card_id,),
+        )
+        _validate_checkpoint_scope(db, request, completing_review=False)
     assert error.value.detail["code"] == "queue_attempt_retired"
     with case.transaction() as db:
         assert (
@@ -331,10 +332,6 @@ def test_native_late_opening_evidence_rejected_before_writes(case):
             ).fetchone()[0]
             == 0
         )
-
-
-
-
 
 
 def test_native_receipt_and_origin_are_immutable(case):
@@ -361,9 +358,10 @@ def test_native_receipt_and_origin_are_immutable(case):
 
 
 def test_native_late_failure_marker_conflict_rolls_back_prior_work(case, monkeypatch):
+    from tempo_storage import postgres
+
     from app.contracts.review_conflicts import ReviewConflict
     from app.queue_commands import mark_attempt_failed
-    from tempo_storage import postgres
 
     monkeypatch.setattr(postgres, "configured", lambda: True)
     plan = _new_attempt(case)
@@ -381,20 +379,19 @@ def test_native_late_failure_marker_conflict_rolls_back_prior_work(case, monkeyp
                 "SELECT * FROM daily_queue WHERE id=%s", (plan["queue_entry_id"],)
             ).fetchone()
         )
-    with pytest.raises(ReviewConflict) as error:
-        with case.transaction() as db:
-            db.execute_native(
-                "UPDATE cards SET interval_days=interval_days+1 WHERE id=%s",
-                (case.card_id,),
-            )
-            mark_attempt_failed(
-                db,
-                {
-                    "entry_id": plan["queue_entry_id"],
-                    "card_id": case.card_id,
-                    "expected_revision": 1,
-                },
-            )
+    with pytest.raises(ReviewConflict) as error, case.transaction() as db:
+        db.execute_native(
+            "UPDATE cards SET interval_days=interval_days+1 WHERE id=%s",
+            (case.card_id,),
+        )
+        mark_attempt_failed(
+            db,
+            {
+                "entry_id": plan["queue_entry_id"],
+                "card_id": case.card_id,
+                "expected_revision": 1,
+            },
+        )
     assert error.value.code == "queue_attempt_retired"
     with case.transaction() as db:
         assert (
@@ -427,10 +424,10 @@ def test_native_late_failure_marker_conflict_rolls_back_prior_work(case, monkeyp
 
 def test_native_schema56_without_abandonment_table(owned_postgres):
     """Apply 001–056 in a fresh child database on the already-owned cluster."""
-    import hashlib
     import importlib.util
     from pathlib import Path
     from uuid import uuid4
+
     import psycopg
     from psycopg import sql
     from tempo_storage.postgres import (

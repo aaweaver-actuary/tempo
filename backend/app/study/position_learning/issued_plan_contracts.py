@@ -6,16 +6,19 @@ original queue/attempt and source/epoch in its transaction before saving it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from datetime import date, datetime
 import hashlib
 import json
 import math
 import re
-from typing import Any, Mapping
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
+from datetime import date, datetime
+from typing import Any
+
+from tempo_evidence_math import opening_position_key
+from tempo_evidence_math.position_learning import UCI_RE
 
 from .contracts import (
-    DecisionOccurrence,
     DueAtIssuance,
     Hold,
     PositionDefinition,
@@ -24,8 +27,6 @@ from .contracts import (
 )
 from .prefix_eligibility import CleanPresentationProof
 from .route_planner import Plan, choose_plan
-from tempo_evidence_math import opening_position_key
-from tempo_evidence_math.position_learning import UCI_RE
 
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 

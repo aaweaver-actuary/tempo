@@ -1,28 +1,31 @@
 """Disposable native PostgreSQL fixture shared by retained Study tests."""
-from contextlib import contextmanager
-from datetime import datetime, timezone
-import hashlib
+
 import importlib.util
 import json
 import os
 import re
-from pathlib import Path
 import secrets
 import subprocess
 import time
 import uuid
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from pathlib import Path
+
 import psycopg
 import pytest
 from tempo_storage.postgres import PostgresConnection, tempo_row_factory
+
 ROOT = Path(__file__).resolve().parents[2]
 IMAGE = "postgres:18.6-trixie"
-NOW = datetime(2026, 10, 26, 12, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 26, 12, tzinfo=UTC)
 
 
 def docker(*args, check=True):
     return subprocess.run(
         ["docker", *args], capture_output=True, text=True, check=check, timeout=20
     )
+
 
 def postgres_fixture_profile(profile):
     """Finite fixture allocations; the default native proof is unchanged."""
@@ -33,6 +36,7 @@ def postgres_fixture_profile(profile):
     if profile == "study-recovery-assembly":
         return dict(memory_mib=448, storage="owned-volume")
     raise ValueError("unknown_owned_postgres_fixture_profile")
+
 
 def study_recovery_assembly_allocations(configuration):
     """One explicit disposable assembly, within the unchanged host budget."""
@@ -76,49 +80,78 @@ def study_recovery_assembly_allocations(configuration):
     ), "study_recovery_assembly_exceeds_development_budget"
     return allocation
 
+
 @pytest.fixture(scope="module")
 def owned_postgres(tmp_path_factory, *, additional_ports=(), profile="default"):
     # The packaged browser journey reuses this exact owned network namespace;
     # only its existing web service may request an extra loopback-only port.
     assert additional_ports in ((), (80,))
-    bridge_dsn = os.environ.get('TEMPO_NATIVE_FROZEN_BRIDGE_DSN')
+    bridge_dsn = os.environ.get("TEMPO_NATIVE_FROZEN_BRIDGE_DSN")
     if bridge_dsn is not None:
-        from psycopg.conninfo import conninfo_to_dict
         from database.tooling.apply_postgres_migrations import apply_migrations
-        project = os.environ.get('TEMPO_TEST_COMPOSE_PROJECT', '')
-        revision = os.environ.get('TEMPO_NATIVE_CANDIDATE_REVISION', '')
+        from psycopg.conninfo import conninfo_to_dict
+
+        project = os.environ.get("TEMPO_TEST_COMPOSE_PROJECT", "")
+        revision = os.environ.get("TEMPO_NATIVE_CANDIDATE_REVISION", "")
         info = conninfo_to_dict(bridge_dsn)
         # libpq defaults can redirect even an apparently explicit DSN.
-        ambient_pg = any(name.startswith('PG') and name not in {'PG_VERSION', 'PG_MAJOR', 'PGPASSFILE'}
-                         for name in os.environ)
-        if (set(info) != {'host', 'port', 'user', 'dbname'}
-                or ambient_pg or os.environ.get('PGPASSFILE') != '/run/secrets/admin_pgpass'
-                or additional_ports or profile != 'default' or os.environ.get('TEMPO_TEST_INSTANCE') != 'disposable'
-                or not re.fullmatch(r'tempo-pg-regressions-[0-9]+-[0-9a-f]{8}', project)
-                or not re.fullmatch(r'[0-9a-f]{40}', revision)
-                or info.get('host') != 'postgres' or info.get('port') != '5432' or info.get('user') != 'postgres'
-                or not re.fullmatch(r'tempo_position_test_[a-f0-9]{32}', info.get('dbname', ''))):
-            raise RuntimeError('Invalid owned frozen bridge identity')
+        ambient_pg = any(
+            name.startswith("PG")
+            and name not in {"PG_VERSION", "PG_MAJOR", "PGPASSFILE"}
+            for name in os.environ
+        )
+        if (
+            set(info) != {"host", "port", "user", "dbname"}
+            or ambient_pg
+            or os.environ.get("PGPASSFILE") != "/run/secrets/admin_pgpass"
+            or additional_ports
+            or profile != "default"
+            or os.environ.get("TEMPO_TEST_INSTANCE") != "disposable"
+            or not re.fullmatch(r"tempo-pg-regressions-[0-9]+-[0-9a-f]{8}", project)
+            or not re.fullmatch(r"[0-9a-f]{40}", revision)
+            or info.get("host") != "postgres"
+            or info.get("port") != "5432"
+            or info.get("user") != "postgres"
+            or not re.fullmatch(
+                r"tempo_position_test_[a-f0-9]{32}", info.get("dbname", "")
+            )
+        ):
+            raise RuntimeError("Invalid owned frozen bridge identity")
         with psycopg.connect(bridge_dsn, autocommit=True) as raw:
-            row = raw.execute("SELECT current_database(),shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()").fetchone()
-            if row != (info['dbname'], project): raise RuntimeError('Owned frozen bridge database marker differs')
-            parent = raw.execute("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname='tempo'").fetchone()
-            if parent != ('tempo-disposable-postgres-test',):
-                raise RuntimeError('Owned frozen bridge parent cluster marker differs')
-            if raw.execute("SELECT count(*) FROM information_schema.tables WHERE table_schema='public'").fetchone()[0]:
-                raise RuntimeError('Owned frozen bridge database is not empty')
+            row = raw.execute(
+                "SELECT current_database(),shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()"
+            ).fetchone()
+            if row != (info["dbname"], project):
+                raise RuntimeError("Owned frozen bridge database marker differs")
+            parent = raw.execute(
+                "SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname='tempo'"
+            ).fetchone()
+            if parent != ("tempo-disposable-postgres-test",):
+                raise RuntimeError("Owned frozen bridge parent cluster marker differs")
+            if raw.execute(
+                "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
+            ).fetchone()[0]:
+                raise RuntimeError("Owned frozen bridge database is not empty")
         apply_migrations(bridge_dsn)
         with psycopg.connect(bridge_dsn) as raw:
-            raw.execute('INSERT INTO settings(id) VALUES(1)')
-            raw.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('white','Synthetic','fixture',%s)", (NOW.isoformat(),))
+            raw.execute("INSERT INTO settings(id) VALUES(1)")
+            raw.execute(
+                "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('white','Synthetic','fixture',%s)",
+                (NOW.isoformat(),),
+            )
+
         @contextmanager
         def transaction():
             with psycopg.connect(bridge_dsn, row_factory=tempo_row_factory) as raw:
                 raw.execute("SET LOCAL lock_timeout='3s'")
                 raw.execute("SET LOCAL statement_timeout='5s'")
-                if raw.execute('SELECT current_database()').fetchone()[0] != info['dbname']:
-                    raise RuntimeError('Owned frozen bridge database changed')
+                if (
+                    raw.execute("SELECT current_database()").fetchone()[0]
+                    != info["dbname"]
+                ):
+                    raise RuntimeError("Owned frozen bridge database changed")
                 yield PostgresConnection(raw)
+
         yield transaction
         return
     published = [
@@ -446,29 +479,51 @@ def owned_postgres(tmp_path_factory, *, additional_ports=(), profile="default"):
         (evidence / "fixture.json").write_text(json.dumps(report, indent=2))
         secret.unlink(missing_ok=True)
 
+
 @pytest.fixture
 def case(owned_postgres):
     """Seed one mature authored exercise and its original human review."""
     from datetime import timedelta
     from types import SimpleNamespace
+
     from fsrs import Card
+
     card_id = "study-fixture-" + uuid.uuid4().hex
-    fsrs_json = Card(card_id=100, due=NOW + timedelta(days=20),
-                     last_review=NOW - timedelta(days=1), stability=20, difficulty=5).to_json()
+    fsrs_json = Card(
+        card_id=100,
+        due=NOW + timedelta(days=20),
+        last_review=NOW - timedelta(days=1),
+        stability=20,
+        difficulty=5,
+    ).to_json()
     with owned_postgres() as database:
         database.execute_native(
             """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
             introduced_at,revision,interval_days,fsrs_card_json,first_correct_at,stability,content_type)
             VALUES(%s,'white','prefix',%s,'["e2e4"]','mature',%s,%s,1,20,%s,%s,20,'opening')""",
-            (card_id, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-             "2026-11-20", (NOW - timedelta(days=6)).date().isoformat(), fsrs_json,
-             "2026-10-01T12:00:00Z"))
+            (
+                card_id,
+                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                "2026-11-20",
+                (NOW - timedelta(days=6)).date().isoformat(),
+                fsrs_json,
+                "2026-10-01T12:00:00Z",
+            ),
+        )
         database.execute_native(
             """INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
             internal_rating,guided,source_kind,source_ref)
             VALUES(%s,'correct',%s,10,20,'good',0,'study',%s)""",
-            (card_id, (NOW-timedelta(days=3)).isoformat(), "original-history:"+card_id))
-        initial = tuple(database.execute_native(
-            "SELECT interval_days,fsrs_card_json,state,due_date FROM cards WHERE id=%s",
-            (card_id,)).fetchone())
+            (
+                card_id,
+                (NOW - timedelta(days=3)).isoformat(),
+                "original-history:" + card_id,
+            ),
+        )
+        initial = tuple(
+            database.execute_native(
+                "SELECT interval_days,fsrs_card_json,state,due_date FROM cards WHERE id=%s",
+                (card_id,),
+            ).fetchone()
+        )
     yield SimpleNamespace(transaction=owned_postgres, card_id=card_id, initial=initial)

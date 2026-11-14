@@ -78,7 +78,7 @@ def test_canonical_task_driver_waits_for_real_local_policy_section_without_recla
                 original_sleep(0)
 
             try:
-                import database.tooling.postgres_rehearsal_admission as postgres_rehearsal_admission
+                from database.tooling import postgres_rehearsal_admission
             except ModuleNotFoundError:
                 pass  # Original driver has no retry boundary; real denial must escape.
             else:
@@ -105,8 +105,8 @@ def test_canonical_task_driver_waits_for_real_local_policy_section_without_recla
 def test_canonical_admission_exhaustion_retains_original_task_and_cause(
     canonical_proof, monkeypatch
 ):
+    from database.tooling import postgres_rehearsal_admission
     from database.tooling.postgres_rehearsal_admission import admitted_call
-    import database.tooling.postgres_rehearsal_admission as postgres_rehearsal_admission
 
     clock = iter([0, 11])
     monkeypatch.setattr(
@@ -169,7 +169,7 @@ def test_canonical_task_driver_preserves_original_120_slice_exhaustion(
 def test_native_rehearsal_propagates_unavailable_control_without_retry(
     canonical_proof, monkeypatch, with_cause
 ):
-    import database.tooling.postgres_rehearsal_admission as postgres_rehearsal_admission
+    from database.tooling import postgres_rehearsal_admission
 
     failure = redis_admission_gate.BackgroundAdmissionDeferred(
         "Waiting for foreground activity"

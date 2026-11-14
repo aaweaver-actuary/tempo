@@ -4,12 +4,14 @@ Original chapter import/router and cursor tests retired with the old editor.
 Runtime frozen presentation, attempt, self-assessment and feedback coverage is
 owned by test_frozen_study_routes.py (B31).
 """
+
 import ast
-from pathlib import Path
 import re
+from pathlib import Path
+
+from tempo_storage.study_attempts import storage
 
 from app import study_exercise_routes
-from tempo_storage.study_attempts import storage
 
 
 def test_study_http_keeps_database_operations_in_storage_owner():
@@ -24,7 +26,9 @@ def test_study_http_keeps_database_operations_in_storage_owner():
             }
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             # Preserve the original English "Select at least one source record".
-            assert not re.search(r"\bSELECT\b[\s\S]*\bFROM\b", node.value, re.I)
+            assert not re.search(
+                r"\bSELECT\b[\s\S]*\bFROM\b", node.value, re.IGNORECASE
+            )
             assert not any(
                 sql in node.value.upper()
                 for sql in (

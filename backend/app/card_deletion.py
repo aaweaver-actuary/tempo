@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from collections import defaultdict
-from bisect import bisect_left
-from datetime import datetime, timezone
 import json
+from bisect import bisect_left
+from collections import defaultdict
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException
-from .services.study_calendar import capture_study_calendar
-from .study.policy.observation_summary import observation_counts
-
 from tempo_storage.authored_repertoires.card_deletion import storage
 from tempo_storage.authored_repertoires.card_deletion.storage import is_card_deleted
+
+from .services.study_calendar import capture_study_calendar
+from .study.policy.observation_summary import observation_counts
 
 RETAINED_REPERTOIRE_ID = "__retained_cards__"
 SYSTEM_REPERTOIRE_IDS = (
@@ -47,7 +47,7 @@ def require_card_not_deleted(database, identifier: str) -> None:
 def cancel_repertoire_tasks(database, repertoire_id: str) -> None:
     """Decode only candidate payloads; PostgreSQL JSONB rejects valid escaped nulls."""
     now, candidates = storage.cancellation_candidates(
-        database, repertoire_id, lambda: datetime.now(timezone.utc).isoformat()
+        database, repertoire_id, lambda: datetime.now(UTC).isoformat()
     )
     for task in candidates:
         payload = json.loads(task["payload_json"])
@@ -76,11 +76,11 @@ def purge_card_data(database, identifiers: list[str]) -> None:
     storage.purge_tactic_attempts(database, puzzle_ids)
     _purge_opening_evidence(database, identifiers, queue_ids)
     storage.clear_source_references(
-        database, identifiers, lambda: datetime.now(timezone.utc).isoformat()
+        database, identifiers, lambda: datetime.now(UTC).isoformat()
     )
     storage.purge_training_records(database, identifiers, queue_ids)
     # A deleted source remains available for browsing, but not for card admission.
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     storage.record_tombstones(database, identifiers, now)
     storage.purge_queue_and_cards(database, identifiers)
 
@@ -132,7 +132,7 @@ def delete_repertoire_data(
         ):
             replacement = RETAINED_REPERTOIRE_ID
             storage.create_retained_repertoire(
-                database, replacement, lambda: datetime.now(timezone.utc).isoformat()
+                database, replacement, lambda: datetime.now(UTC).isoformat()
             )
             storage.retain_membership(database, replacement, card["id"])
         if replacement is None:

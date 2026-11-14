@@ -1,16 +1,15 @@
 """Foreground queue storage capture, lock order and warming boundaries."""
 
 import ast
-
-import pytest
 from pathlib import Path
 
-from app import queue_commands
-from app import queue_attempt_origins
-from app.services import durable_tasks
-from app.services.queue_ordering import PRESENTATION_VERSION
+import pytest
 from tempo_storage import postgres
 from tempo_storage.commands import queue as storage
+
+from app import queue_attempt_origins, queue_commands
+from app.services import durable_tasks
+from app.services.queue_ordering import PRESENTATION_VERSION
 
 
 def test_queue_command_policy_has_no_sql_or_driver_operations():
@@ -139,7 +138,9 @@ def test_absent_queue_task_is_advisory_locked_then_rechecked_before_projection(
             if count == 1:
                 return Cursor(None)
             if count == 2:
-                return Cursor({"id": "task", "payload_json": '{"queue_date":"2026-10-21"}'})
+                return Cursor(
+                    {"id": "task", "payload_json": '{"queue_date":"2026-10-21"}'}
+                )
             return Cursor(
                 {
                     "state": "ready",
@@ -211,6 +212,7 @@ def test_internal_readiness_queries_return_day_receipt_and_queued_presence(
     queued, receipt
 ):
     import sqlite3
+
     from tempo_storage.lifecycle import refresh_requests
 
     with sqlite3.connect(":memory:") as database:
@@ -257,6 +259,7 @@ def test_legacy_issuance_owner_facts_are_fenced_before_card_locks(
     monkeypatch, dispositions, expected
 ):
     from types import SimpleNamespace
+
     from tempo_storage.study import position_owner_epoch
 
     events, reads = [], []
@@ -294,7 +297,9 @@ def test_legacy_issuance_owner_facts_are_fenced_before_card_locks(
         "lock_queue_date_for_position",
         lambda db, day: events.append("day"),
     )
-    monkeypatch.setattr(queue_commands.queue_storage, "retired_issuance_target", lambda *args: False)
+    monkeypatch.setattr(
+        queue_commands.queue_storage, "retired_issuance_target", lambda *args: False
+    )
     monkeypatch.setattr(storage, "issued_origin", lambda *args: True)
     monkeypatch.setattr(storage, "prepare_queue_head", lambda *args: lambda day: None)
     result = queue_commands.issue_queue_head(database, payload)
@@ -315,15 +320,23 @@ def test_legacy_issuance_owner_facts_are_fenced_before_card_locks(
 
 def test_backward_day_locks_existing_day_task_before_its_projection():
     events = []
+
     class Cursor:
-        def __init__(self, value): self.value = value
-        def fetchone(self): return self.value
+        def __init__(self, value):
+            self.value = value
+
+        def fetchone(self):
+            return self.value
+
     class Database:
         def execute(self, statement, parameters=()):
             events.append((statement, parameters))
             if "deduplication_key='current'" in statement:
-                return Cursor({"id":"old", "payload_json":'{"queue_date":"2026-11-12"}'})
-            return Cursor({"id":"new", "payload_json":'{"queue_date":"2026-11-11"}'})
+                return Cursor(
+                    {"id": "old", "payload_json": '{"queue_date":"2026-11-12"}'}
+                )
+            return Cursor({"id": "new", "payload_json": '{"queue_date":"2026-11-11"}'})
+
     task = storage.lock_current_queue_task(Database(), "2026-11-11")
     assert task["id"] == "new"
     assert len(events) == 2 and all("FOR UPDATE" in event[0] for event in events)

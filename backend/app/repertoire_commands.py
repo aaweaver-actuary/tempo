@@ -5,18 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import HTTPException
-
-from .services.study_calendar import capture_study_calendar
-
-from .command_gateway import register_command
 from tempo_storage.foreground_controls import repertoires as storage
 from tempo_storage.postgres import PostgresConnection
-from app.contracts.transport.authored_repertoire import RepertoireSettingsRequest
-from .repertoire_settings import repertoire_settings_response
-from .queue_commands import request_queue_refresh_in_transaction
 
+from app.contracts.transport.authored_repertoire import RepertoireSettingsRequest
 
 from .card_deletion import SYSTEM_REPERTOIRE_IDS as _SYSTEM_REPERTOIRES
+from .command_gateway import register_command
+from .queue_commands import request_queue_refresh_in_transaction
+from .repertoire_settings import repertoire_settings_response
+from .services.study_calendar import capture_study_calendar
 
 
 def select_main_repertoire(

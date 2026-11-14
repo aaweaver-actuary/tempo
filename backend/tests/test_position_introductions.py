@@ -1,12 +1,12 @@
-
-from app.repertoire import position_study_source as _source_preparation
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace as NS
 
 import pytest
 from tempo_evidence_math.position_learning import Hold, PositionDefinition, PositionKey
-from tempo_storage.study import position_introductions as intro
 from tempo_scheduling import initial_position_state
+from tempo_storage.study import position_introductions as intro
+
+from app.repertoire import position_study_source as _source_preparation
 
 FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"
 DEF = PositionDefinition(PositionKey("r", FEN), "e2e4", "p1")
@@ -101,8 +101,8 @@ def fences(monkeypatch):
         position_study_source,
     )
     from tempo_storage.study import (
-        position_owner_epoch,
         position_fsrs_namespace,
+        position_owner_epoch,
     )
 
     monkeypatch.setattr(position_study_source, "fence_position_source", lambda *a: None)
@@ -118,9 +118,10 @@ def test_only_authorized_unseen_position_gets_fresh_state_without_history(fences
     db, proposal = Writer(), prepared()
     fenced = intro.fence_introduction(db, proposal)
     assert isinstance(fenced, intro.IntroductionFence)
-    now = datetime(2026, 11, 2, tzinfo=timezone.utc)
-    intro.initialize_introduction(db, proposal, fenced, now=now,
-                                  initial_state=initial_position_state)
+    now = datetime(2026, 11, 2, tzinfo=UTC)
+    intro.initialize_introduction(
+        db, proposal, fenced, now=now, initial_state=initial_position_state
+    )
     statement, params = db.calls[-1]
     assert "INSERT INTO study_position_states" in statement
     assert params[7] == 4503599627370496 and params[-2:] == (now, now)
@@ -159,19 +160,24 @@ def test_unseen_proof_fails_closed_on_ambiguous_or_changed_history(fences):
     )
     with pytest.raises(ValueError, match="fence_required"):
         intro.initialize_introduction(
-            Writer(), prepared(), ("e1", (DEF,)), now=datetime.now(timezone.utc),
-            initial_state=initial_position_state
+            Writer(),
+            prepared(),
+            ("e1", (DEF,)),
+            now=datetime.now(UTC),
+            initial_state=initial_position_state,
         )
 
 
 def test_initial_state_capability_runs_after_allocation_and_failure_propagates(fences):
     db, proposal = Writer(), prepared()
     fenced = intro.fence_introduction(db, proposal)
-    now = datetime(2026, 11, 2, tzinfo=timezone.utc)
+    now = datetime(2026, 11, 2, tzinfo=UTC)
+
     def fail(allocated, due):
         assert allocated == 4503599627370496 and due is now
         assert "nextval" in db.calls[-1][0]
         raise ValueError("construction_failed")
+
     with pytest.raises(ValueError, match="construction_failed"):
         intro.initialize_introduction(db, proposal, fenced, now=now, initial_state=fail)
     assert not any("INSERT INTO study_position_states" in sql for sql, _ in db.calls)
@@ -181,15 +187,25 @@ def test_initial_state_capability_runs_after_allocation_and_failure_propagates(f
 
 def test_regular_introduction_supplies_scheduling_capability(monkeypatch):
     from app.services import position_queue_admission as admission
+
     proposal, fence, database = object(), object(), object()
-    now = datetime(2026, 11, 2, tzinfo=timezone.utc)
+    now = datetime(2026, 11, 2, tzinfo=UTC)
     calls = []
-    monkeypatch.setattr(intro, 'initialize_introduction',
-        lambda *args, **kwargs: calls.append((args, kwargs)))
-    admission.apply_opening_introduction(database, ('position', proposal), fence, now=now)
-    assert calls == [((database, proposal, fence),
-        {'now': now, 'initial_state': initial_position_state})]
-    admission.apply_opening_introduction(database, ('legacy', 'r'), None, now=now)
+    monkeypatch.setattr(
+        intro,
+        "initialize_introduction",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    admission.apply_opening_introduction(
+        database, ("position", proposal), fence, now=now
+    )
+    assert calls == [
+        (
+            (database, proposal, fence),
+            {"now": now, "initial_state": initial_position_state},
+        )
+    ]
+    admission.apply_opening_introduction(database, ("legacy", "r"), None, now=now)
     assert len(calls) == 1
 
 
@@ -209,20 +225,20 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
     import chess
     import psycopg
     from psycopg import sql
-    from test_product_snapshot_postgres import DDL
     from tempo_storage.postgres import tempo_row_factory
-    from tempo_storage.authored_repertoires import (
-        position_study_source,
-    )
     from tempo_storage.study import position_fsrs_namespace
+    from test_product_snapshot_postgres import DDL
+
     from app.services import (
         postgres_queue_refresh as refresh,
-        study_mode,
+    )
+    from app.services import (
         queue_next_card,
+        study_mode,
     )
 
     schema = "position_h2_intro_" + uuid4().hex
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     day = now.date().isoformat()
     with psycopg.connect(dsn, autocommit=True, row_factory=tempo_row_factory) as raw:
         assert (
@@ -256,7 +272,9 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
                 / "database/tempo_storage/ddl/migrations/057_position_study.sql"
             )
             raw.execute(ddl.read_text())
-            raw.execute((ddl.parent / "065_position_introduction_holds.sql").read_text())
+            raw.execute(
+                (ddl.parent / "065_position_introduction_holds.sql").read_text()
+            )
             moves = json.dumps(["e2e4"])
             raw.execute("INSERT INTO legacy_learning_identity VALUES(1,'fixture')")
             raw.execute("INSERT INTO repertoires VALUES('r','Synthetic',7,0,'[]')")
@@ -394,71 +412,139 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
 
             # A row skipped under another transaction's lock is contention,
             # not evidence of retained history or a durable hold.
-            with psycopg.connect(dsn, autocommit=True, row_factory=tempo_row_factory) as other:
-                other.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema)))
+            with psycopg.connect(
+                dsn, autocommit=True, row_factory=tempo_row_factory
+            ) as other:
+                other.execute(
+                    sql.SQL("SET search_path TO {}").format(sql.Identifier(schema))
+                )
                 other.execute("BEGIN")
                 other.execute("SELECT id FROM cards WHERE id='card' FOR UPDATE")
                 raw.execute("BEGIN")
                 busy = intro.fence_introduction(port, source_intro)
-                assert isinstance(busy, Hold) and busy.reason == "position_introduction_card_busy"
+                assert (
+                    isinstance(busy, Hold)
+                    and busy.reason == "position_introduction_card_busy"
+                )
                 raw.execute("ROLLBACK")
                 other.execute("ROLLBACK")
-            assert raw.execute("SELECT count(*) FROM study_position_introduction_holds").fetchone()[0] == 0
+            assert (
+                raw.execute(
+                    "SELECT count(*) FROM study_position_introduction_holds"
+                ).fetchone()[0]
+                == 0
+            )
 
             # A retained partial attempt is a durable hold, not permission to
             # introduce or discard it. The hold and checkpoint roll back together.
             raw.execute("INSERT INTO opening_evidence_attempts(card_id) VALUES('card')")
             captured = []
+
             def checkpoint(*args, **kwargs):
                 captured.append(kwargs)
                 return True
-            monkeypatch.setattr(refresh, "advance_task_slice_in_transaction", checkpoint)
+
+            monkeypatch.setattr(
+                refresh, "advance_task_slice_in_transaction", checkpoint
+            )
             monkeypatch.setattr(refresh, "_admit_one_prioritized_opening", admit)
             raw.execute("BEGIN")
             assert refresh.execute_postgres_queue_refresh_slice(task)
             assert captured[-1]["next_phase"] == "admit_study"
-            assert captured[-1]["next_payload"]["study_opening_counts"]["history_held"] == 1
-            assert raw.execute("SELECT count(*) FROM study_position_introduction_holds").fetchone()[0] == 1
-            assert raw.execute("SELECT count(*) FROM study_position_states").fetchone()[0] == 0
+            assert (
+                captured[-1]["next_payload"]["study_opening_counts"]["history_held"]
+                == 1
+            )
+            assert (
+                raw.execute(
+                    "SELECT count(*) FROM study_position_introduction_holds"
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                raw.execute("SELECT count(*) FROM study_position_states").fetchone()[0]
+                == 0
+            )
             raw.execute("ROLLBACK")
-            assert raw.execute("SELECT count(*) FROM study_position_introduction_holds").fetchone()[0] == 0
+            assert (
+                raw.execute(
+                    "SELECT count(*) FROM study_position_introduction_holds"
+                ).fetchone()[0]
+                == 0
+            )
             raw.execute("BEGIN")
             assert refresh.execute_postgres_queue_refresh_slice(task)
             raw.execute("COMMIT")
             raw.execute("BEGIN")
             assert refresh.execute_postgres_queue_refresh_slice(task)
             raw.execute("COMMIT")
-            held = raw.execute("SELECT * FROM study_position_introduction_holds").fetchone()
+            held = raw.execute(
+                "SELECT * FROM study_position_introduction_holds"
+            ).fetchone()
             assert held["observations"] == 2
-            assert raw.execute("SELECT count(*) FROM study_position_introduction_holds").fetchone()[0] == 1
-            assert (held["target_card_id"], held["history_card_id"], held["history_card_revision"]) == ("card", "card", 1)
-            assert raw.execute("SELECT count(*) FROM opening_evidence_attempts").fetchone()[0] == 1
+            assert (
+                raw.execute(
+                    "SELECT count(*) FROM study_position_introduction_holds"
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                held["target_card_id"],
+                held["history_card_id"],
+                held["history_card_revision"],
+            ) == ("card", "card", 1)
+            assert (
+                raw.execute(
+                    "SELECT count(*) FROM opening_evidence_attempts"
+                ).fetchone()[0]
+                == 1
+            )
             raw.execute("DELETE FROM opening_evidence_attempts WHERE card_id='card'")
             # Either pure construction or insertion failure must escape the
             # borrowed transaction and roll back the already admitted card/queue.
-            for failure in ('construction', 'insertion'):
+            for failure in ("construction", "insertion"):
                 with monkeypatch.context() as patch:
-                    if failure == 'construction':
+                    if failure == "construction":
                         import tempo_scheduling
+
                         def fail_construction(allocated, due):
-                            raise ValueError('initial_state_construction_failed')
-                        patch.setattr(tempo_scheduling, 'initial_position_state', fail_construction)
+                            raise ValueError("initial_state_construction_failed")
+
+                        patch.setattr(
+                            tempo_scheduling,
+                            "initial_position_state",
+                            fail_construction,
+                        )
                     else:
                         original_execute = port.execute_native
+
                         def fail_insert(query, params=()):
-                            if 'INSERT INTO study_position_states' in query:
-                                raise ValueError('initial_state_insertion_failed')
+                            if "INSERT INTO study_position_states" in query:
+                                raise ValueError("initial_state_insertion_failed")
                             return original_execute(query, params)
-                        patch.setattr(port, 'execute_native', fail_insert)
-                    raw.execute('BEGIN')
+
+                        patch.setattr(port, "execute_native", fail_insert)
+                    raw.execute("BEGIN")
                     try:
-                        with pytest.raises(ValueError, match='initial_state_'):
+                        with pytest.raises(ValueError, match="initial_state_"):
                             refresh.execute_postgres_queue_refresh_slice(task)
                     finally:
-                        raw.execute('ROLLBACK')
-                assert raw.execute('SELECT count(*) FROM study_position_states').fetchone()[0] == 0
-                assert raw.execute('SELECT count(*) FROM daily_queue').fetchone()[0] == 0
-                assert raw.execute("SELECT introduced_at FROM cards WHERE id='card'").fetchone()[0] is None
+                        raw.execute("ROLLBACK")
+                assert (
+                    raw.execute(
+                        "SELECT count(*) FROM study_position_states"
+                    ).fetchone()[0]
+                    == 0
+                )
+                assert (
+                    raw.execute("SELECT count(*) FROM daily_queue").fetchone()[0] == 0
+                )
+                assert (
+                    raw.execute(
+                        "SELECT introduced_at FROM cards WHERE id='card'"
+                    ).fetchone()[0]
+                    is None
+                )
             raw.execute("BEGIN")
             assert refresh.execute_postgres_queue_refresh_slice(task)
             raw.execute("COMMIT")
@@ -495,9 +581,14 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
 
 def test_all_covered_ordinary_introduction_is_skipped_without_completion(monkeypatch):
     from contextlib import contextmanager
+
+    from app.services import (
+        position_queue_admission as admission,
+    )
     from app.services import (
         postgres_queue_refresh as refresh,
-        position_queue_admission as admission,
+    )
+    from app.services import (
         study_mode,
     )
 
@@ -585,7 +676,7 @@ def test_targeted_game_intro_uses_exact_source_occurrence_and_real_admission(
     monkeypatch.setattr(
         intro,
         "initialize_introduction",
-        lambda *a, **kw: calls.append(("initialize", a[1], kw['initial_state'])),
+        lambda *a, **kw: calls.append(("initialize", a[1], kw["initial_state"])),
     )
 
     class Canonical:
@@ -604,7 +695,7 @@ def test_targeted_game_intro_uses_exact_source_occurrence_and_real_admission(
         prepared,
         fence,
         day="2026-11-02",
-        now=datetime.now(timezone.utc),
+        now=datetime.now(UTC),
         introductions=Canonical(),
     )
     assert result.status == "introduced"
@@ -632,7 +723,7 @@ def test_targeted_game_intro_does_not_initialize_on_rejected_admission(monkeypat
         (proposal, target),
         NS(prepared=proposal, definitions=(DEF,)),
         day="2026-11-02",
-        now=datetime.now(timezone.utc),
+        now=datetime.now(UTC),
         introductions=Rejected(),
     )
     assert result.status == "deferred"
@@ -642,22 +733,41 @@ def test_introduced_claim_requires_exact_canonical_queue_proof(monkeypatch):
     from app.services import position_queue_admission as admission
 
     calls = []
+
     class Database:
         def execute_native(self, sql, params):
             calls.append((" ".join(sql.split()), params))
             return Cursor(None)
+
     class Introductions:
         def admit_encounter(self, *args, **kwargs):
             return NS(status="introduced")
+
     proposal = object()
-    target = NS(repertoire_id="r", decision_id="d", presentation_id="card", presentation_revision=7)
-    monkeypatch.setattr(intro, "initialize_introduction", lambda *a, **k: pytest.fail("unproved admission cannot initialize"))
+    target = NS(
+        repertoire_id="r",
+        decision_id="d",
+        presentation_id="card",
+        presentation_revision=7,
+    )
+    monkeypatch.setattr(
+        intro,
+        "initialize_introduction",
+        lambda *a, **k: pytest.fail("unproved admission cannot initialize"),
+    )
     with pytest.raises(ValueError, match="position_canonical_introduction_unproved"):
         admission.admit_targeted_position_introduction(
-            Database(), (proposal, target), NS(prepared=proposal, definitions=(DEF,)),
-            day="2026-11-02", now=datetime.now(timezone.utc), introductions=Introductions(),
+            Database(),
+            (proposal, target),
+            NS(prepared=proposal, definitions=(DEF,)),
+            day="2026-11-02",
+            now=datetime.now(UTC),
+            introductions=Introductions(),
         )
     sql, params = calls[0]
     assert "c.id=%s AND c.revision=%s AND c.introduced_at IS NOT NULL" in sql
-    assert "q.queue_date=%s AND q.admission_repertoire_id=%s AND q.status='queued' LIMIT 1" in sql
+    assert (
+        "q.queue_date=%s AND q.admission_repertoire_id=%s AND q.status='queued' LIMIT 1"
+        in sql
+    )
     assert params == ("card", 7, "2026-11-02", "r")

@@ -7,7 +7,6 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 import pytest
-
 from tempo_storage import connections, infrastructure
 
 
@@ -92,10 +91,9 @@ def test_background_exception_unwinds_same_measurement_context(monkeypatch, port
             events.append("close")
 
     monkeypatch.setattr(connections.postgres, "connection", opened)
-    with pytest.raises(ValueError):
-        with connections.connection(background=True):
-            assert context.get()
-            raise ValueError("failure")
+    with pytest.raises(ValueError), connections.connection(background=True):
+        assert context.get()
+        raise ValueError("failure")
     assert events == [
         ("admit", True),
         "enter_measurement",
@@ -163,9 +161,7 @@ def test_composition_helper_import_is_inert():
 
 
 @pytest.mark.parametrize("entrypoint", ["app.main", "app.tasks"])
-def test_application_entrypoint_binds_database_after_storage_first(
-    entrypoint
-):
+def test_application_entrypoint_binds_database_after_storage_first(entrypoint):
     code = """
 import importlib
 from pathlib import Path
@@ -253,7 +249,9 @@ def test_missing_postgres_configuration_cannot_fall_back_to_local_storage(
     monkeypatch.setenv("TEMPO_DB_PATH", str(database_file))
     monkeypatch.delenv("TEMPO_DATABASE_READ_URL", raising=False)
     monkeypatch.delenv("TEMPO_DATABASE_WRITE_URL", raising=False)
-    monkeypatch.setattr(sqlite3, "connect", lambda *_args, **_kwargs: pytest.fail("SQLite opened"))
+    monkeypatch.setattr(
+        sqlite3, "connect", lambda *_args, **_kwargs: pytest.fail("SQLite opened")
+    )
     with pytest.raises(RuntimeError, match="TEMPO_DATABASE_READ_URL is missing"):
         connections.initialize()
     assert not database_file.exists()
@@ -272,12 +270,19 @@ def test_postgres_context_profiles_preserve_publication_and_authoritative_reads(
     monkeypatch.setattr(connections.postgres, "connection", opened)
     with connections.connection(background=True, queue_refresh_publication=True):
         pass
-    with connections.background_read_connection(authoritative=True, pool_timeout_seconds=0.2):
+    with connections.background_read_connection(
+        authoritative=True, pool_timeout_seconds=0.2
+    ):
         pass
     with connections.read_connection(repertoire_snapshot=True):
         pass
     assert opened_profiles == [
         {"read_only": False, "background": True, "queue_refresh_publication": True},
-        {"read_only": True, "background": True, "authoritative": True, "pool_timeout_seconds": 0.2},
+        {
+            "read_only": True,
+            "background": True,
+            "authoritative": True,
+            "pool_timeout_seconds": 0.2,
+        },
         {"read_only": True, "repertoire_snapshot": True},
     ]

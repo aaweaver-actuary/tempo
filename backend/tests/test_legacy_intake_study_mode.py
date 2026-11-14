@@ -3,6 +3,7 @@
 from contextlib import nullcontext
 
 import pytest
+
 from app import tasks
 from app.services import study_mode
 from app.services.redis_admission_gate import BackgroundAdmissionDeferred

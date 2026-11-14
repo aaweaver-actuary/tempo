@@ -1,18 +1,19 @@
 """Authoritative packaged catalog, activation, and daily introduction reservations."""
 
-from .study_calendar import capture_study_calendar
-from functools import lru_cache
 import json
 import os
+from functools import lru_cache
 from pathlib import Path
 
-from app.chess.cards import card_id
-from .puzzles import validate_puzzle_record
+from tempo_chess_core import card_id
 from tempo_storage.tactic_admission import (
     count_daily_tactic_introductions,
     lock_daily_tactic_admission,
 )
 from tempo_storage.tactics import catalog as storage
+
+from .puzzles import validate_puzzle_record
+from .study_calendar import capture_study_calendar
 
 DATA_ROOT = Path(
     os.getenv("TEMPO_CATALOG_ROOT", str(Path(__file__).resolve().parents[3] / "public"))

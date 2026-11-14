@@ -7,23 +7,22 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import HTTPException
-from tempo_storage.opening_evidence.storage import SerializationFailure
-
-from tempo_storage import postgres
 from tempo_storage.connections import read_connection
 from tempo_storage.opening_evidence import storage
+from tempo_storage.opening_evidence.storage import SerializationFailure
+
 from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
-from .policy.observation_summary import observation_counts as _observation_counts
+
 from ..services.opening_decision_evidence import (
     EvidenceConflict,
     decision_manifest,
     reduce_observations,
     validate_checkpoint,
 )
-
-
+from .policy.observation_summary import observation_counts as _observation_counts
 
 _POSITION_CHECKPOINT_SEAL = object()
+
 
 def canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
@@ -69,11 +68,12 @@ def prepare_checkpoint(request: OpeningEvidenceCheckpoint) -> dict:
             ),
         )
         snapshot = dict(row) if row else None
+        from tempo_evidence_math.position_learning import Hold
         from tempo_storage.study import (
             position_first_responses as position_storage,
         )
+
         from app.study.position_learning.issuance import replay_exact_attempt
-        from tempo_evidence_math.position_learning import Hold
 
         plan = (
             replay_exact_attempt(database, request.attempt_id)
@@ -418,8 +418,15 @@ def _persist_checkpoint(
 def complete_review_evidence(
     database, completion: OpeningEvidenceCheckpoint, result: dict
 ) -> None:
-    if not result.get("persisted"):
+    """Finalize the review evidence for a completed attempt.
+
+    To finalize, we need to:
+    1. Confirm that the review evidence has been persisted.
+    2. Mark the attempt as complete in the storage.
+    """
+    if not is_review_persistence_confirmed(result):
         raise EvidenceConflict("Aggregate review did not confirm persistence")
+
     storage.complete_attempt(
         database,
         (
@@ -431,10 +438,16 @@ def complete_review_evidence(
     )
 
 
+def is_review_persistence_confirmed(result):
+    return result.get("persisted")
+
+
 # Compatibility aliases retain identity for existing checkpoint consumers.
 from app.study.position_learning.first_response_codec import (
-    _position_canonical, _position_digest,
-    position_first_response_envelope, decode_position_first_response,
+    _position_canonical,
+    _position_digest,
+    decode_position_first_response,
+    position_first_response_envelope,
 )
 
 
@@ -522,12 +535,13 @@ def prepare_position_checkpoint(database, request):
     A source hold is retained: an already accepted response remains replayable.
     The caller also validates the checkpoint against its immutable manifest.
     """
+    from tempo_evidence_math.position_learning import Hold
     from tempo_storage.study import (
         position_first_responses as position_storage,
     )
-    from app.study.position_learning.issuance import replay_exact_attempt
+
     from app.repertoire.position_study_source import prepare_position_source
-    from tempo_evidence_math.position_learning import Hold
+    from app.study.position_learning.issuance import replay_exact_attempt
 
     if not isinstance(request, OpeningEvidenceCheckpoint):
         raise EvidenceConflict("Position checkpoint request is invalid")
@@ -548,12 +562,16 @@ def prepare_position_checkpoint(database, request):
 
 def begin_position_checkpoint(database, prepared):
     """Take the owner advisory fence before original card/day/queue locks."""
+    from tempo_evidence_math.position_learning import Hold
     from tempo_storage.study import (
         position_first_responses as position_storage,
     )
+    from tempo_storage.study.position_owner_epoch import (
+        borrowed_writer_available,
+        shared_owner_fence,
+    )
+
     from app.study.position_learning.issuance import replay_exact_attempt
-    from tempo_storage.study.position_owner_epoch import borrowed_writer_available, shared_owner_fence
-    from tempo_evidence_math.position_learning import Hold
 
     if prepared is None:
         return None
@@ -615,9 +633,9 @@ def commit_position_checkpoint(database, fence, contiguous_events):
     both the authored fence and active owner in this transaction.
     """
     import hashlib
-    from tempo_learning_review.application import review_day_at
-    from tempo_evidence_math import opening_position_key
+
     from tempo_evidence_math.position_learning import Hold
+    from tempo_learning_review.application import review_day_at
     from tempo_storage.authored_repertoires.position_study_source import (
         fence_position_source,
     )
@@ -781,7 +799,9 @@ def commit_position_checkpoint(database, fence, contiguous_events):
         day = review_day_at(now, timezone_name)
 
         def apply_grade(db, attempt_id, event_ids):
-            from app.study.position_learning.grade_effects import apply_in_borrowed_transaction
+            from app.study.position_learning.grade_effects import (
+                apply_in_borrowed_transaction,
+            )
 
             return apply_in_borrowed_transaction(
                 db,
@@ -907,6 +927,7 @@ def issued_position_manifest(plan, original_scope_manifest):
     issued plan. The physical presentation row is not changed.
     """
     import chess
+
     from app.chess.opening_segments import (
         decision_identity,
         stable_key,
@@ -999,8 +1020,6 @@ def issued_position_manifest(plan, original_scope_manifest):
         return OpeningDecisionManifest.model_validate(result).model_dump(mode="json")
     except (KeyError, ValueError, TypeError) as exc:
         raise EvidenceConflict("Position issued display is invalid") from exc
-
-
 
 
 @dataclass(frozen=True)

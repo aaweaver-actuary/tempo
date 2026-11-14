@@ -1,8 +1,8 @@
 """Selected native evidence must describe actual, successful unittest execution."""
 
 import importlib.util
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 import pytest
 

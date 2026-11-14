@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import json
 import threading
+from contextlib import contextmanager
 
 import chess
 
+from app.contracts.opening_graph import GraphStep
 from app.services import postgres_opening_graph
 from app.services.opening_graph import GraphInput, build_graph
-from app.contracts.opening_graph import GraphStep
 
 
 def test_pr102_obsolete_cleanup_has_constant_command_count():

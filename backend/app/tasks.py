@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext, contextmanager
-import os
-
 import logging
 import time
 import uuid
-from datetime import date
+from contextlib import nullcontext
+from functools import wraps
 from typing import Any
 
-from kombu.exceptions import OperationalError as BrokerUnavailable
 import psycopg
+from kombu.exceptions import OperationalError as BrokerUnavailable
 from psycopg.errors import (
     DeadlockDetected,
     LockNotAvailable,
@@ -20,79 +18,88 @@ from psycopg.errors import (
     TransactionTimeout,
 )
 from psycopg_pool import PoolTimeout
-from functools import wraps
-
 
 from .product_composition.database_infrastructure import bind_database_infrastructure
 
 bind_database_infrastructure()
 
+from tempo_storage.connections import read_connection
+from tempo_storage.lifecycle.refresh_requests import (
+    daily_queue_projection,
+)
+
+from . import (
+    queue_commands,  # noqa: F401 - registers foreground queue commands
+    review_commands,  # noqa: F401 - registers foreground review command
+    study_attempt_commands,  # noqa: F401 - registers Study attempt commands
+    tactic_commands,  # noqa: F401 - registers tactic attempt commands
+)
+from .celery_app import celery_app
+from .command_gateway import (
+    claim_recoverable_operation,
+    defer_operation_for_foreground,
+    execute_command,
+    record_operation_attempt,
+    record_operation_retry,
+    register_command,
+)
 from .contracts.command_registry import (
     RETIRED_COMMANDS,
     RETIRED_TASK_KINDS,
     is_retired_command,
 )
-from .celery_app import celery_app
-from .command_gateway import (
-    claim_recoverable_operation,
-    execute_command,
-    record_operation_attempt,
-    record_operation_retry,
-    defer_operation_for_foreground,
+from .study.position_checkpoint import (
+    commit_standalone_checkpoint,
+    prepare_standalone_checkpoint,
 )
-from tempo_storage.connections import read_connection
-from tempo_storage.lifecycle.refresh_requests import (
-    daily_queue_projection,
+
+register_command(
+    "opening_evidence.checkpoint",
+    commit_standalone_checkpoint,
+    prepare=prepare_standalone_checkpoint,
 )
-from . import study_attempt_commands  # noqa: F401 - registers Study attempt commands
-from . import tactic_commands  # noqa: F401 - registers tactic attempt commands
-from . import queue_commands  # noqa: F401 - registers foreground queue commands
 
-from . import review_commands  # noqa: F401 - registers foreground review command
-from .command_gateway import register_command
-from .study.position_checkpoint import prepare_standalone_checkpoint, commit_standalone_checkpoint
-register_command("opening_evidence.checkpoint", commit_standalone_checkpoint, prepare=prepare_standalone_checkpoint)
-
-from . import teaching_commands  # noqa: F401 - registers foreground teaching command
-from . import repertoire_commands  # noqa: F401 - registers foreground repertoire command
-from . import settings_commands  # noqa: F401 - registers foreground settings command
-from . import annotation_commands  # noqa: F401 - registers foreground position notes
-from . import branch_commands  # noqa: F401 - registers foreground branch edits
-from . import pgn_import_commands  # noqa: F401 - registers foreground PGN imports
-from . import analysis_paste_commands  # noqa: F401 - registers foreground pasted lines
-from . import prefix_split_commands  # noqa: F401 - registers foreground prefix splits
-from . import card_commands  # noqa: F401 - registers foreground card revisions
-from . import activity_commands  # noqa: F401 - registers foreground activity controls
-from . import integrity_repair_commands  # noqa: F401 - registers guided integrity repairs
+from . import (
+    activity_commands,  # noqa: F401 - registers foreground activity controls
+    analysis_paste_commands,  # noqa: F401 - registers foreground pasted lines
+    annotation_commands,  # noqa: F401 - registers foreground position notes
+    branch_commands,  # noqa: F401 - registers foreground branch edits
+    card_commands,  # noqa: F401 - registers foreground card revisions
+    integrity_repair_commands,  # noqa: F401 - registers guided integrity repairs
+    pgn_import_commands,  # noqa: F401 - registers foreground PGN imports
+    prefix_split_commands,  # noqa: F401 - registers foreground prefix splits
+    repertoire_commands,  # noqa: F401 - registers foreground repertoire command
+    settings_commands,  # noqa: F401 - registers foreground settings command
+    teaching_commands,  # noqa: F401 - registers foreground teaching command
+)
 from .services.activity_gate import activity_gate
-from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from .services.background_runtime import measure_handler
 from .services.background_wakes import CoalescedWakeTask
-from .services.durable_tasks import current_delivery, record_stale_delivery
 from .services.durable_tasks import (
     claim_task,
+    current_delivery,
     defer_task_for_contention,
+    defer_task_for_foreground,
     defer_task_for_transaction_timeout,
     fail_task,
+    record_stale_delivery,
 )
-
-from .services.durable_tasks import defer_task_for_foreground
+from .services.postgres_integrity import execute_postgres_integrity_slice
+from .services.postgres_opening_graph import execute_postgres_opening_graph_slice
+from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
+from .services.queue_ordering import PRESENTATION_VERSION
 from .services.queue_refresh_wakeup import (
     wake_queue_refresh,
     wake_queue_refresh_after_foreground_denial,
 )
-from .services.queue_ordering import PRESENTATION_VERSION
-from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
-from .services.postgres_opening_graph import execute_postgres_opening_graph_slice
-from .services.postgres_integrity import execute_postgres_integrity_slice
-
+from .services.redis_admission_gate import BackgroundAdmissionDeferred
 
 _LOGGER = logging.getLogger("tempo.tasks")
 from .services import study_mode
 from .services.study_mode import (
-    STUDY_TASK_KINDS,
-    STUDY_BACKGROUND_COMMANDS,
     PAUSED_IMPORT_COMMANDS,
+    STUDY_BACKGROUND_COMMANDS,
+    STUDY_TASK_KINDS,
 )
 
 
@@ -103,10 +110,6 @@ def study_only_enabled(database=None):
         if database is None
         else study_mode.study_only_enabled(database)
     )
-
-
-
-
 
 
 # Only bounded accepted results/releases may bypass foreground admission.
@@ -151,8 +154,6 @@ def ensure_daily_queue() -> bool:
         if result is None:
             raise RuntimeError("Could not request today's queue refresh")
         return bool(result["refresh_pending"])
-
-
 
 
 @celery_app.task(name="app.tasks.execute_foreground_command", bind=True)
@@ -282,7 +283,7 @@ def execute_background_command(
             TransactionTimeout,
         ) as error:
             with activity_gate.background_control():
-                exhausted, delay_seconds = record_operation_retry(
+                _, delay_seconds = record_operation_retry(
                     operation_id,
                     attempt_token,
                     error,
@@ -308,8 +309,6 @@ def execute_background_command(
 
 
 _maintenance_cooldowns = {}
-
-
 
 
 def bounded_maintenance(function):
@@ -345,8 +344,6 @@ def bounded_maintenance(function):
         return result
 
     return bounded
-
-
 
 
 @celery_app.task(name="app.tasks.recover_operations", base=CoalescedWakeTask)
@@ -399,15 +396,24 @@ def recover_study_operations() -> bool:
         )
     if operation is not None:
         if operation["background"]:
-            raise ValueError("Essential recovery cannot dispatch optional background work")
+            raise ValueError(
+                "Essential recovery cannot dispatch optional background work"
+            )
         celery_app.send_task(
             "app.tasks.execute_foreground_command",
-            args=[operation["operation_id"], operation["command_name"], operation["payload"]],
-            task_id=operation["operation_id"], queue="foreground", headers={"submitted_at": time.time()},
+            args=[
+                operation["operation_id"],
+                operation["command_name"],
+                operation["payload"],
+            ],
+            task_id=operation["operation_id"],
+            queue="foreground",
+            headers={"submitted_at": time.time()},
         )
     # Preserve the normal recovery dispatch above. One bounded intent check may
     # atomically enqueue a foreground child for the next existing recovery pass.
     from .services.deferred_prefix_split_recovery import enqueue_one_ready_split
+
     published = []
     with activity_gate.background_control():
         enqueued = enqueue_one_ready_split(published)
@@ -417,16 +423,30 @@ def recover_study_operations() -> bool:
     if published:
         child, command, payload = published[0]
         try:
-            transport_options = {**celery_app.conf.broker_transport_options,
-                "socket_connect_timeout": 1, "socket_timeout": 1,
-                "max_retries": 0, "retry_on_timeout": False}
-            with celery_app.connection_for_write(connect_timeout=1, transport_options=transport_options) as connection:
-                celery_app.send_task("app.tasks.execute_foreground_command",
-                    args=[child, command, payload], task_id=child, queue="foreground",
-                    connection=connection, retry=False, ignore_result=True,
-                    headers={"submitted_at": time.time()})
+            transport_options = {
+                **celery_app.conf.broker_transport_options,
+                "socket_connect_timeout": 1,
+                "socket_timeout": 1,
+                "max_retries": 0,
+                "retry_on_timeout": False,
+            }
+            with celery_app.connection_for_write(
+                connect_timeout=1, transport_options=transport_options
+            ) as connection:
+                celery_app.send_task(
+                    "app.tasks.execute_foreground_command",
+                    args=[child, command, payload],
+                    task_id=child,
+                    queue="foreground",
+                    connection=connection,
+                    retry=False,
+                    ignore_result=True,
+                    headers={"submitted_at": time.time()},
+                )
         except Exception:
-            _LOGGER.exception("Deferred split wake outcome uncertain; durable original child remains subject to normal recovery and fencing")
+            _LOGGER.exception(
+                "Deferred split wake outcome uncertain; durable original child remains subject to normal recovery and fencing"
+            )
     return operation is not None or enqueued
 
 

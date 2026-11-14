@@ -5,9 +5,10 @@ Database operations and application decisions each have one implementation.
 Legacy callers still need domain-boundary migration; this facade is not that proof.
 """
 
-from app.study import frozen_order as policy
 from tempo_storage import frozen_order as storage
-from app.study.openings.frozen_math import content_fingerprint, READER_VERSION
+
+from app.study import frozen_order as policy
+from app.study.openings.frozen_math import READER_VERSION, content_fingerprint
 
 activation = storage.activation
 card_exposed = storage.card_exposed

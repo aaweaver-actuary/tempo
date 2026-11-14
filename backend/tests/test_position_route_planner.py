@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 import chess
+from tempo_evidence_math import opening_position_key
 
 from app.study.position_learning.contracts import (
     DecisionOccurrence,
@@ -17,10 +18,7 @@ from app.study.position_learning.prefix_eligibility import (
     CleanPresentationProof,
 )
 from app.study.position_learning.route_planner import Plan, choose_plan
-from tempo_evidence_math import opening_position_key
-
 from tests.fixtures.position_study_cases import ROUTES
-
 
 DAY = date(2026, 11, 2)
 EPOCH = "epoch-1"

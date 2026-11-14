@@ -6,15 +6,15 @@ import uuid
 
 import chess
 import psycopg
+import pytest
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
-import pytest
-
-from app.repertoire import build_index
 from tempo_storage.authored_repertoires import (
     product_snapshot as storage,
 )
+
+from app.repertoire import build_index
 
 DSN = os.environ.get("TEMPO_483_SNAPSHOT_TEST_DSN")
 
@@ -258,7 +258,9 @@ def test_serialized_byte_accounting_admits_complete_snapshot_without_changing_fa
     ).fetchone()
     envelope = row["snapshot"]
     assert envelope["bounded"]
-    assert envelope["facts"] == {key: value for key, value in expected.items() if key != "graphs"}
+    assert envelope["facts"] == {
+        key: value for key, value in expected.items() if key != "graphs"
+    }
     assert (
         len(
             json.dumps(
@@ -321,7 +323,9 @@ def test_snapshot_text_json_preserves_released_decoded_document_and_fingerprint(
     connection, _ = database
     connection.execute("UPDATE repertoire_lines SET name=%s", ('Quoted " \\ \n café',))
     connection.execute("UPDATE cards SET introduced_at=NULL")
-    released_full = storage._SOURCE_CTES + """SELECT json_build_object(
+    released_full = (
+        storage._SOURCE_CTES
+        + """SELECT json_build_object(
     'exists',repertoire_count=1,'bounded',bounded,'estimated_bytes',estimated_bytes,
     'line_count',line_count,'card_count',card_count,'membership_count',membership_count,
     'graph_count',graph_count,'largest_row',largest_row,
@@ -334,6 +338,7 @@ def test_snapshot_text_json_preserves_released_decoded_document_and_fingerprint(
     ) ELSE NULL END
 ) snapshot FROM allowed
 """
+    )
     statements = {
         "full": released_full,
         "authored": storage._AUTHORED_STATEMENT,

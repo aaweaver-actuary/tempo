@@ -2,15 +2,16 @@
 
 from contextlib import nullcontext
 from copy import deepcopy
+from datetime import UTC
 from types import SimpleNamespace
 
-from celery import Celery
 import pytest
 import redis
+from celery import Celery
+from tempo_storage.redis_control.wake_runtime import wakes as wake_storage
 
 from app.celery_app import celery_app
 from app.services import background_wakes
-from tempo_storage.redis_control.wake_runtime import wakes as wake_storage
 
 
 @pytest.fixture
@@ -809,9 +810,9 @@ def test_upgraded_poll_foreground_denial_retains_only_bounded_marked_opportunity
     assert len(published) == 2
     delayed = published[-1][3]
     assert delayed["headers"]["queue_refresh_wake"] is True
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    assert 0 < (delayed["eta"] - datetime.now(timezone.utc)).total_seconds() <= 1
+    assert 0 < (delayed["eta"] - datetime.now(UTC)).total_seconds() <= 1
     assert published[-1][0] == "app.tasks.progress_study_queue"
     assert delayed["queue"] == "foreground"
     assert (

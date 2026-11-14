@@ -12,8 +12,6 @@ Prepared = TypeVar("Prepared")
 Result = TypeVar("Result")
 
 
-
-
 @dataclass(frozen=True)
 class CommandDescriptor(Generic[Transaction, Original, Prepared, Result]):
     """Correlate one command's original decoding, preparation, and application."""
@@ -72,20 +70,20 @@ class CommandRegistry:
 # receipt table. Unknown and mixed commands are deliberately not classified.
 RETIRED_COMMANDS = frozenset(
     {
-        'studies.create',
-        'studies.update',
-        'studies.archive',
-        'studies.unarchive',
-        'studies.exercises.suspend',
-        'studies.exercises.resume',
-        'studies.exercises.archive',
-        'studies.exercises.create',
-        'studies.exercises.enroll',
-        'studies.exercises.train_now',
-        'studies.exercises.revise',
-        'studies.links.create',
-        'studies.import.commit',
-        'studies.bundle.import',
+        "studies.create",
+        "studies.update",
+        "studies.archive",
+        "studies.unarchive",
+        "studies.exercises.suspend",
+        "studies.exercises.resume",
+        "studies.exercises.archive",
+        "studies.exercises.create",
+        "studies.exercises.enroll",
+        "studies.exercises.train_now",
+        "studies.exercises.revise",
+        "studies.links.create",
+        "studies.import.commit",
+        "studies.bundle.import",
         "product.repertoire.preview",
         "product.repertoire.decide",
         "product.repertoire.audit",

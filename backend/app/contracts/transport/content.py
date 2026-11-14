@@ -1,6 +1,7 @@
 """Content card definition/prefix split contracts."""
 
 from typing import Literal
+
 from pydantic import BaseModel, Field, model_serializer
 
 

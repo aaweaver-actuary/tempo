@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
-import hashlib
 import json
-from tempo_storage.postgres import PostgresConnection
 
 import chess
-
+from backend.app.utils.hash import stable_key
+from tempo_chess_core import card_id
 from tempo_storage.authored_repertoires.integrity import storage
 from tempo_storage.connections import read_connection
+from tempo_storage.postgres import PostgresConnection
 
-from app.chess.cards import card_id
 from app.chess.position_identity import position_key as canonical_fen
 
 
@@ -25,9 +23,7 @@ def _issue_id(
     source_key = "|".join(
         f"{source.get('type')}:{source.get('id')}" for source in (sources or [])
     )
-    return hashlib.sha256(
-        f"{repertoire_id}\0{kind}\0{fen_key or source_key}".encode()
-    ).hexdigest()
+    return stable_key("repertoire-issue", repertoire_id, kind, fen_key or source_key)
 
 
 def _signature(issue: dict) -> str:
@@ -48,7 +44,12 @@ def _signature(issue: dict) -> str:
             key=repr,
         ),
     }
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    return stable_key(
+        "repertoire-issue",
+        issue["kind"],
+        issue.get("fen_key"),
+        *[json.dumps(payload, sort_keys=True)],
+    )
 
 
 def _scan_source(

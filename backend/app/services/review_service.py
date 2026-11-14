@@ -1,18 +1,13 @@
 """One auditable scheduling transaction for study and gameplay evidence."""
 
 from __future__ import annotations
-from tempo_storage.postgres import PostgresConnection
 
 from datetime import date, datetime
-import json
-from tempo_storage.study.review import storage
 
 from tempo_storage.opening_progression import (
     unlock_legacy_children_after_review,
 )
-from .scheduler import schedule_review, unlock_ready
-from app.study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
-from app.study.queue_placement import ensure_card_queued_after
+from tempo_storage.postgres import PostgresConnection
 
 
 def apply_scheduling_review(
@@ -27,11 +22,12 @@ def apply_scheduling_review(
     reviewed_at: datetime,
     review_day: date,
 ) -> dict:
-    from .scheduling_review_application import (
-        apply_scheduling_review as apply_review_to_store,
-    )
     from tempo_storage.scheduling_review_store import (
         OwnedConnectionSchedulingReviewStore,
+    )
+
+    from .scheduling_review_application import (
+        apply_scheduling_review as apply_review_to_store,
     )
 
     result = apply_review_to_store(

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date, datetime, timezone
 import json
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any
 
-from tempo_storage.connections import background_read_connection
 from tempo_storage import postgres
 from tempo_storage.authored_repertoires.integrity import (
     native as storage,
@@ -16,7 +15,9 @@ from tempo_storage.authored_repertoires.integrity import (
 from tempo_storage.authored_repertoires.integrity.certificate import (
     integrity_certificate_from_row,
 )
+from tempo_storage.connections import background_read_connection
 from tempo_storage.postgres import PostgresConnection
+
 from .durable_tasks import (
     advance_task_slice_in_transaction,
     complete_task_slice_in_transaction,
@@ -532,7 +533,7 @@ def publish_integrity_issues_in_transaction(
         raise RuntimeError(
             "Integrity card blocks exceed one bounded transaction; retain unchecked state"
         )
-    published_at = datetime.now(timezone.utc).isoformat()
+    published_at = datetime.now(UTC).isoformat()
     storage.clear_issues(database, (repertoire_id,))
     storage.publish_issues(database, (published_at, published_at, run_id))
     storage.publish_card_blocks(database, (repertoire_id, run_id, published_at, run_id))
@@ -619,7 +620,7 @@ def complete_integrity_scan_in_transaction(
     )
     updated_state = storage.complete_scan_state(
         database,
-        (status, datetime.now(timezone.utc).isoformat(), run_id, repertoire_id, run_id),
+        (status, datetime.now(UTC).isoformat(), run_id, repertoire_id, run_id),
     )
     if updated_state != 1:
         if not complete_task_slice_in_transaction(database, task):

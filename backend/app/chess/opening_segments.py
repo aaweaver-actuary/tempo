@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
-from typing import Any
 
 import chess
+
+from backend.app.chess.enums import PieceColor
+from backend.app.types import RepertoireId, Fen
+from backend.app.utils.hash import stable_key
 
 POSITION_VERSION = 1
 POLICY_VERSION = 1
@@ -14,45 +16,35 @@ RECOMMENDATION_VERSION = 1
 MAX_PRESENTATION_DECISIONS = 20
 
 
-def stable_key(*components: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(components, separators=(",", ":"), sort_keys=True).encode()
-    ).hexdigest()
-
-
-def opening_position_key(fen: str) -> str:
+def opening_position_key(fen: Fen) -> str:
     return " ".join(chess.Board(fen).fen(en_passant="legal").split()[:4])
 
 
 def decision_identity(
-    repertoire_id: str,
-    fen: str,
-    trained_color: str,
+    repertoire_id: RepertoireId,
+    fen: Fen,
+    trained_color: PieceColor,
     expected_uci: str,
     policy_version: int = POLICY_VERSION,
 ) -> str:
-    if trained_color not in {"white", "black"}:
-        raise ValueError("Unknown trained color")
     return stable_key(
         "opening-decision",
         POSITION_VERSION,
         opening_position_key(fen),
         repertoire_id,
-        trained_color,
+        trained_color.value,
         expected_uci,
         policy_version,
     )
 
 
 def presentation_occurrences(
-    repertoire_id: str, presentation: dict
+    repertoire_id: RepertoireId, presentation: dict
 ) -> tuple[dict, ...]:
     """Traverse one bounded published presentation exactly once; never mutate it."""
     board = chess.Board(presentation["start_fen"])
-    trained_color = presentation["trained_color"]
-    if trained_color not in {"white", "black"}:
-        raise ValueError("Unknown trained color")
-    trained_turn = trained_color == "white"
+    trained_color = PieceColor(presentation["trained_color"])
+    trained_turn = trained_color == PieceColor.WHITE
     moves = tuple(json.loads(presentation["moves_json"]))
     if len(moves) > MAX_PRESENTATION_DECISIONS * 2:
         raise ValueError("Presentation exceeds the bounded segmentation limit")
@@ -125,22 +117,22 @@ def presentation_occurrences(
 
 def segment_preview(
     role: str,
-    starting_fen: str,
-    ending_fen: str,
+    starting_fen: Fen,
+    ending_fen: Fen,
     moves: tuple,
     decision_count: int,
-    trained_color: str,
+    trained_color: PieceColor,
 ) -> dict:
     return {
         "id": stable_key(
-            role, opening_position_key(starting_fen), moves, trained_color
+            role, opening_position_key(starting_fen), moves, trained_color.value
         ),
         "role": role,
         "starting_fen": starting_fen,
         "ending_fen": ending_fen,
         "moves": list(moves),
         "tested_decisions": decision_count,
-        "trained_color": trained_color,
+        "trained_color": trained_color.value,
     }
 
 
@@ -153,7 +145,7 @@ def candidate_parts(kind: str, occurrence: dict) -> tuple[dict, ...]:
                 occurrence["cut_fen"],
                 occurrence["prefix_moves"],
                 occurrence["decision_index"] + 1,
-                occurrence["trained_color"],
+                PieceColor(occurrence["trained_color"]),
             ),
             segment_preview(
                 "branch",

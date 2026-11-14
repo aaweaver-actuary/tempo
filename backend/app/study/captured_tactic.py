@@ -3,6 +3,7 @@
 import json
 from collections.abc import Callable
 from typing import Protocol, TypedDict
+
 from app.contracts.tactic_capture import TacticCaptureConflict, ValidatedCapture
 from app.study.interfaces.captured_tactic import CaptureAdmissionResult
 

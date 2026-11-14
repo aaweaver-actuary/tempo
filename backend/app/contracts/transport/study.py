@@ -1,7 +1,9 @@
 """Study queue/review/teaching contracts."""
 
 from typing import Literal
+
 from pydantic import BaseModel, Field
+
 from ..opening_evidence import OpeningEvidenceCheckpoint
 
 

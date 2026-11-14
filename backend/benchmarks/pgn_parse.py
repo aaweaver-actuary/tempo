@@ -8,7 +8,7 @@ import statistics
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import chess
@@ -86,7 +86,7 @@ def main() -> None:
         "commit": subprocess.check_output(
             ["git", "rev-parse", "HEAD"], text=True
         ).strip(),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "fixture": "deterministic-32-ply-with-variation-every-5-plies-v1",
         "environment": {
             "python": sys.version.split()[0],

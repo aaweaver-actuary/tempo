@@ -1,14 +1,14 @@
 """Writer spans preserve the exact source fence, plan application and lock order."""
 
+import json
 from contextlib import nullcontext
 from types import SimpleNamespace as NS
-import json
 
 import pytest
+from tempo_evidence_math.position_learning import Hold
 
 from app import queue_commands
 from app.services import background_runtime, queue_next_card
-from tempo_evidence_math.position_learning import Hold
 
 
 @pytest.mark.parametrize("timing", ["1", "0", None])
@@ -19,6 +19,7 @@ def test_position_writer_timing_preserves_success_and_source_busy_hold(
     from tempo_storage.authored_repertoires import (
         position_study_source,
     )
+
     from app.study.position_learning import issuance as position_issued_plans
 
     payload = {
@@ -36,31 +37,45 @@ def test_position_writer_timing_preserves_success_and_source_busy_hold(
     monkeypatch.setattr(
         queue_commands, "current_study_day", lambda db: payload["queue_date"]
     )
+
     def fence_original(database, source):
         assert source is original_source
         calls.append("source")
         return Hold("position_source_graph_busy") if held else None
 
     monkeypatch.setattr(position_study_source, "fence_position_source", fence_original)
+
     def apply_original(database, proposal):
         assert proposal is prepared.proposal
         calls.append("plan")
         return plan
 
-    monkeypatch.setattr(position_issued_plans, "issue_in_borrowed_transaction", apply_original)
+    monkeypatch.setattr(
+        position_issued_plans, "issue_in_borrowed_transaction", apply_original
+    )
     monkeypatch.setattr(
         queue_commands, "_lock_attempt_card", lambda *a: calls.append("card")
     )
-    monkeypatch.setattr(queue_commands, "lock_queue_date_for_position", lambda *a: calls.append("queue"))
-    monkeypatch.setattr(queue_commands.queue_storage, "retired_issuance_target", lambda *a: False)
+    monkeypatch.setattr(
+        queue_commands, "lock_queue_date_for_position", lambda *a: calls.append("queue")
+    )
+    monkeypatch.setattr(
+        queue_commands.queue_storage, "retired_issuance_target", lambda *a: False
+    )
     monkeypatch.setattr(queue_commands.queue_storage, "issued_origin", lambda *a: True)
     monkeypatch.setattr(
         queue_commands.queue_storage,
         "prepare_queue_head",
         lambda *a: lambda day: {"id": 41},
     )
+
     def validate_original(database, entry, card, revision, *, current_day):
-        assert (entry, card, revision, current_day) == (41, "private-card", 4, payload["queue_date"])
+        assert (entry, card, revision, current_day) == (
+            41,
+            "private-card",
+            4,
+            payload["queue_date"],
+        )
         calls.append("validate")
 
     monkeypatch.setattr(queue_commands, "validate_available_attempt", validate_original)

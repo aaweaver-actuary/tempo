@@ -1,20 +1,20 @@
 """Real SQL maintenance guard: preserve active work, allow retained completed history."""
 
-from datetime import timedelta
 import json
-import pytest
+from datetime import timedelta
 
-from native_study_fixture import owned_postgres, case, NOW
-from test_queue_attempt_abandonment_postgres import (
-    _new_attempt,
-    _apply_payload,
-    _retarget_attempt,
-)
-from tempo_storage.opening_graph import worker
+import pytest
+from native_study_fixture import NOW
 from tempo_storage.lifecycle import (
     queue_attempt_abandonment as abandonment,
 )
+from tempo_storage.opening_graph import worker
 from tempo_storage.study.issuance import stamp_issued_head
+from test_queue_attempt_abandonment_postgres import (
+    _apply_payload,
+    _new_attempt,
+    _retarget_attempt,
+)
 
 
 def test_native_completed_history_does_not_block_graph_cleanup_or_get_rewritten(case):
@@ -48,9 +48,7 @@ def test_native_completed_history_does_not_block_graph_cleanup_or_get_rewritten(
             tuple(db.execute_native(sql, (key,)).fetchone()) for sql, key in statements
         ]
         assert worker.protected_queue_entry(db, ([case.card_id], today)) is None
-        worker.retire_orphaned_queue(
-            db, [case.card_id], "white"
-        )
+        worker.retire_orphaned_queue(db, [case.card_id], "white")
         assert [
             tuple(db.execute_native(sql, (key,)).fetchone()) for sql, key in statements
         ] == before

@@ -2,53 +2,51 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from itertools import islice
 import json
 import logging
+from datetime import UTC, datetime
+from itertools import islice
 from typing import Any
 
-from tempo_storage.queue_refresh.reads import (
-    TransactionTimeout,
-    _bounded_read,
-)
-
+from tempo_chess_core import card_id
 from tempo_storage.connections import (
     background_read_connection,
     connection,
     read_connection,
 )
-from tempo_storage import postgres
-from tempo_storage.queue_refresh import reads as read_storage
-from tempo_storage.queue_refresh import (
-    admissions,
-    openings as openings_storage,
-    presentation as presentation_storage,
-)
-from tempo_storage.queue_refresh import foreground as refresh_requests
 from tempo_storage.queue_position_lock import (
     lock_queue_date_for_position,
 )
-from . import queue_application, queue_ordering, frozen_opening_order
-from app.chess.cards import card_id
-from .activity_gate import activity_gate
-from .durable_tasks import (
-    advance_task_slice_in_transaction,
-    complete_task_slice_in_transaction,
-    lock_current_slice,
-    defer_future_queue_slice_in_transaction,
-    hold_unknown_queue_day_in_transaction,
-    accepted_queue_day,
+from tempo_storage.queue_refresh import (
+    admissions,
 )
-from app.chess.pgn import ends_on_trained_move
-from .puzzles import validate_puzzle_record
-from .tactical_catalog import pack_records
+from tempo_storage.queue_refresh import foreground as refresh_requests
+from tempo_storage.queue_refresh import (
+    openings as openings_storage,
+)
+from tempo_storage.queue_refresh import (
+    presentation as presentation_storage,
+)
+from tempo_storage.queue_refresh import reads as read_storage
 from tempo_storage.tactic_admission import (
-    DAILY_TACTIC_COUNT_SQL,
     count_daily_tactic_introductions,
     lock_daily_tactic_admission,
 )
 
+from app.chess.pgn import ends_on_trained_move
+
+from . import frozen_opening_order, queue_application, queue_ordering
+from .activity_gate import activity_gate
+from .durable_tasks import (
+    accepted_queue_day,
+    advance_task_slice_in_transaction,
+    complete_task_slice_in_transaction,
+    defer_future_queue_slice_in_transaction,
+    hold_unknown_queue_day_in_transaction,
+    lock_current_slice,
+)
+from .puzzles import validate_puzzle_record
+from .tactical_catalog import pack_records
 
 _ELIGIBILITY_PHASES = (
     "unlock_opening",
@@ -409,10 +407,6 @@ def _admit_one_due_card(database, queue_date: str, card_id: str) -> bool:
     return True
 
 
-
-
-
-
 def _current_opening_limit(database, repertoire_id: str) -> int | None:
     # The slice holds the task lease row. Settings changes enqueue a fresh
     # generation in their write transaction, invalidating any old checkpoint.
@@ -504,8 +498,6 @@ def _admit_one_study_card(database, queue_date: str, study_card_id: str) -> bool
     position = admissions.next_queue_position(database, queue_date)
     admissions.append_study_card(database, queue_date, study_card_id, position)
     return True
-
-
 
 
 def _annotate_frozen_pages(rows):
@@ -616,7 +608,7 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
         queue_date,
         plan["seed"],
         plan["membership_hash"],
-        datetime.now(timezone.utc).isoformat(),
+        datetime.now(UTC).isoformat(),
     )
     return True
 
@@ -681,10 +673,11 @@ def _prepare_projection_blocked_count(queue_date: str) -> int:
 def _queue_slice_current_day(database):
     """Lock settings first, matching settings.update's settings-before-task order."""
     from app.study.policy.clock import study_calendar_at
+
     timezone_name = refresh_requests.lock_study_timezone(database)
     if timezone_name is None:
         raise RuntimeError("Current Study policy is unavailable")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return now, study_calendar_at(now, timezone_name).day.isoformat()
 
 
@@ -780,10 +773,15 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
         phase = skipped_phases[phase]
     # Old optional-priority cursors had a leading miss rank. Restart the
     # authored scan; existing queue identities exclude already admitted work.
-    if any(len(payload.get(key) or ()) == 8 for key in
-           ("study_opening_cursor", "study_opening_upper")):
-        payload = {key: value for key, value in payload.items()
-                   if not key.startswith("study_opening_")}
+    if any(
+        len(payload.get(key) or ()) == 8
+        for key in ("study_opening_cursor", "study_opening_upper")
+    ):
+        payload = {
+            key: value
+            for key, value in payload.items()
+            if not key.startswith("study_opening_")
+        }
         if phase in {"study_opening_page", "study_opening_item"}:
             phase = "study_opening_page"
     study_opening_page = None
@@ -877,6 +875,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
         introduction_history_hold = False
         if planned_introduction is not None:
             from tempo_evidence_math.position_learning import Hold
+
             from .position_queue_admission import fence_opening_introduction
 
             if isinstance(position_introduction, Hold):
@@ -887,15 +886,23 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                 database, position_introduction
             )
             if isinstance(position_introduction_fence, Hold):
-                if (position_introduction_fence.reason == "position_introduction_history_changed"
-                        and position_introduction_fence.detail):
-                    from tempo_storage.study.position_introductions import record_history_hold
+                if (
+                    position_introduction_fence.reason
+                    == "position_introduction_history_changed"
+                    and position_introduction_fence.detail
+                ):
+                    from tempo_storage.study.position_introductions import (
+                        record_history_hold,
+                    )
 
-                    record_history_hold(database, position_introduction[1], position_introduction_fence)
+                    record_history_hold(
+                        database, position_introduction[1], position_introduction_fence
+                    )
                     introduction_history_hold = True
                 else:
                     raise RuntimeError(
-                        "Position introduction held: " + position_introduction_fence.reason
+                        "Position introduction held: "
+                        + position_introduction_fence.reason
                     )
         if phase == "publish_projection":
             epochs = refresh_requests.lock_refresh_epochs(database, queue_date)
@@ -928,7 +935,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                 database,
                 queue_date,
                 blocked_count,
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now(UTC).isoformat(),
             )
             if not complete_task_slice_in_transaction(database, task):
                 raise RuntimeError("Queue projection publication lost its task lease")
@@ -1007,6 +1014,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
         elif phase == "admit_position_due":
             from tempo_evidence_math.position_learning import Hold
+
             from .position_queue_admission import admit_due
 
             if isinstance(position_due, Hold):
@@ -1072,7 +1080,8 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             admitted = (
                 False
                 if (
-                    introduction_history_hold or redundant_opening_introduction(
+                    introduction_history_hold
+                    or redundant_opening_introduction(
                         position_introduction, position_introduction_fence
                     )
                 )
@@ -1087,10 +1096,12 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                     database,
                     position_introduction,
                     position_introduction_fence,
-                    now=datetime.now(timezone.utc),
+                    now=datetime.now(UTC),
                 )
             counts = dict(payload["study_opening_counts"])
-            counts["history_held"] = counts.get("history_held", 0) + int(introduction_history_hold)
+            counts["history_held"] = counts.get("history_held", 0) + int(
+                introduction_history_hold
+            )
             counts["admitted"] = counts.get("admitted", 0) + int(bool(admitted))
             counts["publication_rejected"] = counts.get(
                 "publication_rejected", 0

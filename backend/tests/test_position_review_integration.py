@@ -23,7 +23,9 @@ class PositionStore(_fixture.Capabilities):
 
     def record_position_review(self, command, context, *, outcome, guided):
         self.event("human_review")
-        return ScheduledReview.from_dict({**self.scheduled, "requeue_today": False, "requeue_after_cards": None})
+        return ScheduledReview.from_dict(
+            {**self.scheduled, "requeue_today": False, "requeue_after_cards": None}
+        )
 
     def lock_position_attempt(self, command):
         self.event("attempt_lock")
@@ -79,8 +81,10 @@ def test_position_effect_failure_prevents_binding():
 
 def test_position_human_review_does_not_save_card_schedule(monkeypatch):
     from types import SimpleNamespace
-    from app.services.learning_review_adapter import LearningReviewAdapter
+
     from tempo_storage import scheduling_review_store
+
+    from app.services.learning_review_adapter import LearningReviewAdapter
 
     card = SimpleNamespace(
         due_date="2026-11-10",

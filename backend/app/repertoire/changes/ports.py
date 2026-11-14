@@ -1,7 +1,11 @@
 """Current repertoire source conflict validation for editing and import."""
+
 from __future__ import annotations
+
 from dataclasses import dataclass
+
 from app.repertoire.position_index import Diagnostic, PositionKey
+
 
 @dataclass(frozen=True, order=True)
 class AffectedOccurrence:

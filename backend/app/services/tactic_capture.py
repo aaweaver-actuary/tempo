@@ -1,20 +1,20 @@
 """One foreground tactic ingestion seam; callers own source-specific trust."""
 
-from app.study.policy.clock import StudyCalendar
 import json
 import uuid
 
 import chess
-
-from app.contracts.transport.tactics import TacticCaptureRequest
+from tempo_chess_core import card_id
 from tempo_storage.tactics import captures as storage
+
 from app.contracts.tactic_capture import (
-    ValidatedCapture,
-    TacticCaptureValidationError,
     TacticCaptureConflict,
+    TacticCaptureValidationError,
+    ValidatedCapture,
 )
+from app.contracts.transport.tactics import TacticCaptureRequest
 from app.study.interfaces.captured_tactic import CapturedTacticAdmission
-from app.chess.cards import card_id
+from app.study.policy.clock import StudyCalendar
 
 
 def game_capture_id(finding_id: str) -> uuid.UUID:

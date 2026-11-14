@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import json
 import asyncio
-from pathlib import Path
+import json
 import re
+from pathlib import Path
 
 from starlette.requests import Request
 from starlette.responses import Response
-
-from app import main
 from tempo_storage import postgres
 
+from app import main
 
 CONTRACT_PATH = (
     Path(__file__).resolve().parents[2] / "docs/postgres-route-contract.json"
@@ -116,6 +115,7 @@ def test_staged_postgres_mutations_pass_the_runtime_write_guard(monkeypatch):
 
 def test_retired_routes_do_not_dispatch_or_match_game_wildcard(monkeypatch):
     from fastapi.testclient import TestClient
+
     from app import command_dispatch
 
     def unexpected_dispatch(*args, **kwargs):
@@ -140,7 +140,9 @@ def test_retired_routes_do_not_dispatch_or_match_game_wildcard(monkeypatch):
 
 def test_recovery_task_routes_scope_status_and_preserve_retry_identity(monkeypatch):
     from contextlib import contextmanager
+
     from fastapi.testclient import TestClient
+
     from app import command_dispatch
 
     tasks = [

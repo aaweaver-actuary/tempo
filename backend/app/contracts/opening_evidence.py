@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from backend.app.chess.models.uci import UciMove
+from backend.app.types import RepertoireId, DecisionId, Fen
 
 
 class EvidenceModel(BaseModel):
@@ -11,11 +15,11 @@ class EvidenceModel(BaseModel):
 
 
 class OpeningManifestDecision(EvidenceModel):
-    decision_id: str = Field(min_length=64, max_length=64)
+    decision_id: DecisionId
     decision_index: int = Field(ge=0, lt=20)
     move_offset: int = Field(ge=0, lt=40)
-    fen: str
-    expected_uci: str = Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$")
+    fen: Fen
+    expected_uci: UciMove
 
 
 class OpeningDecisionManifest(EvidenceModel):
@@ -23,7 +27,7 @@ class OpeningDecisionManifest(EvidenceModel):
     policy_version: Literal[1] = 1
     manifest_id: str = Field(min_length=64, max_length=64)
     presentation_snapshot_id: int = Field(gt=0)
-    repertoire_id: str = Field(min_length=1)
+    repertoire_id: RepertoireId
     card_id: str = Field(min_length=1)
     card_revision: int = Field(gt=0)
     trained_color: Literal["white", "black"]

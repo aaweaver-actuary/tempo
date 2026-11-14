@@ -2,31 +2,32 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
-import hashlib
 import json
-from typing import Any, Literal
 import uuid
+from dataclasses import asdict
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
+from backend.app.types import Fen
+from backend.app.utils.hash import stable_key
+from tempo_chess_core import card_id
+from tempo_storage.authored_repertoires.pgn_import import storage
+from tempo_storage.postgres import PostgresConnection
 
-from .services.study_calendar import capture_study_calendar
+from app.chess.pgn import ParsedLine
 
 from .command_gateway import register_command
 from .pgn_import_validation import validate_sources
-from tempo_storage.authored_repertoires.pgn_import import storage
-from tempo_storage.postgres import PostgresConnection
-from app.chess.cards import card_id
 from .services.canonical_prefix import (
-    ensure_batch_lines_in_scope,
     certify_admitted_route,
+    ensure_batch_lines_in_scope,
 )
 from .services.opening_graph import decision_segments
-from app.chess.pgn import ParsedLine
-from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.postgres_integrity import invalidate_integrity_in_transaction
+from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.repertoire_integrity import integrity_summary
+from .services.study_calendar import capture_study_calendar
 
 
 class ImportAnnotation(BaseModel):
@@ -37,7 +38,7 @@ class ImportAnnotation(BaseModel):
 
 
 class ImportLine(BaseModel):
-    starting_fen: str
+    starting_fen: Fen
     moves: list[str]
     annotations: list[ImportAnnotation]
 
@@ -150,11 +151,8 @@ def _admit_pgn_import(
     )
     for line, validated_route in zip(payload.lines, validated_routes):
         moves_json = json.dumps(line.moves)
-        line_id = (
-            existing_lines.get((line.starting_fen, moves_json))
-            or hashlib.sha256(
-                f"{repertoire_id}\0{card_id(line.starting_fen, line.moves)}".encode()
-            ).hexdigest()
+        line_id = existing_lines.get((line.starting_fen, moves_json)) or stable_key(
+            repertoire_id, card_id(line.starting_fen, line.moves)
         )
         if (line.starting_fen, moves_json) not in existing_lines:
             admitted_routes[line_id] = validated_route

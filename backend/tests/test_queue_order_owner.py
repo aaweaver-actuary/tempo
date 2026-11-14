@@ -1,13 +1,13 @@
 """Capture/preserve is one Study-owned operation across legacy callers."""
 
-from app.study import queue_order
+from app import queue_commands
 from app.services import (
-    review_service,
-    queue_application,
     learning_review_adapter,
     prefix_split,
+    queue_application,
+    review_service,
 )
-from app import queue_commands
+from app.study import queue_order
 from app.study.policy import queue_ordering
 
 
@@ -17,7 +17,7 @@ def test_capture_and_preserve_have_one_owner_at_actual_consumers():
         queue_application,
         learning_review_adapter,
         prefix_split,
-            queue_commands,
+        queue_commands,
     ):
         assert (
             consumer.capture_daily_queue_order is queue_order.capture_daily_queue_order

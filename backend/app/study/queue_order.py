@@ -1,13 +1,14 @@
 """Capture and preserve the existing queue presentation receipt on a borrowed transaction."""
 
-from datetime import datetime, timezone
 import hashlib
+from datetime import UTC, datetime
 
-from tempo_storage.study.review import storage
 from tempo_storage.frozen_order import activation
+from tempo_storage.study.review import storage
+
 from app.study.policy.queue_ordering import (
-    queue_order_provenance,
     preserved_queue_fingerprint,
+    queue_order_provenance,
 )
 
 
@@ -33,5 +34,5 @@ def preserve_daily_queue_order(database, queue_date: str, *, previous=None) -> N
         queue_date,
         seed,
         membership_hash,
-        lambda: datetime.now(timezone.utc).isoformat(),
+        lambda: datetime.now(UTC).isoformat(),
     )

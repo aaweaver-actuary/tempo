@@ -56,10 +56,7 @@ def order_queue_slots(
     """Swap only valid captured unstarted introductions in their existing slots."""
     movable_indices = []
     for index, row in enumerate(annotated):
-        if (
-            row.get("content_type") != "opening"
-            or row.get("admission_kind") != "new"
-        ):
+        if row.get("content_type") != "opening" or row.get("admission_kind") != "new":
             continue
         if not row.get("frozen_valid"):
             continue

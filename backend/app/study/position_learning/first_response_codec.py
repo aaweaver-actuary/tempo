@@ -32,9 +32,10 @@ def position_first_response_envelope(
     The caller must use the contiguous checkpoint prefix and retain the first
     action only. Neither client FEN nor client disposition enters this function.
     """
-    import chess
     import re
     from datetime import datetime
+
+    import chess
 
     if not isinstance(event_id, str) or not event_id or type(decision_index) is not int:
         raise ValueError("invalid_first_response_identity")
@@ -43,7 +44,7 @@ def position_first_response_envelope(
     if type(manual_failure) is not bool or type(assistance_before) is not bool:
         raise ValueError("invalid_first_response_flags")
     try:
-        observed = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+        observed = datetime.fromisoformat(observed_at)
     except (AttributeError, ValueError) as exc:
         raise ValueError("invalid_observed_at") from exc
     if observed.utcoffset() is None:
@@ -56,7 +57,7 @@ def position_first_response_envelope(
         disposition = "manual_failure"
     else:
         if not isinstance(actual_uci, str) or not re.fullmatch(
-            '[a-h][1-8][a-h][1-8][qrbn]?', actual_uci
+            "[a-h][1-8][a-h][1-8][qrbn]?", actual_uci
         ):
             raise ValueError("invalid_actual_uci")
         try:
@@ -143,5 +144,3 @@ def decode_position_first_response(payload, digest, plan):
     if expected != payload:
         raise ValueError("first_response_issued_plan_mismatch")
     return expected
-
-

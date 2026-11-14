@@ -1,18 +1,17 @@
 """Atomic splitting of an overlong opening prefix into two study cards."""
 
 from __future__ import annotations
-from tempo_storage.postgres import PostgresConnection,TempoRow
 
-from app.study.policy.clock import StudyCalendar
 import json
 
 import chess
-
-from tempo_storage.connections import card_columns
+from tempo_chess_core import card_id
 from tempo_storage.authored_repertoires.opening_mutations import (
     prefix_splits as storage,
 )
-from app.chess.cards import card_id
+from tempo_storage.postgres import PostgresConnection, TempoRow
+
+from app.study.policy.clock import StudyCalendar
 from app.study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
 
 
@@ -187,7 +186,9 @@ def apply_prefix_split(
     # The caller holds the source card lock used by issuance/review. Do not
     # retarget or archive a card while any issued queue attempt can still save.
     if storage.has_active_issued_attempt(database, source_card_id):
-        raise RuntimeError("An issued attempt is still active. Save it before shortening this card")
+        raise RuntimeError(
+            "An issued attempt is still active. Save it before shortening this card"
+        )
 
     now = calendar.observed_at.isoformat()
     today = calendar.day.isoformat()

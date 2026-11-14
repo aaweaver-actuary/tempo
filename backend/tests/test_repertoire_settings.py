@@ -1,8 +1,7 @@
 """Daily opening overrides and unused-allowance regression protection."""
 
-from pathlib import Path
 import re
-
+from pathlib import Path
 
 FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
@@ -11,8 +10,7 @@ def test_repertoire_limit_migration_has_unique_number_and_matches_schema_readine
     from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
     migration_directory = (
-        Path(__file__).resolve().parents[2]
-        / "database/tempo_storage/ddl/migrations"
+        Path(__file__).resolve().parents[2] / "database/tempo_storage/ddl/migrations"
     )
     migration_paths = sorted(migration_directory.glob("[0-9][0-9][0-9]_*.sql"))
     migration_numbers = [int(path.name[:3]) for path in migration_paths]

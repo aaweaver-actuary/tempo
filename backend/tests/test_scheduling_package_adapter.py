@@ -1,22 +1,23 @@
 """Legacy defaults stay outside the strict, installed scheduling package."""
 
-from datetime import date, datetime, timezone
 import importlib
-from importlib import metadata
 import inspect
 import json
-from pathlib import Path
-from types import SimpleNamespace
 import sys
 import tomllib
+from datetime import UTC, date, datetime
+from importlib import metadata
+from pathlib import Path
+from types import SimpleNamespace
 
-from fsrs import Card
 import fsrs.card
 import pytest
 import tempo_scheduling
+from fsrs import Card
+
 from app.services import scheduler
 
-REVIEWED_AT = datetime(2026, 10, 15, 2, 30, tzinfo=timezone.utc)
+REVIEWED_AT = datetime(2026, 10, 15, 2, 30, tzinfo=UTC)
 INITIAL_CARD = Card(card_id=1, due=REVIEWED_AT).to_json()
 LOCAL_DAY = date(2026, 10, 14)
 
@@ -140,7 +141,7 @@ def test_backend_defaults_keep_omitted_clock_and_explicit_clock_day_distinct(
     class FixedDatetime(datetime):
         @classmethod
         def now(cls, zone):
-            assert zone is timezone.utc
+            assert zone is UTC
             return REVIEWED_AT
 
     class FixedDate(date):
@@ -225,8 +226,9 @@ def test_invalid_legacy_outcome_does_not_generate_identity(monkeypatch):
 
 
 def test_legacy_identity_adapter_preserves_shared_digests_and_public_identity():
-    from app.chess import cards
     import tempo_chess_core
+
+    from app.chess import cards
 
     assert cards.card_id is tempo_chess_core.card_id
     fixtures = json.loads(

@@ -1,12 +1,12 @@
 """Scoped settings/evidence/coverage composition and savepoint ownership checks."""
 
 import ast
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 from types import SimpleNamespace
 
-from fastapi import HTTPException
 import pytest
+from fastapi import HTTPException
 
 from app import repertoire_settings, review_commands
 from app.contracts.review_conflicts import ReviewConflict

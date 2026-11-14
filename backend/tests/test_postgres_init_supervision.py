@@ -9,14 +9,13 @@ The ordinary backend suite discovers this file; no dedicated qualifier is added.
 
 import json
 import os
-from pathlib import Path
 import selectors
 import subprocess
 import time
 import uuid
+from pathlib import Path
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[2]
 BOOT = """initdb -D /var/lib/postgresql/owned-data --auth-local=trust --auth-host=reject --no-locale >/tmp/initdb.log

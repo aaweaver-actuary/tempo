@@ -1,18 +1,28 @@
 """Read-only verification of the checked-in historical Study corpus artifacts."""
-from collections import Counter
+
 import hashlib
 import json
+from collections import Counter
 from pathlib import Path
 
 import chess
 from pydantic import TypeAdapter
+
 from app.contracts.study_exercises import ExerciseSpecification
 from app.study.policy.study_grading import validate_exercise
 
 ROOT = Path(__file__).resolve().parents[2]
-TABLES = ("studies", "study_chapters", "study_sources", "study_positions",
-          "study_exercises", "study_exercise_revisions", "study_links")
+TABLES = (
+    "studies",
+    "study_chapters",
+    "study_sources",
+    "study_positions",
+    "study_exercises",
+    "study_exercise_revisions",
+    "study_links",
+)
 SPECIFICATION = TypeAdapter(ExerciseSpecification)
+
 
 def _historical_candidate_key(puzzle_fen: str, swindle_move_uci: str) -> str:
     canonical_fen = " ".join(chess.Board(puzzle_fen).fen().split()[:4])
@@ -131,10 +141,11 @@ def validate_bundle(bundle: object) -> dict[str, list[dict]]:
     return tables
 
 
-
 def test_checked_in_stalemate_corpora_have_unique_legal_single_moves_and_verified_terminal_sources():
     # No raw-source scan in CI; validate every real artifact present in the checkout.
-    corpus_paths = sorted((ROOT / "public/data/studies").glob("stalemate-swindles-*.tempo-study.json"))
+    corpus_paths = sorted(
+        (ROOT / "public/data/studies").glob("stalemate-swindles-*.tempo-study.json")
+    )
     assert corpus_paths, "The real checked-in corpora must remain present"
     for bundle_path in corpus_paths:
         bundle = json.loads(bundle_path.read_text())

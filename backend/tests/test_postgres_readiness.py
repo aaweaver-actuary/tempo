@@ -1,19 +1,19 @@
 """PostgreSQL health requires a usable reader, both queues, and daily progress."""
 
 import asyncio
-from contextlib import contextmanager
-from datetime import date, datetime, timezone
-from app.study.policy.clock import study_calendar_at
 import json
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from fastapi import HTTPException
 import pytest
+from fastapi import HTTPException
+from tempo_storage import postgres
+from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 from app import command_dispatch, main
 from app.operations import postgres_readiness
-from tempo_storage import postgres
-from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+from app.study.policy.clock import study_calendar_at
 
 
 class Cursor:
@@ -24,7 +24,8 @@ class Cursor:
         return self.row
 
 
-CALENDAR = study_calendar_at(datetime(2026, 11, 12, 2, tzinfo=timezone.utc), "America/New_York")
+CALENDAR = study_calendar_at(datetime(2026, 11, 12, 2, tzinfo=UTC), "America/New_York")
+
 
 class Reader:
     def __init__(self, queue_row, queue_task):
@@ -54,7 +55,9 @@ def readiness(
         yield Reader(queue_row, queue_task)
 
     monkeypatch.setattr(postgres_readiness, "read_connection", reader)
-    monkeypatch.setattr(postgres_readiness, "capture_study_calendar", lambda db: CALENDAR)
+    monkeypatch.setattr(
+        postgres_readiness, "capture_study_calendar", lambda db: CALENDAR
+    )
     monkeypatch.setattr(
         postgres_readiness.celery_app.control,
         "inspect",
@@ -114,11 +117,14 @@ def test_postgres_startup_checks_schema_and_requests_queue(monkeypatch):
         "dispatch_command",
         lambda *_args, **_kwargs: calls.append("queue") or {"ok": True},
     )
+
     @contextmanager
     def reader():
         yield object()
+
     monkeypatch.setattr(main, "read_connection", reader)
     monkeypatch.setattr(main, "capture_study_calendar", lambda db: CALENDAR)
+
     async def run_lifespan():
         async with main.lifespan(main.app):
             calls.append("serving")

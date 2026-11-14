@@ -5,8 +5,6 @@ from dataclasses import FrozenInstanceError
 
 import chess
 import pytest
-from tempo_evidence_math import opening_position_key
-
 from backend.tests.fixtures.position_study_cases import (
     DECISIONS,
     EVIDENCE_CASES,
@@ -17,8 +15,8 @@ from backend.tests.fixtures.position_study_cases import (
     ROUTES,
     SOURCE_CASES,
     STABLE_DECISIONS,
-    Route,
 )
+from tempo_evidence_math import opening_position_key
 
 
 def test_every_authored_route_and_frozen_frame_is_legal_and_exact():

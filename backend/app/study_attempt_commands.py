@@ -2,29 +2,29 @@
 
 from __future__ import annotations
 
-from .services.study_calendar import capture_study_calendar
-import hashlib
 import json
 from typing import Any
 
 from fastapi import HTTPException
 from pydantic import TypeAdapter
-
-from .command_gateway import CommandPrerequisitePending, register_command
-from tempo_storage.study_attempts import storage
+from backend.app.utils.hash import stable_key
 from tempo_storage.postgres import PostgresConnection
-from .queue_commands import request_queue_refresh_in_transaction
 from tempo_storage.queue_position_lock import (
     lock_queue_date_for_position,
 )
-from .services.study_grading import GRADER_VERSION, evaluate_answer
-from .services.study_attempts import finish_study_attempt
+from tempo_storage.study_attempts import storage
+
 from app.contracts.studies import (
     ExerciseSpecification,
     StudyAttemptRequest,
     StudySelfAssessmentRequest,
 )
 
+from .command_gateway import CommandPrerequisitePending, register_command
+from .queue_commands import request_queue_refresh_in_transaction
+from .services.study_attempts import finish_study_attempt
+from .services.study_calendar import capture_study_calendar
+from .services.study_grading import GRADER_VERSION, evaluate_answer
 
 _SPECIFICATION_ADAPTER = TypeAdapter(ExerciseSpecification)
 
@@ -65,7 +65,7 @@ def submit_study_attempt(
         raise HTTPException(422, "Attempt ID is too long")
     storage.lock_attempt_identity(database, request.attempt_id)
     request_data = request.model_dump(mode="json")
-    answer_hash = hashlib.sha256(_json({"request": request_data}).encode()).hexdigest()
+    answer_hash = stable_key({"request": request_data})
     existing = storage.attempt(database, request.attempt_id)
     if existing:
         owner = storage.exercise_owner(database, existing["exercise_id"])
@@ -91,17 +91,36 @@ def submit_study_attempt(
     exercise = storage.locked_exercise(database, exercise_id)
     if exercise is None:
         raise HTTPException(404, "Study Exercises not found")
-    if exercise["study_id"] != str(payload["study_id"]) or exercise["current_revision"] != request.revision:
+    if (
+        exercise["study_id"] != str(payload["study_id"])
+        or exercise["current_revision"] != request.revision
+    ):
         raise HTTPException(409, "Exercise revision changed; reload before answering")
     # An issued original review remains accepted after a later archive only
     # while its source position still matches the immutable issuance origin.
-    source_current = (storage.issued_review_source_state(database, exercise_id, request.card_id,
-        request.queue_entry_id, request.queue_cycle, request.revision) if request.context == "review" else None)
+    source_current = (
+        storage.issued_review_source_state(
+            database,
+            exercise_id,
+            request.card_id,
+            request.queue_entry_id,
+            request.queue_cycle,
+            request.revision,
+        )
+        if request.context == "review"
+        else None
+    )
     if source_current is False:
-        raise HTTPException(409, "Exercise source changed; restore the original attempt")
-    if exercise["status"] != "published" or not storage.study_is_active(database, exercise["study_id"]):
-        if source_current is not True:
-            raise HTTPException(409, "Exercise revision changed; reload before answering")
+        raise HTTPException(
+            409, "Exercise source changed; restore the original attempt"
+        )
+
+    exercise_not_published = exercise["status"] != "published"
+    study_inactive = not storage.study_is_active(database, exercise["study_id"])
+
+    if not source_current and (exercise_not_published or study_inactive):
+        raise HTTPException(409, "Exercise revision changed; reload before answering")
+
     position = storage.exercise_position(database, exercise["position_id"])
     if position is None:
         raise HTTPException(404, "Study Positions not found")
@@ -204,12 +223,28 @@ def self_assess_study_attempt(
     # A status-change recovery may only finish from the original issued FEN.
     # Practice has no retained issuance snapshot, so keep its exact child
     # command retryable until that source can be positively established.
-    source_current = (storage.issued_review_source_state(database, str(payload["exercise_id"]),
-        attempt["card_id"], attempt["queue_entry_id"], attempt["cycle"], attempt["revision"])
-        if attempt["context"] == "review" else None)
-    if source_current is False or ((exercise["status"] != "published" or
-            not storage.study_is_active(database, exercise["study_id"])) and source_current is not True):
-        raise CommandPrerequisitePending("The original exercise position is not proven; preserve this self-assessment.")
+    source_current = (
+        storage.issued_review_source_state(
+            database,
+            str(payload["exercise_id"]),
+            attempt["card_id"],
+            attempt["queue_entry_id"],
+            attempt["cycle"],
+            attempt["revision"],
+        )
+        if attempt["context"] == "review"
+        else None
+    )
+    if source_current is False or (
+        (
+            exercise["status"] != "published"
+            or not storage.study_is_active(database, exercise["study_id"])
+        )
+        and source_current is not True
+    ):
+        raise CommandPrerequisitePending(
+            "The original exercise position is not proven; preserve this self-assessment."
+        )
     assessment = json.loads(attempt["assessment_json"])
     if assessment["outcome"] not in {"unrecognized", "needs_self_assessment"}:
         raise HTTPException(409, "This attempt does not need self-assessment")

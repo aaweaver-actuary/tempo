@@ -3,10 +3,9 @@
 import json
 import threading
 
-
 from app.services import background_runtime
-from app.services.background_metrics import increment, BackgroundDiagnostics
 from app.services.activity_gate import ApplicationActivityGate
+from app.services.background_metrics import BackgroundDiagnostics, increment
 
 
 def test_background_admission_wait_is_separate_from_handler_execution(monkeypatch):

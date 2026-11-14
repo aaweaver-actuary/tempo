@@ -2,29 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import nullcontext
-from datetime import datetime, timedelta, timezone
 import json
 import uuid
+from collections.abc import Callable
+from contextlib import nullcontext
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar
 
+from fastapi import HTTPException
+from tempo_storage import postgres
 from tempo_storage.commands.receipts import storage
 from tempo_storage.commands.receipts.storage import (
-    psycopg,
-    DeadlockDetected,
-    LockNotAvailable,
-    SerializationFailure,
-    TransactionTimeout,
     receipt_write_scope as _writer_connection,
 )
-from fastapi import HTTPException
 
-from tempo_storage import postgres
-from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from .contracts.command_identity import request_digest as _identity_digest
 from .contracts.command_registry import CommandDescriptor, CommandRegistry
-
+from .services.redis_admission_gate import BackgroundAdmissionDeferred
 
 CommandHandler = Callable[[postgres.PostgresConnection, Any], Any]
 _registry = CommandRegistry()
@@ -125,7 +119,7 @@ def record_operation_attempt(
             storage.save_missing_payload(
                 receipt_writer, saved_payload, background, operation_id
             )
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if receipt[2] == "blocked" and expected_retry_cycle == receipt[8]:
             storage.restart_blocked(receipt_writer, operation_id)
             cycle_attempts = 0
@@ -163,11 +157,11 @@ def select_queue_issuance_operation(payload: dict[str, Any]) -> str:
     older immutable receipt, whose worker claim refuses repeat preparation.
     """
     from .contracts.queue_issuance import (
-        issuance_operation_id,
-        issuance_generation,
-        immutable_issuance_conflict,
         ISSUANCE_RETRY_SECONDS,
         MAX_GENERATION,
+        immutable_issuance_conflict,
+        issuance_generation,
+        issuance_operation_id,
     )
 
     first = issuance_operation_id(payload)
@@ -210,9 +204,7 @@ def select_queue_issuance_operation(payload: dict[str, Any]) -> str:
             return operation_id
     else:
         return operation_id
-    if datetime.now(timezone.utc) < completed_at + timedelta(
-        seconds=ISSUANCE_RETRY_SECONDS
-    ):
+    if datetime.now(UTC) < completed_at + timedelta(seconds=ISSUANCE_RETRY_SECONDS):
         return operation_id
     return issuance_operation_id(payload, generation + 1)
 
@@ -256,7 +248,7 @@ def record_operation_retry(
             lambda: (
                 None
                 if exhausted
-                else datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
+                else datetime.now(UTC) + timedelta(seconds=delay_seconds)
             ),
             lambda: json.dumps(
                 {"class": type(error).__name__, "message": str(error)[:500]}
@@ -451,6 +443,7 @@ def read_operation(
 ) -> dict[str, Any]:
     if background:
         from tempo_storage.connections import background_read_connection
+
         from .services.activity_gate import activity_gate
 
         receipt_connection = background_read_connection()
@@ -490,11 +483,17 @@ def read_operation(
                 )
     state, response_json, error_json = receipt[2], receipt[3], receipt[4]
     from .contracts.command_registry import is_retired_command
+
     if is_retired_command(receipt[0]) and state not in {"complete", "failed"}:
-        return {"operation_id": operation_id, "state": "blocked",
-                "code": "retired_feature_paused", "retryable": False,
-                "original_state": state, "command_name": receipt[0],
-                "message": "This operation is preserved and paused because its feature was retired."}
+        return {
+            "operation_id": operation_id,
+            "state": "blocked",
+            "code": "retired_feature_paused",
+            "retryable": False,
+            "original_state": state,
+            "command_name": receipt[0],
+            "message": "This operation is preserved and paused because its feature was retired.",
+        }
     response: dict[str, Any] = {"operation_id": operation_id, "state": state}
     response["attempt_count"] = int(receipt[5])
     response["retry_cycle"] = int(receipt[10])

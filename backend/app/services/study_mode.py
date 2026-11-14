@@ -1,20 +1,23 @@
 """Durable installation-wide admission policy for emergency study isolation."""
 
+from contextlib import nullcontext
+
+from fastapi import HTTPException
 from tempo_storage.connections import (
-    read_connection,
     background_read_connection,
+    read_connection,
 )
 from tempo_storage.controls import settings as storage
-from .activity_gate import activity_gate
-from contextlib import nullcontext
-from fastapi import HTTPException
 
+from .activity_gate import activity_gate
 
 STUDY_TASK_KINDS = ("daily_queue",)
 PAUSED_IMPORT_COMMANDS = frozenset(
     {"imports.pgn.admit", "studies.import.commit", "studies.bundle.import"}
 )
-STUDY_BACKGROUND_COMMANDS = frozenset({"opening_evidence.checkpoint", "activity.progress"})
+STUDY_BACKGROUND_COMMANDS = frozenset(
+    {"opening_evidence.checkpoint", "activity.progress"}
+)
 
 
 def study_only_enabled(database=None) -> bool:

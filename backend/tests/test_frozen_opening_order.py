@@ -48,7 +48,9 @@ def test_override_replacement_restarts_eligibility_before_reusing_old_checkpoint
     monkeypatch,
 ):
     from contextlib import contextmanager
-    from app.services import postgres_queue_refresh as worker, study_mode
+
+    from app.services import postgres_queue_refresh as worker
+    from app.services import study_mode
 
     @contextmanager
     def connection(**kwargs):

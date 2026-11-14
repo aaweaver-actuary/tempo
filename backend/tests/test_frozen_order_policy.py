@@ -1,8 +1,8 @@
 """Study preference works from supplied facts without a concrete database."""
 
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 from app.study import frozen_order as policy
 
@@ -69,7 +69,6 @@ def test_stale_proposal_skips_definition_check_and_current_proposal_checks_it():
     planned = {"card_id": "card", "frozen_token": ["run", 2]}
     assert policy.proposal_valid(planned, ("run", 2), **capabilities)
     assert calls == [("definition", "card")]
-
 
 
 def test_frozen_slot_policy_preserves_exposure_and_unrelated_slots():

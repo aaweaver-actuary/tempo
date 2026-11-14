@@ -1,6 +1,7 @@
 """Authored PGN import response contract."""
 
 from typing import Literal
+
 from pydantic import BaseModel, Field
 
 

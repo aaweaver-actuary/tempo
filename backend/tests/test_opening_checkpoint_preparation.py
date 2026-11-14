@@ -1,26 +1,27 @@
 """Standalone shadow CPU work must not own a background database section."""
 
-from contextlib import contextmanager
+import copy
 import json
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-import copy
 
 import chess
 import pytest
 from psycopg.errors import SerializationFailure
 
 from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
-from app.study import position_checkpoint as evidence
 from app.services.opening_decision_evidence import EvidenceConflict, decision_manifest
+from app.study import position_checkpoint as evidence
 
 
 @pytest.mark.parametrize("historical_preparation", [None, "valid", "obsolete"])
 def test_standalone_opening_checkpoint_reduces_outside_background_transaction(
     normal_study_mode, monkeypatch, historical_preparation
 ):
-    from app import command_gateway, tasks
     from tempo_storage import connections as database
+
+    from app import command_gateway, tasks
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     from app.study import position_checkpoint as evidence
 
@@ -81,7 +82,7 @@ def test_standalone_opening_checkpoint_reduces_outside_background_transaction(
             row = (1,)
         elif statement.startswith("SELECT snapshot.*"):
             row = {"trained_color": "white", "effective_trained_color": "white"}
-        return SimpleNamespace(fetchone=lambda: row, fetchall=lambda: [])
+        return SimpleNamespace(fetchone=lambda: row, fetchall=list)
 
     connection = SimpleNamespace(
         raw=SimpleNamespace(execute=execute), execute_native=execute
@@ -150,8 +151,9 @@ def test_standalone_opening_checkpoint_reduces_outside_background_transaction(
 def test_review_prepares_position_before_writer(
     normal_study_mode, monkeypatch, command_name, with_completion
 ):
-    from app import command_gateway, review_commands
     from tempo_storage import connections
+
+    from app import command_gateway, review_commands
 
     manifest = json.loads(
         (
@@ -219,9 +221,7 @@ def test_review_prepares_position_before_writer(
     with pytest.raises(WriterReached):
         command_gateway._execute_command("operation", command_name, payload)
     assert order == (
-        ["read", "position", "read_closed", "writer"]
-        if with_completion
-        else ["writer"]
+        ["read", "position", "read_closed", "writer"] if with_completion else ["writer"]
     )
     assert payload == original and observed["card_id"] == original["card_id"]
     assert observed["review"] == original["review"]
@@ -298,8 +298,8 @@ def source_header(request, **changes):
 def test_standalone_checkpoint_preparation_uses_immutable_source_instead_of_historical_manifest(
     monkeypatch, historical_manifest
 ):
-    from tempo_storage import connections as database
     from fastapi import HTTPException
+    from tempo_storage import connections as database
 
     manifest = json.loads(
         (
@@ -330,7 +330,7 @@ def test_standalone_checkpoint_preparation_uses_immutable_source_instead_of_hist
         if statement.startswith("SELECT snapshot.*"):
             assert parameters == (1, 101, "shadow-repertoire")
             return SimpleNamespace(fetchone=lambda: snapshot)
-        return SimpleNamespace(fetchone=lambda: None, fetchall=lambda: [])
+        return SimpleNamespace(fetchone=lambda: None, fetchall=list)
 
     @contextmanager
     def read(**options):

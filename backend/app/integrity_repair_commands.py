@@ -7,26 +7,26 @@ from typing import Any
 
 from fastapi import HTTPException
 from pydantic import BaseModel
-
-from .services.study_calendar import capture_study_calendar
-
-from .command_gateway import register_command
-from app.repertoire.changes.application import validate_repair_source_rows
-from app.repertoire.changes.ports import ChangeError
-from tempo_storage.authored_repertoires import (
-    product_changes as change_storage,
-)
 from tempo_storage.authored_repertoires import (
     integrity_commands as storage,
 )
+from tempo_storage.authored_repertoires import (
+    product_changes as change_storage,
+)
 from tempo_storage.postgres import PostgresConnection
-from .services.postgres_integrity import invalidate_integrity_in_transaction
-from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
-from .services.repertoire_integrity import _archive_unsupported_card
+
+from app.repertoire.changes.application import validate_repair_source_rows
+from app.repertoire.changes.ports import ChangeError
 from app.repertoire.changes.retained_mutations import (
     replace_repertoire_line,
     rewrite_card,
 )
+
+from .command_gateway import register_command
+from .services.postgres_integrity import invalidate_integrity_in_transaction
+from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
+from .services.repertoire_integrity import _archive_unsupported_card
+from .services.study_calendar import capture_study_calendar
 
 
 class PreparedIntegrityRepair(BaseModel):
@@ -65,7 +65,7 @@ def resolve_integrity_issue(
         raise HTTPException(422, "Repair line expectations do not match the changes")
     if set(prepared.changed_cards) != set(prepared.expected_card_moves):
         raise HTTPException(422, "Repair card expectations do not match the changes")
-    from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
+    from .services.canonical_prefix import certify_admitted_route, ensure_line_in_scope
 
     line_changes = []
     card_changes = []

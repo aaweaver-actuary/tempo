@@ -1,8 +1,8 @@
 """Receipt driver/context boundary checks without native database or process startup."""
 
-from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
 import json
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -122,7 +122,7 @@ def test_retry_keeps_fenced_read_clock_error_serialization_and_write_order(
 ):
     events = []
     raw, _ = writer(monkeypatch, events, [(3,)])
-    now = datetime(2026, 10, 20, tzinfo=timezone.utc)
+    now = datetime(2026, 10, 20, tzinfo=UTC)
 
     def clock(zone):
         events.append("clock")
@@ -254,14 +254,11 @@ def test_receipt_writer_is_opaque_and_uses_original_connection():
 
 
 def test_receipt_write_scope_preserves_original_context_selection(monkeypatch):
+    from tempo_storage import connections, postgres
     from tempo_storage.commands.receipts import storage
-    from tempo_storage import connections
-    from tempo_storage import postgres
 
     foreground, background = object(), object()
-    monkeypatch.setattr(
-        postgres, "connection", lambda **options: (foreground, options)
-    )
+    monkeypatch.setattr(postgres, "connection", lambda **options: (foreground, options))
     monkeypatch.setattr(connections, "background_connection", lambda: background)
     assert storage.receipt_write_scope(False) == (foreground, {"read_only": False})
     assert storage.receipt_write_scope(True) is background
@@ -271,17 +268,46 @@ def test_foreground_child_enqueue_uses_raw_driver_and_preserves_exact_identity()
     from tempo_storage.commands.receipts import storage
 
     events = []
-    raw = Raw(events, [(True,), None, ("split.child", "digest", "queued", None, None, None)])
+    raw = Raw(
+        events, [(True,), None, ("split.child", "digest", "queued", None, None, None)]
+    )
     database = Borrowed(raw, events)
-    assert storage.enqueue_foreground_operation(database, "original-child", "split.child", "digest", {"intent_id": "original"}) is True
+    assert (
+        storage.enqueue_foreground_operation(
+            database,
+            "original-child",
+            "split.child",
+            "digest",
+            {"intent_id": "original"},
+        )
+        is True
+    )
     assert len(raw.calls) == 3
     assert raw.calls[0][1] == ("original-child",)
-    assert raw.calls[1][1] == ("original-child", "split.child", "digest", '{"intent_id":"original"}', False)
+    assert raw.calls[1][1] == (
+        "original-child",
+        "split.child",
+        "digest",
+        '{"intent_id":"original"}',
+        False,
+    )
     assert raw.calls[2][1] == ("original-child",)
     assert events.count("raw") == 1
 
-    mismatch = Raw([], [(True,), None, ("split.child", "different", "queued", None, None, None)])
-    assert storage.enqueue_foreground_operation(Borrowed(mismatch, []), "original-child", "split.child", "digest", {}) is False
+    mismatch = Raw(
+        [], [(True,), None, ("split.child", "different", "queued", None, None, None)]
+    )
+    assert (
+        storage.enqueue_foreground_operation(
+            Borrowed(mismatch, []), "original-child", "split.child", "digest", {}
+        )
+        is False
+    )
     busy = Raw([], [(False,)])
-    assert storage.enqueue_foreground_operation(Borrowed(busy, []), "original-child", "split.child", "digest", {}) is None
+    assert (
+        storage.enqueue_foreground_operation(
+            Borrowed(busy, []), "original-child", "split.child", "digest", {}
+        )
+        is None
+    )
     assert len(busy.calls) == 1

@@ -1,8 +1,8 @@
 """Focused coverage for the first queue-refresh database extraction slice."""
 
 import ast
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 from types import SimpleNamespace
 
 from app.services import postgres_queue_refresh as refresh

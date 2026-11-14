@@ -5,40 +5,35 @@ Transaction, lock, issuance and durable-slice ownership stay with existing calle
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
+from datetime import UTC, datetime
 from typing import Any
 
-from tempo_storage import postgres
 from tempo_storage.postgres import PostgresConnection
-from .durable_tasks import enqueue_task_in_transaction
-from . import frozen_opening_order
-from tempo_storage.opening_progression import (
-    PRACTICED_OPENING_PARENT_SQL,
-)
+
 from app.chess.pgn import ends_on_trained_move
-from .queue_ordering import _queue_membership_hash, _plan_daily_queue_order
+
+from . import frozen_opening_order
+from .durable_tasks import enqueue_task_in_transaction
+from .queue_ordering import _plan_daily_queue_order, _queue_membership_hash
+
 MISS_REASON = "Priority review · missed in a recent game"
 from app.study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
-from .tactical_catalog import seed_tactical_introductions
 
+from . import queue_admission
 
 # The compatibility surface remains here; introduction decisions and persistence
 # now have explicit, separately testable owners.
-from .queue_admission import AdmittedOpeningProposal, OpeningCapacityRoutePayload
 from .queue_admission_adapter import (
     QueueAdmissionAdapter,
-    _PRIORITY_OPENING_CANDIDATE_BODY,
 )
-from . import queue_admission
+from .tactical_catalog import seed_tactical_introductions
 
 
 def reconcile_unseen_queue(db, day, limit, repertoire_limits=None):
     return queue_admission.reconcile_unseen_queue(
         QueueAdmissionAdapter(db), day, limit, repertoire_limits
     )
-
-
 
 
 def admit_prioritized_opening_cards(
@@ -53,24 +48,21 @@ from tempo_storage.queue_refresh.application import (
     eligibility as eligibility_storage,
 )
 from tempo_storage.queue_refresh.application import (
-    seeding as seeding_storage,
-)
-from tempo_storage.queue_refresh.application import (
     publication as publication_storage,
 )
 from tempo_storage.queue_refresh.application import (
     requeue as requeue_storage,
 )
+from tempo_storage.queue_refresh.application import (
+    seeding as seeding_storage,
+)
 from tempo_storage.queue_refresh.application.eligibility import (
-    _OPENING_UNLOCK_ELIGIBILITY_SQL,
-    _OPENING_UNLOCK_CANDIDATES_SQL,
-    _OPENING_UNLOCK_POSTGRES_CANDIDATES_SQL,
     _block_ineligible_opening_queue_entries,
     _block_unapproved_defense_queue_entries,
+    _reset_stale_opening_introductions,
+    _reset_unintroduced_opening_cards,
     _restore_eligible_due_queue_entries,
     _restore_published_study_queue_entries,
-    _reset_unintroduced_opening_cards,
-    _reset_stale_opening_introductions,
 )
 
 
@@ -166,12 +158,8 @@ def seed_queue(db, day, *, introductions=None):
             )
 
 
-
 from tempo_storage.queue_refresh import (
     presentation as presentation_storage,
-)
-from tempo_storage.queue_refresh.presentation import (
-    _QUEUE_RANDOMIZATION_ROWS_SQL,
 )
 
 
@@ -226,7 +214,7 @@ def randomize_daily_queue(
             row["id"],
         )
     publication_storage.save_plan(
-        db, day, seed, membership_hash, datetime.now(timezone.utc).isoformat()
+        db, day, seed, membership_hash, datetime.now(UTC).isoformat()
     )
 
 
@@ -277,7 +265,7 @@ def materialize_daily_queue(
             for diagnostic in diagnostics
         ],
     )
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     blocked_count = publication_storage.blocked_count(database, queue_date)
     publication_storage.publish_projection(database, queue_date, now, blocked_count)
 
@@ -297,12 +285,6 @@ def requeue(db, day, cid, after, attempt):
     requeue_storage.set_review_admission(db, inserted_entry_id)
     preserve_daily_queue_order(db, day, previous=previous_order)
     return inserted_entry_id
-
-
-from tempo_storage.queue_refresh.foreground import (
-    _QUEUE_REFRESH_PROJECTION_SQL,
-    mark_queue_refreshing,
-)
 
 
 from tempo_storage.http_composition import (

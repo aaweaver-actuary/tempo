@@ -4,6 +4,8 @@ The returned binding is a proposal only. The queue writer must recheck the
 source, owner, card revision and admission under its existing locks.
 """
 
+from datetime import UTC
+
 from tempo_evidence_math.position_learning import Hold
 
 
@@ -59,14 +61,15 @@ def select_carrier(source, target, *, card_id=None):
 
 def prepare_due(database, day, payload):
     """Prepare one introduced due decision using bounded H1 reads outside the writer."""
-    from datetime import date, datetime, timezone
-    from app.repertoire.position_study_source import prepare_position_source
+    from datetime import date, datetime
+
     from tempo_storage.study.position_due_candidates import (
         PositionDueCandidateReader,
         PositionDueCursor,
     )
-
     from tempo_storage.study.position_owner_epoch import active_owner, next_active_owner
+
+    from app.repertoire.position_study_source import prepare_position_source
 
     current_rep = payload.get("position_repertoire")
     if not current_rep:
@@ -86,7 +89,7 @@ def prepare_due(database, day, payload):
     instant = (
         datetime.fromisoformat(payload["position_instant"])
         if payload.get("position_instant")
-        else datetime.now(timezone.utc)
+        else datetime.now(UTC)
     )
     study_day = date.fromisoformat(day)
     reader = PositionDueCandidateReader(
@@ -149,17 +152,18 @@ def prepare_due(database, day, payload):
 def admit_due(database, day, prepared):
     """Fence one proposal before acquiring the ordinary card and date locks."""
     from datetime import date
+
     from tempo_storage.authored_repertoires.position_study_source import (
         fence_position_source,
-    )
-    from tempo_storage.study.position_owner_epoch import owner_mode
-    from tempo_storage.study.position_due_candidates import (
-        PositionDueCandidateReader,
     )
     from tempo_storage.queue_position_lock import (
         lock_queue_date_for_position,
     )
     from tempo_storage.queue_refresh import admissions
+    from tempo_storage.study.position_due_candidates import (
+        PositionDueCandidateReader,
+    )
+    from tempo_storage.study.position_owner_epoch import owner_mode
 
     source, candidate, carrier = (
         prepared["source"],
@@ -219,7 +223,6 @@ def prepare_opening_introduction(database, planned):
     from tempo_storage.study.position_introductions import (
         prepare_introduction,
     )
-
     from tempo_storage.study.position_owner_epoch import current_owner
 
     repertoire = planned["repertoire_id"]
@@ -240,10 +243,10 @@ def prepare_opening_introduction(database, planned):
 
 
 def fence_opening_introduction(database, prepared):
-    from tempo_storage.study.position_owner_epoch import owner_mode
     from tempo_storage.study.position_introductions import (
         fence_introduction,
     )
+    from tempo_storage.study.position_owner_epoch import owner_mode
 
     if prepared[0] == "legacy":
         owner = owner_mode(database, prepared[1], None)
@@ -252,15 +255,15 @@ def fence_opening_introduction(database, prepared):
 
 
 def apply_opening_introduction(database, prepared, fenced, *, now):
+    from tempo_scheduling import initial_position_state
     from tempo_storage.study.position_introductions import (
         initialize_introduction,
     )
 
-    from tempo_scheduling import initial_position_state
-
     if prepared[0] == "position":
-        initialize_introduction(database, prepared[1], fenced, now=now,
-                                initial_state=initial_position_state)
+        initialize_introduction(
+            database, prepared[1], fenced, now=now, initial_state=initial_position_state
+        )
 
 
 def redundant_opening_introduction(prepared, fenced):
@@ -340,7 +343,8 @@ def admit_targeted_position_introduction(
     receipt, not a fabricated review or Games scheduling effect.
     """
     from tempo_storage.study.position_introductions import (
-        canonical_introduction_admitted, initialize_introduction,
+        canonical_introduction_admitted,
+        initialize_introduction,
     )
 
     prepared, target = prepared_target
@@ -354,15 +358,19 @@ def admit_targeted_position_introduction(
     )
     if result.status == "introduced":
         admitted = canonical_introduction_admitted(
-            database, card_id=target.presentation_id, revision=target.presentation_revision,
-            day=day, repertoire_id=target.repertoire_id,
+            database,
+            card_id=target.presentation_id,
+            revision=target.presentation_revision,
+            day=day,
+            repertoire_id=target.repertoire_id,
         )
         if not admitted:
             raise ValueError("position_canonical_introduction_unproved")
         from tempo_scheduling import initial_position_state
 
-        initialize_introduction(database, prepared, fenced, now=now,
-                                initial_state=initial_position_state)
+        initialize_introduction(
+            database, prepared, fenced, now=now, initial_state=initial_position_state
+        )
     elif result.status in {"already_introduced", "replayed"}:
         # This pre-fenced proposal represented unseen state, so an existing
         # physical receipt cannot authorize us to reset/replace a position.

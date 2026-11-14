@@ -120,8 +120,10 @@ def test_pr102_tactical_deletion_fixture_is_nonterminal_and_uuid_independent(
 ):
     import importlib.util
     from pathlib import Path
+
     import chess
-    from app.chess.cards import card_id
+    from tempo_chess_core import card_id
+
     from app.services.puzzles import validate_puzzle_record
 
     script_path = (
@@ -154,16 +156,25 @@ def test_pr102_tactical_deletion_fixture_is_nonterminal_and_uuid_independent(
 
 def test_tactical_deleted_candidates_use_native_bounded_storage_reader(monkeypatch):
     from contextlib import contextmanager
+
     from tempo_storage.queue_refresh import reads
 
     calls = []
+
     class Database:
         def execute_native(self, statement, parameters):
             calls.append((statement, parameters))
-            return SimpleNamespace(fetchall=lambda: [('deleted',)])
+            return SimpleNamespace(fetchall=lambda: [("deleted",)])
+
     @contextmanager
     def connection():
         yield Database()
-    monkeypatch.setattr(reads, 'background_read_connection', connection)
-    assert reads.deleted_candidates(['deleted', 'kept']) == [('deleted',)]
-    assert calls == [('SELECT card_id FROM deleted_cards WHERE card_id=ANY(%s::text[])', (['deleted', 'kept'],))]
+
+    monkeypatch.setattr(reads, "background_read_connection", connection)
+    assert reads.deleted_candidates(["deleted", "kept"]) == [("deleted",)]
+    assert calls == [
+        (
+            "SELECT card_id FROM deleted_cards WHERE card_id=ANY(%s::text[])",
+            (["deleted", "kept"],),
+        )
+    ]

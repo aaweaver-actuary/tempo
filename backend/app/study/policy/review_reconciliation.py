@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
-from tempo_learning_review import review_day_at as _review_day
-from .opening_maturity import augment_opening_maturity
 import json
+from datetime import UTC, date, datetime, timedelta
 
-from tempo_storage.opening_progression import unlock_legacy_children_after_review
-from app.services.scheduler import schedule_review, unlock_ready
+from tempo_learning_review import review_day_at as _review_day
 from tempo_storage import review_reconciliation as storage
+from tempo_storage.opening_progression import unlock_legacy_children_after_review
 
+from app.services.scheduler import schedule_review, unlock_ready
+
+from .opening_maturity import augment_opening_maturity
 
 SCHEDULE_COLUMNS = storage.SCHEDULE_COLUMNS
 card_schedule_state = storage.card_schedule_state
@@ -46,14 +47,14 @@ def _next_state(
         dict(row)
         for row in storage.valid_review_history(database, card_id)
         if (
-            datetime.fromisoformat(row["reviewed_at"]).astimezone(timezone.utc),
+            datetime.fromisoformat(row["reviewed_at"]).astimezone(UTC),
             row["id"],
         )
-        <= (reviewed_at.astimezone(timezone.utc), review_id)
+        <= (reviewed_at.astimezone(UTC), review_id)
     ]
     history.sort(
         key=lambda row: (
-            datetime.fromisoformat(row["reviewed_at"]).astimezone(timezone.utc),
+            datetime.fromisoformat(row["reviewed_at"]).astimezone(UTC),
             row["id"],
         )
     )
@@ -62,7 +63,8 @@ def _next_state(
     )
     seed = storage.baseline_schedule_seed(database, card_id)
     successful_days, recent_outcomes = augment_opening_maturity(
-        successful_days, [row["rating"] for row in reversed(history[-2:])],
+        successful_days,
+        [row["rating"] for row in reversed(history[-2:])],
         int(seed["baseline_successful_days"] if seed else 0),
         int(seed["baseline_recent_clean"] if seed else 0),
     )
@@ -132,19 +134,16 @@ def reconcile_completed_review(
         later = [
             dict(row)
             for row in storage.ordered_valid_reviews(database, card_id)
-            if datetime.fromisoformat(row["reviewed_at"]).astimezone(timezone.utc)
-            > review_time
+            if datetime.fromisoformat(row["reviewed_at"]).astimezone(UTC) > review_time
         ]
         later.sort(
             key=lambda row: (
-                datetime.fromisoformat(row["reviewed_at"]).astimezone(timezone.utc),
+                datetime.fromisoformat(row["reviewed_at"]).astimezone(UTC),
                 row["id"],
             )
         )
         first_snapshot = (
-            storage.review_snapshot(database, later[0]["id"])
-            if later
-            else None
+            storage.review_snapshot(database, later[0]["id"]) if later else None
         )
         if later and first_snapshot and len(later) <= 64:
             state = json.loads(first_snapshot[0])
@@ -156,11 +155,16 @@ def reconcile_completed_review(
                 status = "computer_fallback"
                 warning = "The earlier scheduling state or review time is unavailable. Both results are credited; the computer schedule was kept with a near-term review. Review this card again when it appears to establish an updated schedule."
         storage.insert_independent_review(
-            database, card_id=card_id, rating=scheduled_outcome,
+            database,
+            card_id=card_id,
+            rating=scheduled_outcome,
             internal_rating="good" if scheduled_outcome == "correct" else "again",
-            guided=int(guided), reviewed_at=review_time.isoformat(),
-            previous_interval=initial_interval, next_interval=initial_interval,
-            source_kind="study", source_ref=f"attempt:{attempt_id}",
+            guided=int(guided),
+            reviewed_at=review_time.isoformat(),
+            previous_interval=initial_interval,
+            next_interval=initial_interval,
+            source_kind="study",
+            source_ref=f"attempt:{attempt_id}",
         )
         review_id = storage.independent_review_id(database, f"attempt:{attempt_id}")
         if status == "chronological":
@@ -186,14 +190,18 @@ def reconcile_completed_review(
                     event_review_id,
                     timezone_name,
                 )
-                storage.update_review_intervals(database, previous_interval, next_interval, event_review_id)
+                storage.update_review_intervals(
+                    database, previous_interval, next_interval, event_review_id
+                )
             _write_card_state(database, card_id, state)
         else:
             conservative_due = min(
                 date.fromisoformat(current["due_date"]),
                 local_day + timedelta(days=1),
             )
-            storage.set_conservative_due(database, conservative_due.isoformat(), card_id)
+            storage.set_conservative_due(
+                database, conservative_due.isoformat(), card_id
+            )
 
     if review_id is not None:
         legacy_day = (
@@ -218,8 +226,16 @@ def reconcile_completed_review(
         "competing_review": competing_review,
     }
     storage.retain_attempt_receipt(
-        database, attempt_id=attempt_id, card_id=card_id, queue_entry_id=queue_entry_id,
-        outcome=outcome, guided=int(guided), completed_at=completed_at.isoformat() if completed_at else None,
-        review_id=review_id, scheduling_status=status, warning=warning, result_json=json.dumps(result),
+        database,
+        attempt_id=attempt_id,
+        card_id=card_id,
+        queue_entry_id=queue_entry_id,
+        outcome=outcome,
+        guided=int(guided),
+        completed_at=completed_at.isoformat() if completed_at else None,
+        review_id=review_id,
+        scheduling_status=status,
+        warning=warning,
+        result_json=json.dumps(result),
     )
     return result

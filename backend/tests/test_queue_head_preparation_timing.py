@@ -1,14 +1,13 @@
 """Position preparation spans preserve results and disclose only bounded labels."""
 
-from contextlib import contextmanager, nullcontext
 import json
+from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace as NS
 
 import pytest
-
-from app.services import background_runtime, queue_next_card
 from tempo_evidence_math.position_learning import Hold
 
+from app.services import background_runtime, queue_next_card
 
 LABELS = {
     "position_source_prepare",
@@ -27,8 +26,9 @@ def test_position_preparation_timing_preserves_proposal_and_source_hold(
 ):
     from tempo_storage import connections
     from tempo_storage.study import position_due_candidates
-    from app.study.position_learning import issuance as position_issued_plans
+
     from app.services import position_queue_admission
+    from app.study.position_learning import issuance as position_issued_plans
     from app.study.position_learning import issued_plan_service, route_planner
 
     payload = {

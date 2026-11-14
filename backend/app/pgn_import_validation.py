@@ -1,8 +1,10 @@
 """Repertoire-owned strict import boundary over the existing pure conflict owner."""
 
 import json
+
 import chess
 from fastapi import HTTPException
+
 from app.studies.repertoire_conflicts import conflicts_from_snapshot
 
 MAX_CONFLICT_DIAGNOSTIC_BYTES = 8 * 1024

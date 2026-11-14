@@ -5,13 +5,11 @@ rows and emulates module SQL effects; qualifying outcome logic executes in the
 real installed-library source. Native execution remains a separate finite gate.
 """
 
-from contextlib import nullcontext, asynccontextmanager
 import asyncio
+from contextlib import asynccontextmanager, nullcontext
 
 import pytest
-
 from tempo_storage import connections as database
-
 
 _PRIORITY_POSITION_SQL = """UPDATE daily_queue queue SET position=planned.position
         FROM unnest(%s::bigint[],%s::bigint[],%s::bigint[])
@@ -46,8 +44,9 @@ def test_http_cutover_matching_background_admission_and_query_only_guard_are_pre
 ):
     from fastapi import Request
     from fastapi.responses import JSONResponse
-    from app import main
     from tempo_storage import postgres
+
+    from app import main
 
     entered = []
 

@@ -1,10 +1,10 @@
 """Infrastructure-free scheduling decisions and explicit persistence ordering."""
 
-from dataclasses import replace
-from datetime import date, datetime, timezone
-from pathlib import Path
 import subprocess
 import sys
+from dataclasses import replace
+from datetime import UTC, date, datetime
+from pathlib import Path
 
 import pytest
 
@@ -50,7 +50,7 @@ def apply_review(store, **changes):
         source_kind="study",
         source_ref="original",
         light_first_interval_days=7,
-        reviewed_at=datetime(2026, 1, 2, 2, 30, tzinfo=timezone.utc),
+        reviewed_at=datetime(2026, 1, 2, 2, 30, tzinfo=UTC),
         review_day=date(2026, 1, 1),
     )
     inputs.update(changes)
@@ -73,7 +73,7 @@ def test_scheduling_application_uses_original_completion_clock_without_database(
             "correct",
             "good",
             True,
-            datetime(2026, 1, 2, 2, 30, tzinfo=timezone.utc),
+            datetime(2026, 1, 2, 2, 30, tzinfo=UTC),
             0,
             0,
             "study",
@@ -160,7 +160,7 @@ def test_scheduling_application_maturity_uses_valid_reviews_and_seed_facts(
     schedule = replace(
         schedule_review(
             "correct",
-            reviewed_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+            reviewed_at=datetime(2026, 1, 2, tzinfo=UTC),
             review_day=date(2026, 1, 2),
         ),
         stability=20,

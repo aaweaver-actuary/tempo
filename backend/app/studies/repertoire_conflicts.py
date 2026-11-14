@@ -1,9 +1,11 @@
 """Contradictory trained moves over supplied authored-line snapshots; no I/O."""
 
 from __future__ import annotations
+
+import json
 from collections import defaultdict
 from functools import lru_cache
-import json
+
 import chess
 
 

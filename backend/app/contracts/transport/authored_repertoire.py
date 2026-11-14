@@ -1,6 +1,7 @@
 """Authored repertoire settings/annotation contracts."""
 
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 

@@ -1,8 +1,6 @@
 import json
 
-
 from app.services.repertoire_conflicts import _conflicts_from_snapshot
-
 
 START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
@@ -42,9 +40,9 @@ def test_conflict_fast_position_key_preserves_en_passant_distinction():
 
 
 def test_authored_studies_conflict_policy_imports_without_database_or_sibling_domains():
-    from pathlib import Path
     import subprocess
     import sys
+    from pathlib import Path
 
     probe = r"""
 from importlib.abc import MetaPathFinder

@@ -5,13 +5,13 @@ constructing/running the existing worker. No domain, admission or clock changes.
 All markers go to stderr; the public CLI stdout document remains unchanged.
 """
 
-from functools import wraps
-from pathlib import Path
 import json
 import os
 import resource
 import sys
 import time
+from functools import wraps
+from pathlib import Path
 
 _LIMIT = 256
 _started = time.monotonic()

@@ -1,7 +1,7 @@
 """Synthetic authoring, provenance, quota, and compatibility regressions."""
 
-from contextlib import nullcontext
 import uuid
+from contextlib import nullcontext
 
 import chess
 from fastapi.testclient import TestClient
@@ -38,8 +38,9 @@ def test_capture_accepts_black_castling_en_passant_and_underpromotion():
 
 
 def test_capture_api_uses_foreground_receipt_and_rejects_mismatched_key(monkeypatch):
-    from app import main, command_dispatch
     from fastapi.responses import JSONResponse
+
+    from app import command_dispatch, main
 
     observed = []
 

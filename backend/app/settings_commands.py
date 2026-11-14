@@ -6,17 +6,19 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import HTTPException
+from tempo_storage.foreground_controls import settings as storage
+from tempo_storage.postgres import PostgresConnection
+
+from app.contracts.transport.settings import Settings
 
 from .command_gateway import register_descriptor
 from .contracts.command_registry import CommandDescriptor
-from tempo_storage.foreground_controls import settings as storage
-from app.contracts.transport.settings import Settings
-from tempo_storage.postgres import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
 from .services.study_calendar import capture_study_calendar
 
-
 _SETTINGS_COLUMNS = tuple(Settings.model_fields)
+
+
 @dataclass(frozen=True)
 class SettingsRequest:
     settings: Settings
@@ -45,11 +47,14 @@ def apply_settings(
     values = settings.model_dump(mode="json")
     if "study_only_mode" not in supplied_fields:
         values["study_only_mode"] = bool(existing["study_only_mode"])
-    storage.store_settings(database, {**values, "study_only_mode": int(values["study_only_mode"])}, _SETTINGS_COLUMNS)
+    storage.store_settings(
+        database,
+        {**values, "study_only_mode": int(values["study_only_mode"])},
+        _SETTINGS_COLUMNS,
+    )
     calendar = capture_study_calendar(database)
     request_queue_refresh_in_transaction(database, calendar.day.isoformat())
     return values
-
 
 
 def update_settings(

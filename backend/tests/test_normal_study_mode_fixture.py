@@ -1,9 +1,9 @@
 """The normal-mode fixture patches the owner without importing the task root."""
 
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 
 def test_normal_study_fixture_does_not_import_tasks_and_patches_owner():

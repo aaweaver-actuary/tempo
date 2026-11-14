@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
-from tempo_storage.connections import background_read_connection
 from tempo_storage import postgres
+from tempo_storage.connections import background_read_connection
 from tempo_storage.opening_graph import worker as storage
+
+from app.contracts.opening_graph import GraphStep
+from app.services.opening_graph import GraphInput, build_graph
+
 from ..card_deletion import omit_deleted_graph_steps
 from .durable_tasks import (
     advance_task_slice_in_transaction,
@@ -17,10 +21,7 @@ from .durable_tasks import (
     enqueue_task_in_transaction,
     lock_current_slice,
 )
-from app.services.opening_graph import GraphInput, build_graph
-from app.contracts.opening_graph import GraphStep
 from .redis_admission_gate import background_lease
-
 
 _STEP_BATCH_SIZE = 8
 _CLEANUP_BATCH_SIZE = 2
@@ -204,9 +205,8 @@ def execute_graph_stage_slice(task: dict[str, Any]) -> bool:
         str(payload["repertoire_id"]),
         str(payload.get("after_line_id", "")),
     )
-    with background_lease():
-        with storage.writer_connection() as database:
-            return stage_graph_line_in_transaction(database, task, prepared)
+    with background_lease(), storage.writer_connection() as database:
+        return stage_graph_line_in_transaction(database, task, prepared)
 
 
 def prepare_next_graph_cards(
@@ -269,9 +269,8 @@ def execute_graph_link_slice(task: dict[str, Any]) -> bool:
         int(task["generation"]),
         str(payload.get("after_card_id", "")),
     )
-    with background_lease():
-        with storage.writer_connection() as database:
-            return link_graph_cards_in_transaction(database, task, card_ids)
+    with background_lease(), storage.writer_connection() as database:
+        return link_graph_cards_in_transaction(database, task, card_ids)
 
 
 def publish_graph_generation(database, repertoire_id, generation):
@@ -280,7 +279,7 @@ def publish_graph_generation(database, repertoire_id, generation):
     if missing_link:
         raise RuntimeError("Opening graph generation has unlinked cards")
     storage.publish_generation(
-        database, (repertoire_id, generation, datetime.now(timezone.utc).isoformat())
+        database, (repertoire_id, generation, datetime.now(UTC).isoformat())
     )
 
 
@@ -305,9 +304,8 @@ def publish_graph_in_transaction(
 
 
 def execute_graph_publish_slice(task: dict[str, Any]) -> bool:
-    with background_lease():
-        with storage.writer_connection() as database:
-            return publish_graph_in_transaction(database, task)
+    with background_lease(), storage.writer_connection() as database:
+        return publish_graph_in_transaction(database, task)
 
 
 def classify_graph_cards_in_transaction(
@@ -356,9 +354,8 @@ def execute_graph_classify_slice(task: dict[str, Any]) -> bool:
         int(task["generation"]),
         str(payload.get("after_card_id", "")),
     )
-    with background_lease():
-        with storage.writer_connection() as database:
-            return classify_graph_cards_in_transaction(database, task, card_ids)
+    with background_lease(), storage.writer_connection() as database:
+        return classify_graph_cards_in_transaction(database, task, card_ids)
 
 
 def refresh_graph_integrity_in_transaction(
@@ -380,7 +377,7 @@ def refresh_graph_integrity_in_transaction(
         )
     repertoire_id = str(payload["repertoire_id"])
     generation = int(task["generation"])
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     for card_id in card_ids:
         storage.delete_card_blocks(database, repertoire_id, card_id)
         storage.insert_card_blocks(
@@ -412,9 +409,8 @@ def execute_graph_integrity_slice(task: dict[str, Any]) -> bool:
         str(payload.get("after_card_id", "")),
         limit=2,
     )
-    with background_lease():
-        with storage.writer_connection() as database:
-            return refresh_graph_integrity_in_transaction(database, task, card_ids)
+    with background_lease(), storage.writer_connection() as database:
+        return refresh_graph_integrity_in_transaction(database, task, card_ids)
 
 
 @dataclass(frozen=True)
@@ -521,9 +517,8 @@ def execute_graph_cleanup_slice(task: dict[str, Any]) -> bool:
         int(task["generation"]),
         str(payload.get("after_card_id", "")),
     )
-    with background_lease():
-        with storage.writer_connection() as database:
-            return cleanup_graph_cards_in_transaction(database, task, prepared)
+    with background_lease(), storage.writer_connection() as database:
+        return cleanup_graph_cards_in_transaction(database, task, prepared)
 
 
 def finalize_graph_in_transaction(
@@ -559,9 +554,8 @@ def finalize_graph_in_transaction(
 
 def execute_graph_finalize_slice(task: dict[str, Any]) -> bool:
 
-    with background_lease():
-        with storage.writer_connection() as database:
-            return finalize_graph_in_transaction(database, task)
+    with background_lease(), storage.writer_connection() as database:
+        return finalize_graph_in_transaction(database, task)
 
 
 def execute_postgres_opening_graph_slice(task: dict[str, Any]) -> bool:

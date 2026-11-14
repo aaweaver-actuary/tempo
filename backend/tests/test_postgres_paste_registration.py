@@ -17,10 +17,11 @@ def test_retained_paste_command_commits_once_and_fences_stale_preview(monkeypatc
         raise ValueError("refusing non-W04 database")
     monkeypatch.setenv("TEMPO_DATABASE_WRITE_URL", dsn)
     monkeypatch.setenv("TEMPO_DATABASE_READ_URL", dsn)
-    from app import tasks, command_gateway, analysis_paste_commands
+    from tempo_storage import postgres
+
+    from app import analysis_paste_commands, command_gateway
     from app.contracts.command_registry import RETIRED_COMMANDS
     from app.services.analysis_paste import build_paste_preview
-    from tempo_storage import postgres
 
     assert "analysis.paste.commit" not in RETIRED_COMMANDS
     assert (

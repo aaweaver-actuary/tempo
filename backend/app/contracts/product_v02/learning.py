@@ -1,7 +1,9 @@
 """Immutable queue-owner first-issuance receipt."""
 
 from pydantic import Field
+
 from . import Identifier, Revision, UtcTimestamp, Value
+
 
 class IssuedAttemptEvidence(Value):
     """Queue-owner first issuance, never a prefetch/reload or invented old stamp."""

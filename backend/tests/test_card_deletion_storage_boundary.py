@@ -1,9 +1,9 @@
 """Fake-only deletion storage boundaries without Main, SQLite or service startup."""
 
-from datetime import date
 import json
-from types import ModuleType, SimpleNamespace
 import sys
+from datetime import date
+from types import ModuleType, SimpleNamespace
 
 import chess
 import pytest
@@ -32,44 +32,44 @@ class Rows:
 
 
 EXPECTED_SQL = {
-    'UPDATE repertoires SET is_main=1 WHERE id=%s',
-    'DELETE FROM card_revisions WHERE card_id=ANY(%s)',
-    'DELETE FROM cards WHERE id=ANY(%s)',
-    'DELETE FROM daily_queue WHERE card_id=ANY(%s)',
-    'DELETE FROM endgame_templates WHERE card_id=ANY(%s)',
-    'DELETE FROM opening_evidence_attempts WHERE card_id=ANY(%s)',
-    'DELETE FROM opening_evidence_presentations WHERE card_id=ANY(%s)',
-    'DELETE FROM opening_evidence_queue_contexts WHERE queue_entry_id=ANY(%s) OR presentation_snapshot_id IN (SELECT id FROM opening_evidence_presentations WHERE card_id=ANY(%s))',
-    'DELETE FROM opening_graph_steps WHERE card_id=ANY(%s)',
-    'DELETE FROM queue_projection_diagnostics WHERE card_id=ANY(%s)',
-    'DELETE FROM repertoire_comparisons_legacy WHERE repertoire_id=%s',
-    'DELETE FROM repertoire_comparisons_staged WHERE repertoire_id=%s',
-    'DELETE FROM repertoires WHERE id=%s',
-    'DELETE FROM study_attempts WHERE card_id=ANY(%s)',
-    'DELETE FROM tactic_progress WHERE card_id=ANY(%s)',
-    'INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1) ON CONFLICT(repertoire_id,card_id) DO NOTHING',
+    "UPDATE repertoires SET is_main=1 WHERE id=%s",
+    "DELETE FROM card_revisions WHERE card_id=ANY(%s)",
+    "DELETE FROM cards WHERE id=ANY(%s)",
+    "DELETE FROM daily_queue WHERE card_id=ANY(%s)",
+    "DELETE FROM endgame_templates WHERE card_id=ANY(%s)",
+    "DELETE FROM opening_evidence_attempts WHERE card_id=ANY(%s)",
+    "DELETE FROM opening_evidence_presentations WHERE card_id=ANY(%s)",
+    "DELETE FROM opening_evidence_queue_contexts WHERE queue_entry_id=ANY(%s) OR presentation_snapshot_id IN (SELECT id FROM opening_evidence_presentations WHERE card_id=ANY(%s))",
+    "DELETE FROM opening_graph_steps WHERE card_id=ANY(%s)",
+    "DELETE FROM queue_projection_diagnostics WHERE card_id=ANY(%s)",
+    "DELETE FROM repertoire_comparisons_legacy WHERE repertoire_id=%s",
+    "DELETE FROM repertoire_comparisons_staged WHERE repertoire_id=%s",
+    "DELETE FROM repertoires WHERE id=%s",
+    "DELETE FROM study_attempts WHERE card_id=ANY(%s)",
+    "DELETE FROM tactic_progress WHERE card_id=ANY(%s)",
+    "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1) ON CONFLICT(repertoire_id,card_id) DO NOTHING",
     "INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(%s,'Retained cards','Cards kept after repertoire deletion',%s,0) ON CONFLICT(id) DO NOTHING",
-    'SELECT DISTINCT observation.decision_id FROM opening_evidence_observations observation JOIN opening_evidence_attempts attempt ON attempt.attempt_id=observation.attempt_id WHERE attempt.card_id=ANY(%s)',
-    'SELECT DISTINCT repertoire_id,generation,line_id FROM opening_graph_steps WHERE card_id=%s ORDER BY repertoire_id,generation,line_id',
-    'SELECT card.id,card.start_fen,card.moves_json,COALESCE(card.trained_color,(SELECT line.trained_color FROM repertoire_lines line WHERE line.repertoire_id=card.repertoire_id ORDER BY line.created_at,line.id LIMIT 1)) AS effective_trained_color,card.introduced_at,card.first_correct_at,EXISTS(SELECT 1 FROM reviews WHERE card_id=card.id) AS has_reviews,(SELECT MIN(link.repertoire_id) FROM repertoire_cards link WHERE link.card_id=card.id AND link.repertoire_id<>%s) AS replacement FROM cards card WHERE card.repertoire_id=%s ORDER BY card.id FOR UPDATE OF card',
-    'SELECT decision_id,observation_json FROM opening_evidence_observations WHERE decision_id=ANY(%s)',
-    'SELECT decision_index,card_id,parent_card_id FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s AND line_id=%s ORDER BY decision_index',
+    "SELECT DISTINCT observation.decision_id FROM opening_evidence_observations observation JOIN opening_evidence_attempts attempt ON attempt.attempt_id=observation.attempt_id WHERE attempt.card_id=ANY(%s)",
+    "SELECT DISTINCT repertoire_id,generation,line_id FROM opening_graph_steps WHERE card_id=%s ORDER BY repertoire_id,generation,line_id",
+    "SELECT card.id,card.start_fen,card.moves_json,COALESCE(card.trained_color,(SELECT line.trained_color FROM repertoire_lines line WHERE line.repertoire_id=card.repertoire_id ORDER BY line.created_at,line.id LIMIT 1)) AS effective_trained_color,card.introduced_at,card.first_correct_at,EXISTS(SELECT 1 FROM reviews WHERE card_id=card.id) AS has_reviews,(SELECT MIN(link.repertoire_id) FROM repertoire_cards link WHERE link.card_id=card.id AND link.repertoire_id<>%s) AS replacement FROM cards card WHERE card.repertoire_id=%s ORDER BY card.id FOR UPDATE OF card",
+    "SELECT decision_id,observation_json FROM opening_evidence_observations WHERE decision_id=ANY(%s)",
+    "SELECT decision_index,card_id,parent_card_id FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s AND line_id=%s ORDER BY decision_index",
     "SELECT deduplication_key,payload_json FROM background_tasks WHERE id=%s AND state IN ('queued','leased','retrying') FOR UPDATE",
     "SELECT id FROM cards WHERE repertoire_id=%s UNION SELECT card_id FROM daily_queue WHERE admission_repertoire_id=%s AND status='queued' ORDER BY 1",
-    'SELECT id FROM daily_queue WHERE card_id IN (%s)',
-    'SELECT id FROM repertoires WHERE id NOT IN (%s,%s,%s,%s,%s,%s,%s) ORDER BY created_at DESC,id LIMIT 1',
+    "SELECT id FROM daily_queue WHERE card_id IN (%s)",
+    "SELECT id FROM repertoires WHERE id NOT IN (%s,%s,%s,%s,%s,%s,%s) ORDER BY created_at DESC,id LIMIT 1",
     "SELECT id,deduplication_key,payload_json FROM background_tasks WHERE state IN ('queued','leased','retrying') AND (deduplication_key=%s OR position(%s in payload_json)>0) ORDER BY id",
-    'SELECT id,is_main FROM repertoires WHERE id=%s FOR UPDATE',
-    'SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
-    'SELECT revision FROM cards WHERE id=%s FOR UPDATE',
+    "SELECT id,is_main FROM repertoires WHERE id=%s FOR UPDATE",
+    "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+    "SELECT revision FROM cards WHERE id=%s FOR UPDATE",
     "SELECT source_ref FROM cards WHERE id IN (%s) AND content_type='tactic' AND source_ref IS NOT NULL",
     "UPDATE background_tasks SET state='complete',phase='cancelled',lease_token=NULL,lease_expires_at=NULL,completed_at=%s,updated_at=%s WHERE id=%s",
-    'UPDATE cards SET repertoire_id=%s,pending_validation=CASE WHEN %s=%s THEN 0 ELSE pending_validation END WHERE id=%s',
-    'UPDATE cards SET trained_color=%s WHERE id=%s AND trained_color IS NULL',
+    "UPDATE cards SET repertoire_id=%s,pending_validation=CASE WHEN %s=%s THEN 0 ELSE pending_validation END WHERE id=%s",
+    "UPDATE cards SET trained_color=%s WHERE id=%s AND trained_color IS NULL",
     "UPDATE daily_queue SET admission_repertoire_id=(\n        SELECT card.repertoire_id FROM cards card WHERE card.id=daily_queue.card_id\n    ) WHERE admission_repertoire_id=%s AND status='queued'\n      AND EXISTS(SELECT 1 FROM cards card JOIN repertoires owner ON owner.id=card.repertoire_id\n                 WHERE card.id=daily_queue.card_id AND owner.id<>%s)",
-    'UPDATE game_findings SET card_id=NULL WHERE card_id IN (%s)',
-    'UPDATE game_findings SET repertoire_id=NULL WHERE repertoire_id=%s',
-    'UPDATE threat_training_candidates SET paused_at=%s WHERE card_id IN (%s)',
+    "UPDATE game_findings SET card_id=NULL WHERE card_id IN (%s)",
+    "UPDATE game_findings SET repertoire_id=NULL WHERE repertoire_id=%s",
+    "UPDATE threat_training_candidates SET paused_at=%s WHERE card_id IN (%s)",
 }
 
 
@@ -148,17 +148,22 @@ def test_cancellation_queries_then_clocks_fetches_and_rechecks_only_exact_matche
     ]
     replies = [Rows(rows=tasks, events=events)]
     replies += [
-            Rows(dict(deduplication_key="old", payload_json="null"), events=events),
-            Rows(),
-            Rows(dict(deduplication_key="other", payload_json="null"), events=events),
-        ]
+        Rows(dict(deduplication_key="old", payload_json="null"), events=events),
+        Rows(),
+        Rows(dict(deduplication_key="other", payload_json="null"), events=events),
+    ]
     database = (Native if native else Compatible)(events, replies)
     clocks(monkeypatch, events)
     application.cancel_repertoire_tasks(database, "old")
     assert events.index("clock") < events.index("fetchall")
     assert events.index(("execute", 1, ("old", "old"))) < events.index("clock")
     parameters = [item[1] for item in database.calls]
-    assert parameters == [("old", "old"), ("one",), ("timestamp", "timestamp", "one"), ("two",)]
+    assert parameters == [
+        ("old", "old"),
+        ("one",),
+        ("timestamp", "timestamp", "one"),
+        ("two",),
+    ]
     assert events.count("clock") == 1
 
 
@@ -172,8 +177,16 @@ def test_purge_preserves_identifier_reads_clock_points_fixed_targets_and_tombsto
     clocks(monkeypatch, events)
     application.purge_card_data(database, ["card"])
     assert [item[1] for item in database.calls] == [
-        ["card"], ["card"], (["card"],), (["card"],), ([], ["card"]), (["card"],), ([],),
-        ["card"], ("timestamp", "card"), *([(["card"],)] * 7),
+        ["card"],
+        ["card"],
+        (["card"],),
+        (["card"],),
+        ([], ["card"]),
+        (["card"],),
+        ([],),
+        ["card"],
+        ("timestamp", "card"),
+        *([(["card"],)] * 7),
     ]
     assert events[:6] == [
         "execute_lookup",
@@ -188,18 +201,31 @@ def test_purge_preserves_identifier_reads_clock_points_fixed_targets_and_tombsto
     assert events[first_clock + 1] == ("execute", 9, ("timestamp", "card"))
     second_clock = events.index("clock", first_clock + 1)
     assert events[second_clock + 1] == ("many", [("card", "timestamp")])
-    assert database.batches == [(
-        "INSERT INTO deleted_cards(card_id,deleted_at) VALUES(%s,%s) ON CONFLICT(card_id) DO NOTHING",
-        [("card", "timestamp")],
-    )]
+    assert database.batches == [
+        (
+            "INSERT INTO deleted_cards(card_id,deleted_at) VALUES(%s,%s) ON CONFLICT(card_id) DO NOTHING",
+            [("card", "timestamp")],
+        )
+    ]
     # Identical identifier parameters must not allow one fixed purge target to
     # stand in for another in the borrowed fake.
-    delete_targets = [statement for statement, _ in database.calls if statement.startswith("DELETE FROM ")]
+    delete_targets = [
+        statement
+        for statement, _ in database.calls
+        if statement.startswith("DELETE FROM ")
+    ]
     assert set(delete_targets) == {
         f"DELETE FROM {table} WHERE card_id=ANY(%s)"
-        for table in ("opening_evidence_attempts", "opening_evidence_presentations",
-                      "study_attempts", "card_revisions", "queue_projection_diagnostics",
-                      "endgame_templates", "tactic_progress", "daily_queue")
+        for table in (
+            "opening_evidence_attempts",
+            "opening_evidence_presentations",
+            "study_attempts",
+            "card_revisions",
+            "queue_projection_diagnostics",
+            "endgame_templates",
+            "tactic_progress",
+            "daily_queue",
+        )
     } | {
         "DELETE FROM cards WHERE id=ANY(%s)",
         "DELETE FROM opening_evidence_queue_contexts WHERE queue_entry_id=ANY(%s) OR presentation_snapshot_id IN (SELECT id FROM opening_evidence_presentations WHERE card_id=ANY(%s))",
@@ -233,7 +259,12 @@ def test_repertoire_delete_keeps_shared_owner_retention_policy_and_refresh_after
         ),
         dict(id="shared", replacement="other"),
     ]
-    replies = [Rows(), Rows(dict(id="old", is_main=1)), Rows(), Rows(rows=owned, events=events)]
+    replies = [
+        Rows(),
+        Rows(dict(id="old", is_main=1)),
+        Rows(),
+        Rows(rows=owned, events=events),
+    ]
     replies += [Rows()] * (10 if policy == "keep" else 6)
     replies += [Rows(("replacement-main",)), Rows()]
     database = Compatible(events, replies)

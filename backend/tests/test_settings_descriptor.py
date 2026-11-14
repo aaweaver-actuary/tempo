@@ -1,16 +1,17 @@
 """Settings descriptor adoption through the real gateway and receipt flow."""
 
+import copy
+import json
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from datetime import date
 from types import SimpleNamespace
-import copy
-import json
 
 import pytest
 from fastapi import HTTPException
 
-from app import command_gateway as gateway, settings_commands as settings
+from app import command_gateway as gateway
+from app import settings_commands as settings
 from app.contracts.transport.settings import Settings
 from app.services import queue_refresh_wakeup, study_priority
 
@@ -54,7 +55,9 @@ def runtime(monkeypatch):
         settings.storage, "store_settings", lambda *_: effects.append("settings")
     )
     monkeypatch.setattr(
-        settings, "capture_study_calendar", lambda _: SimpleNamespace(day=date(2026, 11, 11))
+        settings,
+        "capture_study_calendar",
+        lambda _: SimpleNamespace(day=date(2026, 11, 11)),
     )
 
     def request_queue(*_):

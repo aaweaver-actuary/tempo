@@ -3,11 +3,13 @@
 This static contract is usable without a PostgreSQL server. Native migration
 execution remains a deployment qualification requirement.
 """
-from pathlib import Path
+
 import re
+from pathlib import Path
 
-
-MIGRATIONS = Path(__file__).resolve().parents[2] / "database/tempo_storage/ddl/migrations"
+MIGRATIONS = (
+    Path(__file__).resolve().parents[2] / "database/tempo_storage/ddl/migrations"
+)
 
 
 def test_retirement_removes_exact_historical_scope_triggers_and_keeps_data():
@@ -29,7 +31,8 @@ def test_retirement_removes_exact_historical_scope_triggers_and_keeps_data():
     expected = {
         identity
         for identity, function in triggers.items()
-        if function in {"guard_prefix_transition_write", "guard_permanent_deletion_scope"}
+        if function
+        in {"guard_prefix_transition_write", "guard_permanent_deletion_scope"}
     }
     assert len(expected) == 10
     source = (MIGRATIONS / "063_retire_prefix_transition_fences.sql").read_text()
@@ -42,9 +45,14 @@ def test_retirement_removes_exact_historical_scope_triggers_and_keeps_data():
         ("guard_permanent_deletion_scope", ""),
         ("guard_prefix_transition_scope", "TEXT, TEXT"),
     ]
-    statements = [statement.strip() for statement in sql.split(";") if statement.strip()]
+    statements = [
+        statement.strip() for statement in sql.split(";") if statement.strip()
+    ]
     assert len(statements) == 14
-    assert all(statement.startswith(("DROP TRIGGER ", "DROP FUNCTION ")) for statement in statements[:-1])
+    assert all(
+        statement.startswith(("DROP TRIGGER ", "DROP FUNCTION "))
+        for statement in statements[:-1]
+    )
     assert statements[-1] == "INSERT INTO tempo_schema_migrations(version) VALUES(63)"
     assert not re.search(r"\b(?:DELETE|UPDATE|TRUNCATE|CASCADE)\b|DROP TABLE", sql)
     # These retained barriers also protect permanent deletion and recreation.
@@ -55,8 +63,11 @@ def test_retirement_removes_exact_historical_scope_triggers_and_keeps_data():
         ("prefix_transition_queue_projection_write", "queue_projections"),
         ("permanent_deletion_reservation", "deleted_cards"),
     } <= retained
-    assert not any(name in {function[0] for function in functions} for name in (
-        "reserve_prefix_transition_queue_write",
-        "reserve_permanent_deletion_write",
-        "prevent_deleted_card_recreation",
-    ))
+    assert not any(
+        name in {function[0] for function in functions}
+        for name in (
+            "reserve_prefix_transition_queue_write",
+            "reserve_permanent_deletion_write",
+            "prevent_deleted_card_recreation",
+        )
+    )

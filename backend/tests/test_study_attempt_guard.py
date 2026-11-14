@@ -1,6 +1,7 @@
 """The central conflict guard preserves R11 precedence and pre-C-schema behavior."""
 
 import pytest
+
 from app.contracts.review_conflicts import ReviewConflict
 from app.services import study_attempt_guard
 

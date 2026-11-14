@@ -1,16 +1,13 @@
 """Repertoire-owned retained line and card mutations within the caller transaction."""
 
 from __future__ import annotations
-from tempo_storage.postgres import PostgresConnection,TempoRow
 
-from datetime import date
-import hashlib
 import json
+from datetime import date
 from typing import Any
 
-from app.chess.cards import card_id
-from tempo_storage.connections import card_columns
-from tempo_storage.postgres import PostgresConnection
+from backend.app.utils.hash import stable_key
+from tempo_chess_core import card_id
 from tempo_storage.authored_repertoires import (
     integrity_commands as line_storage,
 )
@@ -18,6 +15,8 @@ from tempo_storage.authored_repertoires.card_edits import storage as edit_storag
 from tempo_storage.authored_repertoires.integrity import (
     storage as card_storage,
 )
+from tempo_storage.connections import card_columns
+from tempo_storage.postgres import PostgresConnection, TempoRow
 
 
 def replace_repertoire_line(
@@ -29,8 +28,8 @@ def replace_repertoire_line(
     certify: bool = True,
 ) -> bool:
     from app.services.canonical_prefix import (
-        ensure_line_in_scope,
         certify_admitted_route,
+        ensure_line_in_scope,
     )
 
     if validated_route is None:
@@ -41,9 +40,11 @@ def replace_repertoire_line(
             moves,
             remember=False,
         )
-    new_line_id = hashlib.sha256(
-        f"{source_line['repertoire_id']}\0{card_id(source_line['start_fen'], moves)}".encode(),
-    ).hexdigest()
+    new_line_id = stable_key(
+        "repertoire-line",
+        source_line["repertoire_id"],
+        card_id(source_line["start_fen"], moves),
+    )
     if new_line_id == source_line["id"]:
         return False
     line_storage.insert_replacement_line(
@@ -76,8 +77,8 @@ def rewrite_card(
     certify: bool = True,
 ) -> bool:
     from app.services.canonical_prefix import (
-        ensure_line_in_scope,
         certify_admitted_route,
+        ensure_line_in_scope,
     )
 
     if validated_route is None:

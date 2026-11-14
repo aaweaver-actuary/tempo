@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from datetime import date
 
 import chess
+from tempo_evidence_math import opening_position_key
 
 from .contracts import DecisionOccurrence, PositionDefinition, PositionKey, RouteOption
-from tempo_evidence_math import opening_position_key
 
 
 @dataclass(frozen=True)

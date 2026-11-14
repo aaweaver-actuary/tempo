@@ -1,9 +1,9 @@
 """Regression: fresh backend assembly installs Learning without service startup."""
 
 import json
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 
 def test_backend_learning_distribution_and_command_import_need_no_source_or_services():

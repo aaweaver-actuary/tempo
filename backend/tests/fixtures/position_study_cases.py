@@ -7,9 +7,9 @@ Fixture labels below are local test handles, never persistent product IDs.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping
 
 import chess
 from tempo_evidence_math import opening_position_key
@@ -294,18 +294,18 @@ SOURCE_CASES = MappingProxyType(
 )
 
 __all__ = [
-    "ROUTES",
-    "FRAMES",
-    "ROUTE_BY_LABEL",
     "DECISIONS",
-    "EXPECTED_DECISION_COUNTS",
-    "STABLE_DECISIONS",
-    "RELATIONSHIPS",
     "EVIDENCE_CASES",
-    "SOURCE_CASES",
+    "EXPECTED_DECISION_COUNTS",
+    "FRAMES",
     "POSITION_REFS",
-    "Route",
-    "Frame",
+    "RELATIONSHIPS",
+    "ROUTES",
+    "ROUTE_BY_LABEL",
+    "SOURCE_CASES",
+    "STABLE_DECISIONS",
     "Decision",
     "EvidenceCase",
+    "Frame",
+    "Route",
 ]

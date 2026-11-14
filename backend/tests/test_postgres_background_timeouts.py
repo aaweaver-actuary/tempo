@@ -1,15 +1,15 @@
 """Graph and retention timeouts must preserve work and use bounded durable retries."""
 
-from contextlib import nullcontext
-from datetime import datetime, timedelta, timezone
 import sqlite3
+from contextlib import nullcontext
+from datetime import UTC, datetime, timedelta
 
 import pytest
+from background_metric_fixture import BACKGROUND_METRIC_SCHEMA
 from psycopg.errors import LockNotAvailable, TransactionTimeout
 
 from app import tasks
 from app.services import durable_tasks
-from background_metric_fixture import BACKGROUND_METRIC_SCHEMA
 
 
 @pytest.fixture
@@ -28,9 +28,11 @@ def timeout_database(normal_study_mode, monkeypatch):
             generation INTEGER,event TEXT,phase TEXT,detail TEXT,created_at TEXT);
     """)
     monkeypatch.setattr(durable_tasks.postgres, "configured", lambda: True)
-    monkeypatch.setattr(durable_tasks, "connection", lambda **_options: nullcontext(database))
     monkeypatch.setattr(
-        durable_tasks, "_now", lambda: datetime(2026, 10, 4, tzinfo=timezone.utc)
+        durable_tasks, "connection", lambda **_options: nullcontext(database)
+    )
+    monkeypatch.setattr(
+        durable_tasks, "_now", lambda: datetime(2026, 10, 4, tzinfo=UTC)
     )
     monkeypatch.setattr(durable_tasks.random, "random", lambda: 0.0)
     monkeypatch.setattr(tasks, "current_delivery", lambda _task: True)

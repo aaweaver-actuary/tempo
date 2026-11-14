@@ -10,7 +10,6 @@ import os
 
 from .services.background_wakes import CoalescingCelery
 
-
 broker_url = os.environ.get("TEMPO_REDIS_URL", "redis://localhost:6379/0")
 celery_app = CoalescingCelery(
     "tempo", broker=broker_url, backend=broker_url, include=["app.tasks"]
@@ -70,7 +69,6 @@ celery_app.conf.update(
             "task": "app.tasks.ensure_daily_queue",
             "schedule": 60.0,
         },
-
     },
     broker_connection_retry_on_startup=True,
     result_expires=86_400,

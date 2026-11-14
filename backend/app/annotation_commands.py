@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import chess
 from fastapi import HTTPException
-
-from .command_gateway import register_command
-from app.contracts.transport.authored_repertoire import PositionAnnotationRequest
 from tempo_storage.commands import annotations as storage
 from tempo_storage.postgres import PostgresConnection
+
+from app.contracts.transport.authored_repertoire import PositionAnnotationRequest
+
+from .command_gateway import register_command
 
 
 def save_position_annotation(
@@ -28,7 +29,7 @@ def save_position_annotation(
     comment = request.comment.strip()
     arrows = [arrow.model_dump(by_alias=True) for arrow in request.arrows]
     squares = [square.model_dump() for square in request.squares]
-    updated_at = datetime.now(timezone.utc).isoformat()
+    updated_at = datetime.now(UTC).isoformat()
     if not comment and not arrows and not squares:
         storage.delete_position_annotation(database, repertoire_id, fen_key)
     else:

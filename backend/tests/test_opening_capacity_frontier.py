@@ -1,9 +1,9 @@
 """Deterministic default-off, one-decision capacity policy regression matrix."""
 
-from dataclasses import FrozenInstanceError, replace
 import itertools
 import subprocess
 import sys
+from dataclasses import FrozenInstanceError, replace
 
 import pytest
 
@@ -11,8 +11,8 @@ from app.study.openings.capacity_frontier import (
     CapacityCandidate,
     CapacityRoute,
     CapacitySnapshot,
-    propose_capacity_expansion,
     plan_prioritized_opening_admissions,
+    propose_capacity_expansion,
 )
 
 DAY = "2026-10-12"

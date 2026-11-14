@@ -1,16 +1,15 @@
 """A disposable admission proof must distinguish owned leases from API probes."""
 
-from tempo_storage.redis_control import admission as admission_storage
-
 import importlib.util
-from contextlib import contextmanager, nullcontext
-from pathlib import Path
-from types import SimpleNamespace
 import json
 import math
 import time
+from contextlib import contextmanager, nullcontext
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from tempo_storage.redis_control import admission as admission_storage
 
 from app.services import redis_admission_gate
 
@@ -64,8 +63,7 @@ def test_admission_proof_cleanup_ignores_independent_foreground_probe(admission_
             assert len(server.leases) == 2
         assert len(server.leases) == 1
     assert (
-        server.zscore(admission_storage._FOREGROUND_KEY, "independent-api-probe")
-        == 1
+        server.zscore(admission_storage._FOREGROUND_KEY, "independent-api-probe") == 1
     )
 
 
@@ -94,8 +92,7 @@ def test_admission_proof_cleanup_rejects_owned_lease_leaks(admission_proof, work
                     5_000,
                 )
     assert (
-        server.zscore(admission_storage._FOREGROUND_KEY, "independent-api-probe")
-        == 1
+        server.zscore(admission_storage._FOREGROUND_KEY, "independent-api-probe") == 1
     )
 
 
@@ -114,8 +111,9 @@ def test_checkpoint_http_proof_isolates_receipt_setup_from_parent_foreground(
     monkeypatch,
     fail_proof,
 ):
-    from app import command_gateway
     from tempo_storage import postgres
+
+    from app import command_gateway
 
     proof, _unused_server = admission_proof
     parent_keys = (
@@ -327,23 +325,22 @@ def test_real_game_queue_proof_isolates_parent_admission_but_retains_own_foregro
         if fail_proof
         else nullcontext()
     )
-    with expected_error:
-        with getattr(proof, scope_name)():
-            owned_keys = (
-                admission_storage._FOREGROUND_KEY,
-                admission_storage._BACKGROUND_KEY,
-            )
-            assert all(key not in parent_keys for key in owned_keys)
-            with redis_admission_gate.background_lease():
-                assert server.leases[(parent_keys[0], "parent-request")] == 1
-            with redis_admission_gate.foreground_lease():
-                with pytest.raises(redis_admission_gate.BackgroundAdmissionDeferred):
-                    with redis_admission_gate.background_lease():
-                        pytest.fail(
-                            "Owned foreground must still deny background preparation"
-                        )
-            if fail_proof:
-                raise RuntimeError("Controlled proof failure")
+    with expected_error, getattr(proof, scope_name)():
+        owned_keys = (
+            admission_storage._FOREGROUND_KEY,
+            admission_storage._BACKGROUND_KEY,
+        )
+        assert all(key not in parent_keys for key in owned_keys)
+        with redis_admission_gate.background_lease():
+            assert server.leases[(parent_keys[0], "parent-request")] == 1
+        with redis_admission_gate.foreground_lease():
+            with pytest.raises(redis_admission_gate.BackgroundAdmissionDeferred):
+                with redis_admission_gate.background_lease():
+                    pytest.fail(
+                        "Owned foreground must still deny background preparation"
+                    )
+        if fail_proof:
+            raise RuntimeError("Controlled proof failure")
     assert (
         admission_storage._FOREGROUND_KEY,
         admission_storage._BACKGROUND_KEY,
@@ -368,7 +365,7 @@ def test_checkpoint_parent_barrier_preserves_valid_redis_ttl_during_foreground_r
     proof_name,
     fail_proof,
 ):
-    import database.tests.check_postgres_graph_retention as check_postgres_graph_retention
+    from database.tests import check_postgres_graph_retention
 
     proof, server = admission_proof
     parent_keys = (

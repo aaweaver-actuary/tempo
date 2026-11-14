@@ -1,7 +1,7 @@
 """Redis wake/runtime boundaries retain serialization and clock call order."""
 
 import ast
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -81,7 +81,7 @@ def test_runtime_publication_keeps_client_slot_sample_serialization_order_and_tt
 
 def test_runtime_snapshot_reads_same_sixteen_slots_before_sampling_clock(monkeypatch):
     events = []
-    actual_now = datetime.now(timezone.utc)
+    actual_now = datetime.now(UTC)
 
     class Server:
         def mget(self, keys):
@@ -95,7 +95,7 @@ def test_runtime_snapshot_reads_same_sixteen_slots_before_sampling_clock(monkeyp
     class Clock:
         @staticmethod
         def now(actual_timezone):
-            assert actual_timezone == timezone.utc
+            assert actual_timezone == UTC
             events.append("now")
             return actual_now
 
@@ -114,18 +114,25 @@ def test_runtime_snapshot_reads_same_sixteen_slots_before_sampling_clock(monkeyp
 
 
 def test_wake_storage_owns_exact_task_keys_and_isolated_prefix(monkeypatch):
-    from app.services import background_wakes
     from tempo_storage.redis_control.wake_runtime import wakes
 
-    task = 'app.tasks.poll_background_tasks'
+    from app.services import background_wakes
+
+    task = "app.tasks.poll_background_tasks"
     assert background_wakes.ownership_keys(task) == (
-        'tempo:wake:app.tasks.poll_background_tasks',
-        'tempo:wake:app.tasks.poll_background_tasks:publication',
+        "tempo:wake:app.tasks.poll_background_tasks",
+        "tempo:wake:app.tasks.poll_background_tasks:publication",
     )
-    monkeypatch.setattr(wakes, '_KEY_PREFIX', 'owned:proof:')
+    monkeypatch.setattr(wakes, "_KEY_PREFIX", "owned:proof:")
     assert background_wakes.ownership_keys(task) == (
-        'owned:proof:app.tasks.poll_background_tasks',
-        'owned:proof:app.tasks.poll_background_tasks:publication',
+        "owned:proof:app.tasks.poll_background_tasks",
+        "owned:proof:app.tasks.poll_background_tasks:publication",
     )
-    assert background_wakes.ownership_keys('other') == ('owned:proof:other', 'owned:proof:other:publication')
-    assert not any(hasattr(background_wakes, name) for name in ('_KEY_PREFIX', '_RESERVE', '_ABORT'))
+    assert background_wakes.ownership_keys("other") == (
+        "owned:proof:other",
+        "owned:proof:other:publication",
+    )
+    assert not any(
+        hasattr(background_wakes, name)
+        for name in ("_KEY_PREFIX", "_RESERVE", "_ABORT")
+    )

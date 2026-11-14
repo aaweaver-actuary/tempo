@@ -2,21 +2,18 @@
 
 from __future__ import annotations
 
-import psycopg
-
-from datetime import datetime, timezone
 import logging
-from fastapi import HTTPException
+from datetime import UTC, datetime
 
+import psycopg
+from fastapi import HTTPException
 from tempo_storage.connections import connection
-from tempo_storage import postgres
 from tempo_storage.controls.activity import storage
 from tempo_storage.controls.activity.storage import SOURCES
-from tempo_storage.controls.claim_sql import claimable, control_order
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def report_progress(

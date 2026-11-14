@@ -1,8 +1,8 @@
+from backend.app.types import Fen
 import io
 import json
 import logging
 import os
-from redis import RedisError
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -20,23 +20,48 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, PlainTextResponse
+from redis import RedisError
 from starlette.routing import Match
 
 from app.product_composition.database_infrastructure import bind_database_infrastructure
 
 bind_database_infrastructure()
 
-from tempo_storage.connections import connection, initialize, query_only_request, read_connection, background_read_connection
-from tempo_storage.http_composition import system as system_storage, settings as settings_storage, queue_projection as queue_projection_storage, repertoires as repertoire_http_storage, line_authoring as line_authoring_storage, practice as practice_storage
-from tempo_storage.durable_tasks import storage as durable_task_storage
+from tempo_chess_core import card_id
 from tempo_storage import repertoire_lines as repertoire_projection_storage
-from .command_gateway import CommandConflict, load_blocked_operation, read_operation
-from .celery_app import celery_app
-from app.contracts.transport.tactics import TacticActivationRequest
+from tempo_storage.connections import (
+    background_read_connection,
+    connection,
+    initialize,
+    query_only_request,
+    read_connection,
+)
+from tempo_storage.durable_tasks import storage as durable_task_storage
+from tempo_storage.http_composition import (
+    line_authoring as line_authoring_storage,
+)
+from tempo_storage.http_composition import (
+    practice as practice_storage,
+)
+from tempo_storage.http_composition import (
+    queue_projection as queue_projection_storage,
+)
+from tempo_storage.http_composition import (
+    repertoires as repertoire_http_storage,
+)
+from tempo_storage.http_composition import (
+    settings as settings_storage,
+)
+from tempo_storage.http_composition import (
+    system as system_storage,
+)
+
+from app.chess.pgn import parse_pgn
 from app.contracts.review_conflicts import ReviewConflict
-from .services.tactical_catalog import catalog_status, puzzle_membership, progress_pack_id
+from app.contracts.transport.authored_import import ImportResult
+from app.contracts.transport.authored_integrity import IntegrityResolutionRequest
 from app.contracts.transport.authored_lines import (
     AnalysisPasteCommitRequest,
     AnalysisPastePreviewRequest,
@@ -44,48 +69,52 @@ from app.contracts.transport.authored_lines import (
     RemoveBranchRequest,
     reject_retired_coverage,
 )
-from app.contracts.transport.content import CardRevisionRequest
-from app.contracts.transport.authored_integrity import IntegrityResolutionRequest
-from app.contracts.transport.authored_import import ImportResult
 from app.contracts.transport.authored_repertoire import (
     PositionAnnotationRequest,
     RepertoireRenameRequest,
     RepertoireSettingsRequest,
 )
+from app.contracts.transport.content import CardRevisionRequest
+from app.contracts.transport.settings import Settings
 from app.contracts.transport.study import (
-    ReviewRequest,
     QueueAttemptFailureRequest,
+    ReviewRequest,
     TeachingStateRequest,
 )
-from app.contracts.transport.settings import Settings
 from app.contracts.transport.tactics import (
+    TacticActivationRequest,
     TacticAttemptRequest,
     TacticCaptureRequest,
     TacticCaptureResponse,
 )
-from .services.study_calendar import capture_study_calendar
+
+from .celery_app import celery_app
+from .command_gateway import load_blocked_operation, read_operation
 from .services import queue_application, queue_ordering
-from .services.analysis_paste import PasteInputError, build_paste_preview
 from .services.activity_gate import activity_gate
+from .services.analysis_paste import PasteInputError, build_paste_preview
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
-from app.chess.cards import card_id
-from app.chess.pgn import parse_pgn
+from .services.study_calendar import capture_study_calendar
+from .services.tactical_catalog import (
+    catalog_status,
+    progress_pack_id,
+    puzzle_membership,
+)
+
 MISS_REASON = "Priority review · missed in a recent game"
 
+from .services.canonical_prefix import prefix_projection
 from .services.durable_tasks import annotate_queue_projection_workers, list_tasks
+from .services.puzzles import validate_puzzle_record
 from .services.repertoire_conflicts import find_repertoire_conflicts
 from .services.repertoire_integrity import integrity_summary, list_integrity_issues
-from .services.puzzles import validate_puzzle_record
-from .services.canonical_prefix import prefix_projection
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Validate PostgreSQL, request the current queue, and publish serving policy."""
     if os.getenv("TEMPO_DATABASE_WRITE_URL"):
-        raise RuntimeError(
-            "The PostgreSQL API must use only TEMPO_DATABASE_READ_URL"
-        )
+        raise RuntimeError("The PostgreSQL API must use only TEMPO_DATABASE_READ_URL")
     initialize()
     from .command_dispatch import dispatch_command
 
@@ -108,7 +137,6 @@ async def lifespan(_: FastAPI):
 
     with policy_publisher():
         yield
-    return
 
 
 app = FastAPI(title="Tempo local API", version="0.2.0", lifespan=lifespan)
@@ -116,17 +144,24 @@ from .services.background_runtime import StudyResponseTiming
 
 app.add_middleware(StudyResponseTiming)
 from .games.review import router as game_review_router
+
 app.include_router(game_review_router)
 from .prefix_split_routes import router as prefix_split_router
+
 app.include_router(prefix_split_router)
 from .study_exercise_routes import router as study_exercise_router
+
 app.include_router(study_exercise_router)
 from .contracts.opening_evidence import OpeningEvidenceCheckpoint
+
 
 @app.get("/api/opening-evidence/attempts/{attempt_id}")
 def opening_attempt_status(attempt_id: str):
     from tempo_storage.opening_evidence.storage import attempt_status
-    reader = background_read_connection if activity_gate.in_background else read_connection
+
+    reader = (
+        background_read_connection if activity_gate.in_background else read_connection
+    )
     with reader() as database:
         row = attempt_status(database, attempt_id)
     if row is None:
@@ -135,12 +170,18 @@ def opening_attempt_status(attempt_id: str):
 
 
 @app.post("/api/opening-evidence/checkpoints")
-def opening_checkpoint(request: "OpeningEvidenceCheckpoint", idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+def opening_checkpoint(
+    request: "OpeningEvidenceCheckpoint",
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
     from .command_dispatch import dispatch_command
-    return dispatch_command("opening_evidence.checkpoint", {"checkpoint": request.model_dump(mode="json")},
-                            idempotency_key=idempotency_key, background=True)
 
-
+    return dispatch_command(
+        "opening_evidence.checkpoint",
+        {"checkpoint": request.model_dump(mode="json")},
+        idempotency_key=idempotency_key,
+        background=True,
+    )
 
 
 @app.exception_handler(ReviewConflict)
@@ -203,7 +244,7 @@ def retry_blocked_operation(operation_id: str):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex='https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?',
+    allow_origin_regex="https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -218,8 +259,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
         "/api/cards/validate",
         "/api/product/game-review/compare",
     }
-    if (
-        request.method not in {'GET', 'HEAD', 'OPTIONS'} and any((route.matches(request.scope)[0] == Match.FULL for route in app.routes))
+    if request.method not in {"GET", "HEAD", "OPTIONS"} and any(
+        route.matches(request.scope)[0] == Match.FULL for route in app.routes
     ):
         path_parts = request.url.path.strip("/").split("/")
         queue_entry_command = (
@@ -752,16 +793,33 @@ def materialize_daily_queue(
 
 def _issue_returned_queue_head(queue_date: str, card: dict) -> dict | JSONResponse:
     from .product_composition.study import issue_returned_queue_head
-    return issue_returned_queue_head(queue_date, card, read_connection=read_connection,
-                                     queue_projection_storage=queue_projection_storage)
+
+    return issue_returned_queue_head(
+        queue_date,
+        card,
+        read_connection=read_connection,
+        queue_projection_storage=queue_projection_storage,
+    )
 
 
-def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool = False, prepared: bool = False):
+def _queue_payload(
+    limit: int | None = None,
+    *,
+    include_opening_evidence: bool = False,
+    prepared: bool = False,
+):
     from .product_composition.study import queue_next_exercise
     from .queue_commands import current_study_day
-    return queue_next_exercise(limit, include_opening_evidence, read_connection=read_connection,
-                               current_study_day=current_study_day, queue_projection_storage=queue_projection_storage,
-                               miss_reason=MISS_REASON, prepared=prepared)
+
+    return queue_next_exercise(
+        limit,
+        include_opening_evidence,
+        read_connection=read_connection,
+        current_study_day=current_study_day,
+        queue_projection_storage=queue_projection_storage,
+        miss_reason=MISS_REASON,
+        prepared=prepared,
+    )
 
 
 @app.get("/api/queue/today")
@@ -769,11 +827,11 @@ def queue_today(include_opening_evidence: bool = False):
     return _queue_payload(include_opening_evidence=include_opening_evidence)
 
 
-
-
 @app.get("/api/queue/prepared")
 def prepared_queue(include_opening_evidence: bool = False):
-    return _queue_payload(include_opening_evidence=include_opening_evidence, prepared=True)
+    return _queue_payload(
+        include_opening_evidence=include_opening_evidence, prepared=True
+    )
 
 
 @app.get("/api/queue/window")
@@ -810,7 +868,6 @@ async def import_pgn(
     initial_depth: int | None = Form(None),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
-    from .services.study_mode import study_only_enabled
 
     if not file.filename or not file.filename.lower().endswith(".pgn"):
         raise HTTPException(400, "Choose a .pgn file")
@@ -834,9 +891,7 @@ async def import_pgn(
     from .pgn_import_commands import prepare_import_payload
 
     operation_id = idempotency_key or str(uuid.uuid4())
-    payload = prepare_import_payload(
-        file.filename, trained_color, depth, games, lines
-    )
+    payload = prepare_import_payload(file.filename, trained_color, depth, games, lines)
     payload["operation_id"] = operation_id
     return dispatch_command(
         "imports.pgn.explicit", payload, idempotency_key=operation_id
@@ -873,7 +928,7 @@ def list_repertoires():
 @app.get("/api/repertoires/{identifier}/move-membership")
 def repertoire_move_membership(
     identifier: str,
-    fen: str = Query(max_length=128),
+    fen: Fen = Query(max_length=128),
     move_uci: str = Query(max_length=5),
     cursor: str = Query(default="", max_length=256),
     source_token: str | None = Query(default=None, max_length=64),
@@ -939,7 +994,7 @@ def resolve_repertoire_integrity(
     )
 
 
-def fen_key(fen: str) -> str:
+def fen_key(fen: Fen) -> str:
     try:
         return " ".join(chess.Board(fen).fen().split()[:4])
     except ValueError as error:
@@ -947,7 +1002,7 @@ def fen_key(fen: str) -> str:
 
 
 @app.get("/api/repertoires/{identifier}/annotations")
-def list_annotations(identifier: str, fen: str | None = None):
+def list_annotations(identifier: str, fen: Fen | None = None):
     with connection() as db:
         if not repertoire_projection_storage.repertoire_presence(db, identifier):
             raise HTTPException(404, "Repertoire not found")
@@ -1141,8 +1196,8 @@ def review(
     review_payload = request.durable_payload()
     command_payload = {"card_id": identifier, "review": review_payload}
     if request.opening_evidence_completion:
-        from .study.position_checkpoint import prepare_checkpoint
         from .services.background_runtime import training_timing_stage
+        from .study.position_checkpoint import prepare_checkpoint
 
         with training_timing_stage("checkpoint_preparation"):
             command_payload["prepared_manifest"] = prepare_checkpoint(
@@ -1178,7 +1233,6 @@ def reconcile_review(
     return dispatch_command(
         "cards.review.reconcile", command_payload, idempotency_key=idempotency_key
     )
-
 
 
 @app.post("/api/repertoire/paste/preview")
@@ -1273,7 +1327,7 @@ def remove_branch(
     )
 
 
-def validated_line(starting_fen: str, values: list[str]):
+def validated_line(starting_fen: Fen, values: list[str]):
     try:
         board = chess.Board(starting_fen)
     except ValueError as error:
@@ -1534,9 +1588,7 @@ def tactic_attempt(
         request = request.model_copy(
             update={
                 "attempt_id": str(
-                    uuid.uuid5(
-                        uuid.NAMESPACE_URL, f"tempo:tactic:{idempotency_key}"
-                    )
+                    uuid.uuid5(uuid.NAMESPACE_URL, f"tempo:tactic:{idempotency_key}")
                 ),
             }
         )

@@ -19,6 +19,7 @@ from tempo_evidence_math.position_learning import (
 )
 
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
+
 from .position_index import PositionIndex, build_index
 
 

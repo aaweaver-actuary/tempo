@@ -6,21 +6,18 @@ Missing, refreshing, expired or unavailable control evidence denies optional wor
 This adapter belongs to the legacy assembly, not the broker-independent Learning API.
 """
 
-from contextlib import contextmanager
 import json
 import logging
 import threading
 import time
+from contextlib import contextmanager
 
 import redis
-
-from tempo_storage.redis_control import policy as storage
 from tempo_storage.redis_control import admission as admission_storage
+from tempo_storage.redis_control import policy as storage
 from tempo_storage.redis_control.policy import (
-    POLICY_KEY,
     GENERATION_KEY,
-    _PUBLISH,
-    _READ,
+    POLICY_KEY,
     control_client,
 )
 
@@ -42,6 +39,7 @@ def refresh_policy(*, invalidate: bool = True) -> bool:
     # generation; deleting that private generation must fence the late result.
     policy_key, generation_key = POLICY_KEY, GENERATION_KEY
     from tempo_storage.connections import background_read_connection
+
     from .activity_gate import activity_gate
 
     try:

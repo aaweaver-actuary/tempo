@@ -1,7 +1,7 @@
 """Opening admissions must read bounded candidate pages before planning."""
 
-from contextlib import contextmanager
 import sqlite3
+from contextlib import contextmanager
 
 from app.services import postgres_queue_refresh
 

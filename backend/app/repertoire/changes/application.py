@@ -1,9 +1,14 @@
 """Current repertoire source conflict validation for editing and import."""
+
 from __future__ import annotations
+
 import json
+
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.repertoire import build_index
+
 from .ports import AffectedOccurrence, ChangeError, ConflictReport, ResponseConflict
+
 
 def conflict_report(snapshot: RepertoireSnapshot) -> ConflictReport:
     """Use the public exact-position index, retaining invalid-source diagnostics."""

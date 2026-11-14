@@ -94,12 +94,9 @@ def test_essential_scope_rejects_optional_kinds_and_releases_on_exception():
             tasks.activity_gate.check_background_admission()
 
 
-
-
 def test_foreground_receipt_recovery_uses_existing_essential_only_filter_and_original_identity(
     monkeypatch,
 ):
-    from types import SimpleNamespace
 
     claims, deliveries = [], []
     monkeypatch.setattr(tasks, "_maintenance_cooldowns", {})
@@ -141,8 +138,9 @@ def test_foreground_receipt_recovery_uses_existing_essential_only_filter_and_ori
 def test_essential_rollover_uses_authoritative_study_day_instead_of_worker_host_day(
     monkeypatch,
 ):
-    from app import queue_commands
     from contextlib import contextmanager
+
+    from app import queue_commands
 
     observed = []
 

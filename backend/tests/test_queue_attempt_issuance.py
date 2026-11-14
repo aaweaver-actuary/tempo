@@ -1,15 +1,15 @@
 """PR142: admission identity must not authorize an unissued later attempt."""
 
-
 from tempo_storage import connections as database
-from app import main
 
+from app import main
 
 START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 
 def test_queue_issuance_is_only_queue_get_write_exception():
     import asyncio
+
     from starlette.requests import Request
     from starlette.responses import Response
 

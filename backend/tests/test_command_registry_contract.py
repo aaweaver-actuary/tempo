@@ -1,12 +1,13 @@
 """Registration ownership and type correlation without command execution infrastructure."""
 
-from dataclasses import FrozenInstanceError
-from pathlib import Path
 import os
 import subprocess
 import sys
+from dataclasses import FrozenInstanceError
+from pathlib import Path
 
 import pytest
+
 from app.contracts.command_registry import CommandDescriptor, CommandRegistry
 
 
@@ -105,8 +106,9 @@ def test_default_legacy_registration_and_executor_maps_are_registry_owned(monkey
 
 
 def test_descriptor_registration_shares_legacy_execution_maps():
-    from app import command_gateway as gateway
     from tempo_storage.postgres import PostgresConnection
+
+    from app import command_gateway as gateway
 
     observed = []
 

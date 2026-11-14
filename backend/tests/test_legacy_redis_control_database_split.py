@@ -1,11 +1,11 @@
 """Redis control persistence preserves patched identities and async timing."""
 
-from tempo_storage.redis_control import admission as admission_storage
-
 import ast
 import asyncio
-from pathlib import Path
 import threading
+from pathlib import Path
+
+from tempo_storage.redis_control import admission as admission_storage
 
 from app.services import redis_admission_gate
 
@@ -33,12 +33,18 @@ def test_two_redis_control_compositions_delegate_all_storage_mechanics_to_databa
         ]
         assert not direct_operations, f"{name} retains Redis or SQL mechanics"
         private_admission = {
-            "_FOREGROUND_KEY", "_BACKGROUND_KEY", "_FOREGROUND_LEASE_MS",
-            "_BACKGROUND_LEASE_MS", "_REGISTER_FOREGROUND", "_CLAIM_BACKGROUND",
+            "_FOREGROUND_KEY",
+            "_BACKGROUND_KEY",
+            "_FOREGROUND_LEASE_MS",
+            "_BACKGROUND_LEASE_MS",
+            "_REGISTER_FOREGROUND",
+            "_CLAIM_BACKGROUND",
         }
         assert not any(
-            isinstance(node, ast.Attribute) and node.attr in private_admission
-            or isinstance(node, ast.alias) and node.name in private_admission
+            isinstance(node, ast.Attribute)
+            and node.attr in private_admission
+            or isinstance(node, ast.alias)
+            and node.name in private_admission
             for node in ast.walk(tree)
         ), f"{name} depends on admission storage internals"
         assert not any(
@@ -144,25 +150,55 @@ def test_admission_storage_owns_fixed_leases_and_atomic_policy_telemetry(monkeyp
 
     events = []
     server = object()
-    monkeypatch.setattr(admission, '_FOREGROUND_KEY', 'owned:foreground')
-    monkeypatch.setattr(admission, '_BACKGROUND_KEY', 'owned:background')
-    monkeypatch.setattr(admission, 'register_foreground', lambda *args: events.append(('foreground', args)))
-    monkeypatch.setattr(admission, 'claim_background', lambda *args: events.append(('background', args)) or False)
-    monkeypatch.setattr(admission, 'release_foreground', lambda *args: events.append(('release-foreground', args)))
-    monkeypatch.setattr(admission, 'release_background', lambda *args: events.append(('release-background', args)))
-    monkeypatch.setattr(policy, 'policy_snapshot', lambda *args: events.append(('telemetry', args)) or (0, '', ''))
-    admission.acquire_foreground(server, 100, 'attempt')
-    admission.record_browser_presence(server, 101, 'phone', 2.5)
-    assert admission.acquire_background(server, 102, 'background') is False
-    admission.remove_foreground(server, 'attempt')
-    admission.remove_background(server, 'background')
-    assert admission.policy_telemetry(server, 'policy', 'generation', 103) == (0, '', '')
+    monkeypatch.setattr(admission, "_FOREGROUND_KEY", "owned:foreground")
+    monkeypatch.setattr(admission, "_BACKGROUND_KEY", "owned:background")
+    monkeypatch.setattr(
+        admission,
+        "register_foreground",
+        lambda *args: events.append(("foreground", args)),
+    )
+    monkeypatch.setattr(
+        admission,
+        "claim_background",
+        lambda *args: events.append(("background", args)) or False,
+    )
+    monkeypatch.setattr(
+        admission,
+        "release_foreground",
+        lambda *args: events.append(("release-foreground", args)),
+    )
+    monkeypatch.setattr(
+        admission,
+        "release_background",
+        lambda *args: events.append(("release-background", args)),
+    )
+    monkeypatch.setattr(
+        policy,
+        "policy_snapshot",
+        lambda *args: events.append(("telemetry", args)) or (0, "", ""),
+    )
+    admission.acquire_foreground(server, 100, "attempt")
+    admission.record_browser_presence(server, 101, "phone", 2.5)
+    assert admission.acquire_background(server, 102, "background") is False
+    admission.remove_foreground(server, "attempt")
+    admission.remove_background(server, "background")
+    assert admission.policy_telemetry(server, "policy", "generation", 103) == (
+        0,
+        "",
+        "",
+    )
     assert admission.foreground_renewal_seconds() == 10
     assert events == [
-        ('foreground', (server, 'owned:foreground', 100, 'attempt', 30000)),
-        ('foreground', (server, 'owned:foreground', 101, 'browser-activity:phone', 2500)),
-        ('background', (server, 'owned:foreground', 'owned:background', 102, 'background', 5000)),
-        ('release-foreground', (server, 'owned:foreground', 'attempt')),
-        ('release-background', (server, 'owned:background', 'background')),
-        ('telemetry', (server, 'owned:foreground', 'policy', 'generation', 103)),
+        ("foreground", (server, "owned:foreground", 100, "attempt", 30000)),
+        (
+            "foreground",
+            (server, "owned:foreground", 101, "browser-activity:phone", 2500),
+        ),
+        (
+            "background",
+            (server, "owned:foreground", "owned:background", 102, "background", 5000),
+        ),
+        ("release-foreground", (server, "owned:foreground", "attempt")),
+        ("release-background", (server, "owned:background", "background")),
+        ("telemetry", (server, "owned:foreground", "policy", "generation", 103)),
     ]

@@ -1,13 +1,13 @@
 """Foreground persistence boundaries preserve split guards, replay and rollback."""
 
 import ast
-from datetime import date
-from types import SimpleNamespace
-from pathlib import Path
 import sqlite3
+from datetime import date
+from pathlib import Path
+from types import SimpleNamespace
 
-from fastapi import HTTPException
 import pytest
+from fastapi import HTTPException
 
 from app import prefix_split_commands
 
@@ -29,7 +29,11 @@ class PrefixSqlite:
 
 @pytest.fixture
 def prefix_database(monkeypatch):
-    monkeypatch.setattr(prefix_split_commands, "capture_study_calendar", lambda db: SimpleNamespace(day=date.today()))
+    monkeypatch.setattr(
+        prefix_split_commands,
+        "capture_study_calendar",
+        lambda db: SimpleNamespace(day=date.today()),
+    )
     with sqlite3.connect(":memory:") as database:
         database.row_factory = sqlite3.Row
         database.executescript("""

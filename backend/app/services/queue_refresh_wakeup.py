@@ -1,10 +1,10 @@
 """Track queue requests inside a command, then wake after its connection closes."""
 
+import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-import logging
+from datetime import UTC, datetime, timedelta
 
 
 @dataclass
@@ -82,4 +82,4 @@ def wake_queue_refresh(*, eligible_at: datetime | None = None) -> None:
 
 def wake_queue_refresh_after_foreground_denial() -> None:
     """Retain one future capacity hint without occupying the denied worker."""
-    wake_queue_refresh(eligible_at=datetime.now(timezone.utc) + timedelta(seconds=1))
+    wake_queue_refresh(eligible_at=datetime.now(UTC) + timedelta(seconds=1))

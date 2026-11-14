@@ -1,6 +1,6 @@
 """Product v0.2 value seams; no runtime composition or effect implementation."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
@@ -17,7 +17,7 @@ def utc_timestamp(value: str) -> str:
     if (
         "T" not in value
         or parsed.tzinfo is None
-        or parsed.utcoffset() != timezone.utc.utcoffset(parsed)
+        or parsed.utcoffset() != UTC.utcoffset(parsed)
     ):
         raise ValueError("timestamp must explicitly identify UTC")
     return value

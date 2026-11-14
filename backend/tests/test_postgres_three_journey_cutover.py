@@ -4,7 +4,6 @@ import copy
 import json
 
 import pytest
-
 from database.tooling import verify_postgres_cli_state as guard
 
 
@@ -169,13 +168,14 @@ def test_cut62_native_schema61_to62(tmp_path):
     """Explicitly allocated empty local DB only; never an ambient/serving DB."""
     import os
     from urllib.parse import urlparse
+
     import psycopg
-    from psycopg.types.json import Jsonb
     from database.tooling.apply_postgres_migrations import (
         MIGRATIONS,
         apply_migrations,
         migration_source,
     )
+    from psycopg.types.json import Jsonb
 
     dsn = os.environ.get("TEMPO_W07_NATIVE_REGRESSION_DSN")
     if not dsn:
@@ -445,6 +445,7 @@ def test_schema61_defense_mixed_read_only_census(tmp_path):
     """Synthetic transaction; classify identities and roll back without deletion."""
     import os
     from urllib.parse import urlparse
+
     import psycopg
     from psycopg.rows import dict_row
 
@@ -717,6 +718,7 @@ def test_pre62_native_original_59_survives_interrupted_60_and_61(tmp_path):
     """The original witness never changes across either disposable migration."""
     import os
     from urllib.parse import urlparse
+
     import psycopg
     from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source
 
@@ -999,6 +1001,7 @@ def test_schema61_defense_recognition_review_history_rehearsal(monkeypatch):
     import copy
     import os
     from urllib.parse import urlparse
+
     import psycopg
     from psycopg import sql
 
@@ -1201,7 +1204,6 @@ def test_schema61_defense_recognition_review_history_rehearsal(monkeypatch):
             # independent reviews or receipts hold the whole card.
             # Reuse the reviewed C11 independent reference inventory. The
             # historical owner replaces only its own attempts/reviews/receipts.
-            from pathlib import Path
 
             migration = (
                 guard.CUT62_DRAFT_DEFENSE_SELECTOR + "\n-- END CUT62 DEFENSE SELECTOR"
@@ -1753,14 +1755,11 @@ def test_schema61_defense_recognition_review_history_rehearsal(monkeypatch):
             assert original["projected"] == history_projected
             # Re-evaluate the earlier selector-based projection as a bounded
             # fixture oracle; production capture uses validated exact keys.
-            prior_cohort = """WITH ordinary AS ({ordinary}), historical AS ({historical}),
+            prior_cohort = f"""WITH ordinary AS ({guard.CUT62_DRAFT_DEFENSE_SELECTOR}), historical AS ({guard._cut62_draft_history_selector()}),
                 eligible AS (SELECT card_id,candidate_id,repertoire_id,'no_activity'::text cohort_group FROM ordinary
                              UNION ALL SELECT card_id,candidate_id,repertoire_id,cohort_group FROM historical),
                 approved AS (SELECT value->>0 card_id,value->>1 candidate_id,value->>2 cohort_group FROM jsonb_array_elements(%s::jsonb) value)
-                SELECT e.card_id,e.candidate_id,e.repertoire_id FROM eligible e JOIN approved a USING(card_id,candidate_id,cohort_group)""".format(
-                ordinary=guard.CUT62_DRAFT_DEFENSE_SELECTOR,
-                historical=guard._cut62_draft_history_selector(),
-            )
+                SELECT e.card_id,e.candidate_id,e.repertoire_id FROM eligible e JOIN approved a USING(card_id,candidate_id,cohort_group)"""
             # Resolve the old selector once, then hash its resulting exact
             # rows. Nesting its full plan inside every oracle cursor itself
             # exceeds the production memory limit, even for this tiny fixture.
@@ -1927,6 +1926,7 @@ def test_schema61_draft_history_catalog_rejects_changed_dependencies():
     import hashlib
     import os
     from urllib.parse import urlparse
+
     import psycopg
 
     dsn = os.environ.get("TEMPO_W07_DEFENSE_CENSUS_DSN")
@@ -2029,6 +2029,7 @@ def test_draft_history_cut_stops_before_dml_without_reviewed_catalog(monkeypatch
     monkeypatch.setattr(guard, "_cut62_history_session", lambda db: None)
     monkeypatch.setattr(guard, "CUT62_HISTORY_TRUSTED_PG180006_CATALOG", None)
     from contextlib import nullcontext
+
     import psycopg
 
     class Database:

@@ -5,12 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import HTTPException
+from tempo_storage.postgres import PostgresConnection
 
-from .services.study_calendar import capture_study_calendar
+from app.contracts.transport.authored_lines import (
+    AnalysisPasteCommitRequest,
+    reject_retired_coverage,
+)
 
 from .command_gateway import register_command
-from app.contracts.transport.authored_lines import AnalysisPasteCommitRequest, reject_retired_coverage
-from tempo_storage.postgres import PostgresConnection
 from .services.analysis_paste import (
     PastedLine,
     PasteInputError,
@@ -19,6 +21,7 @@ from .services.analysis_paste import (
 )
 from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
+from .services.study_calendar import capture_study_calendar
 
 
 def commit_analysis_paste(

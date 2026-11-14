@@ -6,21 +6,34 @@ module neither acquires infrastructure nor performs queue/progression follow-ups
 
 from __future__ import annotations
 
-from datetime import date, datetime
-from .opening_maturity import augment_opening_maturity
 import json
+from datetime import date, datetime
 
 from app.services.scheduler import schedule_review, unlock_ready
+
+from .opening_maturity import augment_opening_maturity
 
 # Explicit compatibility re-exports preserve the original public imports.
 from .scheduling_review_contracts import (
     CardState as CardState,
-    ReviewRecord as ReviewRecord,
-    OpeningSeedFacts as OpeningSeedFacts,
+)
+from .scheduling_review_contracts import (
     MaturityFacts as MaturityFacts,
-    UpdatedCardState as UpdatedCardState,
+)
+from .scheduling_review_contracts import (
+    OpeningSeedFacts as OpeningSeedFacts,
+)
+from .scheduling_review_contracts import (
+    ReviewRecord as ReviewRecord,
+)
+from .scheduling_review_contracts import (
     SchedulingReviewResult as SchedulingReviewResult,
+)
+from .scheduling_review_contracts import (
     SchedulingReviewStore as SchedulingReviewStore,
+)
+from .scheduling_review_contracts import (
+    UpdatedCardState as UpdatedCardState,
 )
 
 
@@ -88,7 +101,8 @@ def apply_scheduling_review(
     maturity = store.load_maturity_facts(card_id)
     seed = maturity.opening_seed
     successful_days, recent_outcomes = augment_opening_maturity(
-        maturity.successful_review_days, maturity.recent_outcomes,
+        maturity.successful_review_days,
+        maturity.recent_outcomes,
         seed.baseline_successful_days if seed is not None else 0,
         seed.baseline_recent_clean if seed is not None else 0,
     )

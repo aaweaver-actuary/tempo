@@ -4,14 +4,12 @@ This exercises the consumer wrapper and fake Redis ownership only; it is not a
 native broker, durable queue claim, or issued-plan integration proof.
 """
 
+import pytest
 from celery import Celery
 from kombu.exceptions import OperationalError
-import pytest
 
 from app.celery_app import celery_app
 from app.services import background_wakes
-from test_background_wakes import wake_broker  # reuse the existing fake transport
-
 
 TASK = "app.tasks.progress_study_queue"
 

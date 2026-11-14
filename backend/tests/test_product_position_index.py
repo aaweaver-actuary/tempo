@@ -5,19 +5,21 @@ from dataclasses import FrozenInstanceError
 
 import chess
 import pytest
+from tempo_evidence_math import opening_position_key
+from tempo_game_review_contracts import (
+    AuthoredRoute,
+    ReentryAuthority,
+)
+from tempo_game_review_contracts import (
+    RepertoireSnapshot as MembershipSnapshot,
+)
 
-from app.repertoire import build_index, position_key
 from app.contracts.product_v02.repertoire import (
     DecisionPresentation,
     RepertoireSnapshot,
     RouteBoundary,
 )
-from tempo_evidence_math import opening_position_key
-from tempo_game_review_contracts import (
-    AuthoredRoute,
-    ReentryAuthority,
-    RepertoireSnapshot as MembershipSnapshot,
-)
+from app.repertoire import build_index, position_key
 
 
 def route(route_id="r", moves=("e2e4", "e7e5", "g1f3"), **changes):

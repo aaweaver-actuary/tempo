@@ -3,10 +3,10 @@
 import ast
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CHECKER = ROOT / "tools/component-build/check-interface-boundaries.mjs"
@@ -197,7 +197,7 @@ def test_required_priority_command_registers_real_failure_replay_and_independent
 
 def test_queue_presentation_owner_proof_requires_exact_passing_junit_case(tmp_path):
     import pytest
-    from app.study.qualify_priority import QUEUE_PROOF, queue_proof_passed, junit_path
+    from app.study.qualify_priority import QUEUE_PROOF, junit_path, queue_proof_passed
 
     report = tmp_path / "cases.xml"
     name = QUEUE_PROOF.split("::")[1]
@@ -225,6 +225,7 @@ def test_queue_presentation_owner_proof_requires_exact_passing_junit_case(tmp_pa
 
 def test_queue_presentation_owner_binding_uses_declared_inputs_and_candidate(tmp_path):
     import hashlib
+
     from app.study.qualify_priority import source_binding
 
     def git(*args):
@@ -274,6 +275,7 @@ def test_priority_qualifier_requires_exact_native_identity_before_reporting(
     monkeypatch, tmp_path, capsys
 ):
     from types import SimpleNamespace
+
     from app.study import qualify_priority as owner
 
     monkeypatch.setenv("TEMPO_VALIDATION_LOCK_PATH", str(tmp_path / "absent-lock"))
@@ -329,6 +331,7 @@ def test_queue_presentation_flag_selects_only_owned_case_and_default_keeps_requi
     monkeypatch, tmp_path, capsys
 ):
     from types import SimpleNamespace
+
     from app.study import qualify_priority as owner
 
     monkeypatch.setenv("TEMPO_VALIDATION_LOCK_PATH", str(tmp_path / "absent-lock"))

@@ -2,15 +2,14 @@
 
 import uuid
 
+import redis
 from celery import Celery, Task
 from kombu.exceptions import OperationalError as BrokerUnavailable
-from kombu.transport.redis import Channel as RedisChannel, Transport as RedisTransport
+from kombu.transport.redis import Channel as RedisChannel
+from kombu.transport.redis import Transport as RedisTransport
 from kombu.utils.json import dumps
-import redis
-
 from tempo_storage.redis_control.wake_runtime import wakes as storage
 from tempo_storage.redis_control.wake_runtime.wakes import client
-
 
 WAKE_TASK_NAMES = frozenset(
     {

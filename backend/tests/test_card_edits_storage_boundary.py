@@ -1,14 +1,14 @@
 """Card edit/archive fake borrowed-transaction boundaries; no application startup."""
 
+import sys
 from datetime import date
 from types import ModuleType, SimpleNamespace
-import sys
 
 import chess
 import pytest
+from tempo_storage.authored_repertoires.card_edits import storage
 
 from app import card_commands as application
-from tempo_storage.authored_repertoires.card_edits import storage
 
 
 class Rows:
@@ -128,9 +128,17 @@ def test_revision_preserves_scope_sorted_locks_history_branch_certification_and_
 
     monkeypatch.setattr(application.change_storage, "lock_sources", current_sources)
     monkeypatch.setattr(application, "card_id", lambda *args: replacement)
-    monkeypatch.setattr(application, "capture_study_calendar", lambda db:
-        events.append("clock") or SimpleNamespace(
-            observed_at=SimpleNamespace(isoformat=lambda: "timestamp"), day=date(2026, 10, 20)))
+    monkeypatch.setattr(
+        application,
+        "capture_study_calendar",
+        lambda db: (
+            events.append("clock")
+            or SimpleNamespace(
+                observed_at=SimpleNamespace(isoformat=lambda: "timestamp"),
+                day=date(2026, 10, 20),
+            )
+        ),
+    )
     columns = [
         "id",
         "due_date",

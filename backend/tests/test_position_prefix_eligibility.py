@@ -1,7 +1,7 @@
 """Pure whole-clean prefix proof regressions for Position Study."""
 
-from datetime import date
 from dataclasses import replace
+from datetime import date
 
 import chess
 import pytest
@@ -18,7 +18,6 @@ from app.study.position_learning.prefix_eligibility import (
     CleanPresentationProof,
     verify_clean_prefix,
 )
-
 
 DAY = date(2026, 11, 2)
 EPOCH = "owner-epoch-7"

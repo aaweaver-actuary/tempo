@@ -1,14 +1,15 @@
 """SQL boundary proof only; fake driver is not PostgreSQL locking proof."""
 
 from types import SimpleNamespace
+
 import pytest
 from sqlglot import exp, parse_one
 from sqlglot.executor import execute
 from tempo_storage.authored_repertoires.pgn_import import (
     preparation as storage,
 )
-from tempo_storage.durable_tasks import storage as task_storage
 from tempo_storage.controls.activity import storage as control_storage
+from tempo_storage.durable_tasks import storage as task_storage
 
 
 def test_explicit_claim_keeps_receipt_generation_manual_pause_and_lease_fences():
@@ -17,7 +18,7 @@ def test_explicit_claim_keeps_receipt_generation_manual_pause_and_lease_fences()
     class Database:
         def execute_native(self, sql, parameters):
             calls.append((sql, parameters))
-            return SimpleNamespace(fetchone=lambda: None, fetchall=lambda: [])
+            return SimpleNamespace(fetchone=lambda: None, fetchall=list)
 
     reclaim, candidate, parameters = task_storage.prepare_task_claim(
         None, None, "now", (), explicit_imports_only=True
@@ -176,7 +177,7 @@ def test_resume_and_activity_use_receipt_scope_without_bypassing_manual_pause(
     class Database:
         def execute(self, statement, parameters):
             statements.append(statement)
-            return SimpleNamespace(fetchone=lambda: None, fetchall=lambda: [])
+            return SimpleNamespace(fetchone=lambda: None, fetchall=list)
 
         execute_native = execute
 

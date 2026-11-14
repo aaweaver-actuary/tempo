@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-from app.services.study_calendar import capture_study_calendar
 import json
+from contextlib import contextmanager
 
 from fastapi import HTTPException
+from tempo_storage.connections import read_connection
+from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+from tempo_storage.postgres_readiness import read_health_facts
 
 from app.celery_app import celery_app
-from tempo_storage.connections import read_connection
-from tempo_storage.postgres_readiness import read_health_facts
-from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+from app.services.study_calendar import capture_study_calendar
 
 
 def postgres_health() -> dict[str, object]:

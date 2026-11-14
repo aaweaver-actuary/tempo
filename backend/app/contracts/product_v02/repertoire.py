@@ -7,6 +7,8 @@ from pydantic import Field, field_validator, model_validator
 from tempo_game_review_contracts import (
     AuthoredRoute,
     ReentryAuthority,
+)
+from tempo_game_review_contracts import (
     RepertoireSnapshot as MembershipSnapshot,
 )
 

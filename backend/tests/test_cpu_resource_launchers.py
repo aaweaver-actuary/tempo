@@ -2,9 +2,9 @@
 
 import importlib.util
 import json
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -49,9 +49,11 @@ def test_ordinary_database_launch_is_cpu_unrestricted_with_original_memory_pids_
             if isinstance(value, str) and value.startswith("tempo.owner="):
                 owners[arguments[-1]] = value.split("=", 1)[1]
         output = ""
-        if "{{.Id}}" in arguments:
-            output = "sha256:" + "a" * 64
-        elif arguments[0] == "image" and arguments[1] == "inspect":
+        if (
+            "{{.Id}}" in arguments
+            or arguments[0] == "image"
+            and arguments[1] == "inspect"
+        ):
             output = "sha256:" + "a" * 64
         elif "inspect" in arguments and any(
             "Labels" in str(value) for value in arguments

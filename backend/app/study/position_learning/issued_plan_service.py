@@ -5,10 +5,11 @@ against the sealed source, admission, and every current schedule witness.
 """
 
 from dataclasses import dataclass, replace
+from typing import Any
 
 from tempo_evidence_math.position_learning import Hold
+
 from .issued_plan_contracts import SelectionRequest, select_and_freeze
-from typing import Any
 
 _SEAL = object()
 

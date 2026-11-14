@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import uuid
 import time
+import uuid
 from typing import Any
 
 from celery.exceptions import TimeoutError as CeleryTimeout
